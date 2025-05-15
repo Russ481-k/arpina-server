@@ -1,0 +1,1 @@
+ALTER TABLE menu DROP COLUMN icon; 

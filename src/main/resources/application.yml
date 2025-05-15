@@ -1,0 +1,196 @@
+spring:
+  profiles:
+    active: dev
+  legacy:
+    processing: true
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 10MB
+      max-request-size: 10MB
+  file:
+    upload-base-path: ${FILE_UPLOAD_DIR:./uploads}
+    storage:
+      type: ${FILE_STORAGE_TYPE:local} # local | s3
+      local:
+        base-path: ${FILE_STORAGE_LOCAL_BASE_PATH:./uploads}
+      s3:
+        bucket: ${FILE_STORAGE_S3_BUCKET:cms-files}
+        region: ${FILE_STORAGE_S3_REGION:ap-northeast-2}
+        cdn-url: ${FILE_STORAGE_S3_CDN_URL:}
+    policy:
+      max-size: ${FILE_POLICY_MAX_SIZE:10485760} # 10MB
+      allowed-types: ${FILE_POLICY_ALLOWED_TYPES:image/*,application/pdf,application/msword,application/vnd.ms-excel}
+    thumbnail:
+      enabled: ${FILE_THUMBNAIL_ENABLED:true}
+      width: ${FILE_THUMBNAIL_WIDTH:256}
+      height: ${FILE_THUMBNAIL_HEIGHT:256}
+      format: ${FILE_THUMBNAIL_FORMAT:webp}
+  datasource:
+    driver-class-name: ${SPRING_DATASOURCE_DRIVER_CLASS_NAME:org.mariadb.jdbc.Driver}
+    url: ${SPRING_DATASOURCE_URL:jdbc:mariadb://172.30.1.11:3306/cms_new?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&useProxy=false}
+    username: ${SPRING_DATASOURCE_USERNAME:handy}
+    password: ${SPRING_DATASOURCE_PASSWORD:gosel@1224}
+  config:
+    use-legacy-processing: true
+    import: optional:file:.env
+  jpa:
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MariaDB103Dialect
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+        types:
+          print:
+            banner: false
+        globally_quoted_identifiers: true
+        globally_quoted_identifiers_skip_column_definitions: true
+    database-platform: org.hibernate.dialect.MariaDB103Dialect
+    show-sql: true
+    database: mysql
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+  mvc:
+    hiddenmethod:
+      filter:
+        enabled: true
+    pathmatch:
+      matching-strategy: ant_path_matcher
+  main:
+    allow-bean-definition-overriding: true
+    web-application-type: servlet
+    banner-mode: off
+  security:
+    filter:
+      order: 10
+  http:
+    encoding:
+      charset: UTF-8
+      force: true
+      enabled: true
+  redis:
+    host: localhost
+    port: 6379
+  session:
+    store-type: redis
+    redis:
+      flush-mode: on_save
+      namespace: "spring:session"
+server:
+  servlet:
+    context-path: /
+    session:
+      timeout: ${SERVER_SERVLET_SESSION_TIMEOUT:3600}
+    encoding:
+      charset: UTF-8
+      force: true
+      enabled: true
+  port: ${SERVER_PORT:8080}
+
+logging:
+  level:
+    root: ${LOG_LEVEL:DEBUG}
+  file:
+    name: ${LOG_FILE_NAME:backend}
+    path: ${LOG_FILE_PATH:./log}
+  logback:
+    rollingpolicy:
+      max-file-size: ${LOG_MAX_FILE_SIZE:10MB}
+      max-history: ${LOG_MAX_HISTORY:30}
+
+springdoc:
+  version: v4.2.0
+  swagger-ui:
+    tags-sorter: alpha
+    operations-sorter: alpha
+    doc-expansion: none
+  api-docs:
+    path: /v3/api-docs
+    groups:
+      enabled: true
+  cache:
+    disabled: true
+
+Globals:
+  LocalIp: ${GLOBALS_LOCAL_IP:127.0.0.1}
+  DbType: ${GLOBALS_DB_TYPE:mariadb}
+  pageUnit: ${GLOBALS_PAGE_UNIT:10}
+  pageSize: ${GLOBALS_PAGE_SIZE:10}
+  posblAtchFileSize: ${GLOBALS_POSBL_ATCH_FILE_SIZE:5242880}
+  fileStorePath: ${GLOBALS_FILE_STORE_PATH:./uploads}
+  addedOptions: ${GLOBALS_ADDED_OPTIONS:false}
+  MainPage: ${GLOBALS_MAIN_PAGE:/cmm/main/mainPage.do}
+  Allow:
+    Origin: ${GLOBALS_ALLOW_ORIGIN:http://localhost:3000}
+  crypto:
+    algoritm: ${GLOBALS_CRYPTO_ALGORITM:egovframe}
+  fileUpload:
+    Extensions:
+      Images: ${GLOBALS_FILE_UPLOAD_EXTENSIONS_IMAGES:.gif.jpg.jpeg.png}
+      Default: ${GLOBALS_FILE_UPLOAD_EXTENSIONS:.gif.jpg.jpeg.png.xls.xlsx}
+  hsql:
+    DriverClassName: ${GLOBALS_HSQL_DRIVER:net.sf.log4jdbc.DriverSpy}
+    Url: ${GLOBALS_HSQL_URL:jdbc:log4jdbc:hsqldb:hsql://127.0.0.1/sampledb}
+    UserName: ${GLOBALS_HSQL_USERNAME:sa}
+    Password: ${GLOBALS_HSQL_PASSWORD:}
+  mysql:
+    DriverClassName: ${SPRING_DATASOURCE_DRIVER_CLASS_NAME:org.mariadb.jdbc.Driver}
+    Url: ${SPRING_DATASOURCE_URL}
+    UserName: ${SPRING_DATASOURCE_USERNAME}
+    Password: ${SPRING_DATASOURCE_PASSWORD}
+  oracle:
+    DriverClassName: ${GLOBALS_ORACLE_DRIVER:oracle.jdbc.driver.OracleDriver}
+    Url: ${GLOBALS_ORACLE_URL:jdbc:oracle:thin:@127.0.0.1:1521:egovfrm}
+    UserName: ${GLOBALS_ORACLE_USERNAME:}
+    Password: ${GLOBALS_ORACLE_PASSWORD:}
+  altibase:
+    DriverClassName: ${GLOBALS_ALTIBASE_DRIVER:Altibase.jdbc.driver.AltibaseDriver}
+    Url: ${GLOBALS_ALTIBASE_URL:jdbc:Altibase://127.0.0.1:1721/egovfrm?encoding=UTF-8}
+    UserName: ${GLOBALS_ALTIBASE_USERNAME:}
+    Password: ${GLOBALS_ALTIBASE_PASSWORD:}
+  tibero:
+    DriverClassName: ${GLOBALS_TIBERO_DRIVER:com.tmax.tibero.jdbc.TbDriver}
+    Url: ${GLOBALS_TIBERO_URL:jdbc:tibero:thin:@127.0.0.1:1821:egovfrm}
+    UserName: ${GLOBALS_TIBERO_USERNAME:}
+    Password: ${GLOBALS_TIBERO_PASSWORD:}
+  cubrid:
+    DriverClassName: ${GLOBALS_CUBRID_DRIVER:cubrid.jdbc.driver.CUBRIDDriver}
+    Url: ${GLOBALS_CUBRID_URL:jdbc:cubrid:127.0.0.1:33000:cms_new:::?charset=utf-8}
+    UserName: ${GLOBALS_CUBRID_USERNAME:}
+    Password: ${GLOBALS_CUBRID_PASSWORD:}
+
+Sns:
+  naver:
+    clientId: ${SNS_NAVER_CLIENT_ID:YOUR_CLIENT_ID}
+    clientSecret: ${SNS_NAVER_CLIENT_SECRET:YOUR_CLIENT_SECRET}
+    callbackUrl: ${SNS_NAVER_CALLBACK_URL:http://localhost:3000/login/naver/callback}
+  kakao:
+    clientId: ${SNS_KAKAO_CLIENT_ID:YOUR_CLIENT_ID}
+    callbackUrl: ${SNS_KAKAO_CALLBACK_URL:http://localhost:3000/login/kakao/callback}
+
+jwt:
+  secret: ${JWT_SECRET:your-256-bit-secret-key-here-must-be-at-least-256-bits-long}
+  expiration: ${JWT_EXPIRATION:3600000}
+  refresh-expiration: ${JWT_REFRESH_EXPIRATION:86400000}
+  header: ${JWT_HEADER:Authorization}
+  prefix: ${JWT_PREFIX:Bearer}
+  access-token:
+    validity-in-milliseconds: ${JWT_EXPIRATION:3600000}
+  refresh-token:
+    validity-in-milliseconds: ${JWT_REFRESH_EXPIRATION:86400000}
+# Application specific configurations
+app:
+  api:
+    base-url: ${GLOBALS_IP:http://localhost:${server.port:8080}}
