@@ -1,8 +1,9 @@
 ## 📑 Menu API v1 — **File-Integrated Final Spec** (2024-03-21)
 
-> **Base URL** `/api/v1/menu` | **Auth** `Authorization: Bearer {JWT}`  
-> 모든 엔드포인트는 HTTPS + JWT 필수.  
-> 전역 `ADMIN` 이상의 권한이 필요하다.
+> **Base URL for Authenticated APIs:** `/api/v1/cms/menu`  
+> **Base URL for Public APIs:** `/api/v1/cms/menu/public`  
+> **Auth:** `Authorization: Bearer {JWT}` for authenticated APIs.  
+> Authenticated endpoints generally require `ADMIN` equivalent privileges (details per endpoint). Public endpoints do not require authentication.
 
 ---
 
@@ -37,25 +38,25 @@
 
 #### 3.1 Menu Management
 
-| Method | URL                       | Req.Body     | Resp           | 권한     |
-| ------ | ------------------------- | ------------ | -------------- | -------- |
-| GET    | `/menu`                   | –            | List           | `ADMIN`  |
-| POST   | `/menu`                   | MenuDto      | Created        | `ADMIN`  |
-| GET    | `/menu/{id}`              | –            | MenuDto        | `ADMIN`  |
-| PUT    | `/menu/{id}`              | MenuDto      | Updated        | `ADMIN`  |
-| DELETE | `/menu/{id}`              | –            | 204            | `ADMIN`  |
-| GET    | `/menu/{id}/page-details` | –            | PageDetailsDto | `PUBLIC` |
-| GET    | `/menu/tree`              | –            | Tree           | `ADMIN`  |
-| GET    | `/menu/public`            | –            | List           | `PUBLIC` |
-| PUT    | `/menu/{id}/active`       | –            | Updated        | `ADMIN`  |
-| PUT    | `/menu/{id}/order`        | –            | Updated        | `ADMIN`  |
-| PUT    | `/menu/order`             | MenuOrderDto | Updated        | `ADMIN`  |
+| Method | URL                         | Req.Body     | Resp           | 권한            |
+| ------ | --------------------------- | ------------ | -------------- | --------------- |
+| GET    | `/menu`                     | –            | List           | `AUTHENTICATED` |
+| POST   | `/menu`                     | MenuDto      | Created        | `AUTHENTICATED` |
+| GET    | `/menu/{id}`                | –            | MenuDto        | `AUTHENTICATED` |
+| PUT    | `/menu/{id}`                | MenuDto      | Updated        | `AUTHENTICATED` |
+| DELETE | `/menu/{id}`                | –            | 204            | `AUTHENTICATED` |
+| GET    | `/public/{id}/page-details` | –            | PageDetailsDto | `PUBLIC`        |
+| GET    | `/menu/tree`                | –            | Tree           | `AUTHENTICATED` |
+| GET    | `/menu/public`              | –            | List           | `PUBLIC`        |
+| PUT    | `/menu/{id}/active`         | –            | Updated        | `AUTHENTICATED` |
+| PUT    | `/menu/{id}/order`          | –            | Updated        | `AUTHENTICATED` |
+| PUT    | `/menu/order`               | MenuOrderDto | Updated        | `AUTHENTICATED` |
+| GET    | `/menu/type/{type}`         | –            | List           | `AUTHENTICATED` |
 
 > **권한 관리**
 >
-> - `ADMIN` 권한: 메뉴 생성/수정/삭제/순서변경 등 관리 기능
-> - `PUBLIC` 권한: 메뉴 조회만 가능 (공개된 메뉴만)
-> - JWT 토큰이 없는 경우 401 Unauthorized 반환
+> - `AUTHENTICATED` 권한: 메뉴 생성/수정/삭제/순서변경 등 관리 기능 (일반적으로 `ADMIN` 역할 필요).
+> - `PUBLIC` 권한: 메뉴 조회만 가능 (공개된 메뉴만).
 
 ---
 
@@ -207,7 +208,7 @@ CREATE TABLE menu (
 
 1. **권한 관리**
 
-   - `ADMIN` 권한: 모든 메뉴 관리 기능 사용 가능
+   - `AUTHENTICATED` 권한: 모든 메뉴 관리 기능 사용 가능
    - `PUBLIC` 권한: 공개된 메뉴만 조회 가능
    - JWT 토큰 검증 필수
 
