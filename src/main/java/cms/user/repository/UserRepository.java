@@ -28,4 +28,8 @@ public interface UserRepository extends JpaRepository<User, String> {
     List<User> findByGroupId(@Param("groupId") String groupId);
 
     boolean existsByUsername(String username);
+
+    boolean existsByDi(String di);
+
+    Optional<User> findByDi(String di);
 } 

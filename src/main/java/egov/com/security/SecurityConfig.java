@@ -73,6 +73,8 @@ public class SecurityConfig {
 					"/api/v1/auth/register",
 					"/api/v1/auth/logout",
 					"/api/v1/auth/verify",
+					"/api/v1/auth/signup",
+					"/api/v1/auth/check-username/**",
 					"/api/v1/cms/menu/public",
 					"/api/v1/cms/menu/public/**/page-details",
 					"/api/v1/cms/template/public",
@@ -86,7 +88,8 @@ public class SecurityConfig {
 					"/api/v1/cms/schedule/public**",
 					"/api/v1/cms/schedule/**",
 					"/api/v1/cms/file/public/**",
-					"/api/v1/swimming/**"
+					"/api/v1/swimming/**",
+					"/api/v1/nice/checkplus/**"
 				).permitAll()
 				.antMatchers(
 					HttpMethod.POST, "/api/v1/cms/enterprises"
@@ -105,6 +108,7 @@ public class SecurityConfig {
 					"/api/v1/cms/user",
 					"/api/v1/cms/file/private/**"
 				).authenticated()
+				.antMatchers("/api/v1/mypage/**").hasRole("USER")
 				.anyRequest().authenticated()
 			.and()
 			.addFilterBefore(jwtRequestFilter, UsernamePasswordAuthenticationFilter.class)

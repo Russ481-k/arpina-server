@@ -8,6 +8,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 
 import cms.auth.dto.LoginRequest;
 import cms.auth.dto.ResetPasswordRequest;
+import cms.auth.dto.SignupRequest;
 import cms.auth.dto.UserRegistrationRequest;
 import cms.common.dto.ApiResponseSchema;
 
@@ -27,6 +28,10 @@ public interface AuthService {
     ResponseEntity<ApiResponseSchema<Map<String, Object>>> loginUser(LoginRequest request);
     ResponseEntity<ApiResponseSchema<Void>> logoutUser(HttpServletRequest request);
     ResponseEntity<ApiResponseSchema<Void>> resetPassword(ResetPasswordRequest request, UserDetails userDetails);
+    void signup(SignupRequest request);
+
+    // Method for checking username availability
+    ResponseEntity<ApiResponseSchema<Map<String, Object>>> checkUsernameAvailability(String username);
 } 
  
  

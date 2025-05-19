@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 
 import cms.auth.dto.LoginRequest;
 import cms.auth.dto.ResetPasswordRequest;
+import cms.auth.dto.SignupRequest;
 import cms.auth.dto.UserRegistrationRequest;
 import cms.auth.service.AuthService;
 import cms.common.dto.ApiResponseSchema;
@@ -35,6 +36,18 @@ import org.springframework.http.HttpStatus;
 public class AuthController {
 
     private final AuthService authService;
+
+    @PostMapping("/signup")
+    @Operation(summary = "일반 사용자 회원가입", description = "새로운 일반 사용자를 등록합니다.")
+    @ApiResponses(value = {
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "회원가입 성공"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "잘못된 요청"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "이미 존재하는 사용자")
+    })
+    public ResponseEntity<ApiResponseSchema<Void>> signup(@Valid @RequestBody SignupRequest request) {
+        authService.signup(request);
+        return ResponseEntity.ok(ApiResponseSchema.success("회원가입이 성공적으로 완료되었습니다."));
+    }
 
     @PostMapping("/register")
     @Operation(summary = "사용자 등록", description = "새로운 사용자를 등록합니다.")
@@ -176,6 +189,15 @@ public class AuthController {
             @Parameter(hidden = true) @AuthenticationPrincipal CustomUserDetails user) {
         authService.changePassword(passwordMap, user);
         return ResponseEntity.ok(ApiResponseSchema.success("비밀번호가 성공적으로 변경되었습니다."));
+    }
+
+    @Operation(summary = "사용자 ID 중복 체크", description = "회원가입 시 사용자 ID 사용 가능 여부를 확인합니다.")
+    @ApiResponses(value = {
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "확인 성공 (available: true/false)")
+    })
+    @GetMapping("/check-username/{username}")
+    public ResponseEntity<ApiResponseSchema<Map<String, Object>>> checkUsernameAvailability(@PathVariable String username) {
+        return authService.checkUsernameAvailability(username);
     }
 } 
  

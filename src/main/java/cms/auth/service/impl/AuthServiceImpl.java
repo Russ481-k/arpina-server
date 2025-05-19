@@ -13,15 +13,21 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.http.HttpStatus;
+import org.springframework.util.StringUtils;
 
 import cms.auth.provider.JwtTokenProvider;
 import cms.auth.dto.LoginRequest;
 import cms.auth.dto.ResetPasswordRequest;
 import cms.auth.dto.UserRegistrationRequest;
+import cms.auth.dto.SignupRequest;
 import cms.auth.service.AuthService;
 import cms.user.domain.User;
+import cms.user.domain.UserRoleType;
 import cms.user.repository.UserRepository;
 import cms.common.dto.ApiResponseSchema;
+import cms.nice.dto.NicePublicUserDataDto;
+import cms.nice.dto.NiceUserDataDto;
+import cms.nice.service.NiceService;
 
 import org.springframework.mail.MailException;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -37,16 +43,27 @@ import java.util.UUID;
 
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
+
+import cms.common.exception.DuplicateDiException;
+import cms.common.exception.DuplicateEmailException;
+import cms.common.exception.DuplicateUsernameException;
+import cms.common.exception.NiceVerificationException;
 
 @Service
 @RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
+
+    private static final Logger log = LoggerFactory.getLogger(AuthServiceImpl.class);
 
     private final AuthenticationManager authenticationManager;
     private final JwtTokenProvider jwtTokenProvider;
     private final PasswordEncoder passwordEncoder;
     private final JavaMailSender mailSender;
     private final UserRepository userRepository;
+    private final NiceService niceService;
 
     @Override
     @Transactional
@@ -251,6 +268,8 @@ public class AuthServiceImpl implements AuthService {
                 .name(request.getName())
                 .role(request.getRole())
                 .status("ACTIVE")
+                .organizationId(request.getOrganizationId())
+                .groupId(request.getGroupId())
                 .build();
 
         userRepository.save(user);
@@ -258,9 +277,93 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
+    @Transactional
+    public void signup(SignupRequest request) {
+        log.info("[AuthService] signup attempt for username: {}, with niceResultKey: {}", request.getUsername(), request.getNiceResultKey());
+        if (!StringUtils.hasText(request.getNiceResultKey())) {
+            log.error("[AuthService] NICE result key is missing for username: {}", request.getUsername());
+            throw new NiceVerificationException("NICE 본인인증 정보가 누락되었습니다. 본인인증을 다시 진행해주세요.");
+        }
+
+        NiceUserDataDto niceData;
+        try {
+            niceData = niceService.getVerifiedFullNiceDataAndConsume(request.getNiceResultKey());
+            if (niceData == null) {
+                log.warn("[AuthService] NICE verification failed or data not found for key: {}", request.getNiceResultKey());
+                throw new NiceVerificationException("NICE 본인인증에 실패했거나 인증 정보가 만료되었습니다. 다시 시도해주세요.");
+            }
+            log.info("[AuthService] NICE verification successful for username: {}, DI: {}", request.getUsername(), niceData.getDi());
+        } catch (RuntimeException e) { // Catch RuntimeException from NiceService
+            log.error("[AuthService] Error during NICE verification for username: {}. Error: {}", request.getUsername(), e.getMessage());
+            throw new NiceVerificationException("NICE 본인인증 중 오류가 발생했습니다: " + e.getMessage(), e);
+        }
+
+        // Optional: Validate request data against NICE data
+        // if (!request.getName().equals(niceData.getName())) {
+        //     log.warn("[AuthService] Name mismatch - Request: {}, NICE: {}", request.getName(), niceData.getName());
+        //     throw new NiceVerificationException("본인인증 정보와 입력된 이름이 일치하지 않습니다.");
+        // }
+        // if (request.getBirthDate() != null && !request.getBirthDate().equals(niceData.getBirthDate())) {
+        //     log.warn("[AuthService] BirthDate mismatch - Request: {}, NICE: {}", request.getBirthDate(), niceData.getBirthDate());
+        //     throw new NiceVerificationException("본인인증 정보와 입력된 생년월일이 일치하지 않습니다.");
+        // }
+
+        if (niceData.getDi() != null && userRepository.existsByDi(niceData.getDi())) {
+            log.warn("[AuthService] Duplicate DI found: {}", niceData.getDi());
+            throw new DuplicateDiException("이미 해당 본인인증 정보로 가입된 계정이 존재합니다.");
+        }
+        if (userRepository.existsByUsername(request.getUsername())) {
+            log.warn("[AuthService] Duplicate username found: {}", request.getUsername());
+            throw new DuplicateUsernameException("이미 사용 중인 사용자 ID입니다.");
+        }
+        if (userRepository.existsByEmail(request.getEmail())) {
+            log.warn("[AuthService] Duplicate email found: {}", request.getEmail());
+            throw new DuplicateEmailException("이미 사용 중인 이메일입니다.");
+        }
+
+        User user = User.builder()
+                .uuid(UUID.randomUUID().toString())
+                .username(request.getUsername())
+                .password(passwordEncoder.encode(request.getPassword()))
+                .name(niceData.getName()) // Use name from NICE data
+                .email(request.getEmail())
+                .phone(niceData.getMobileNo()) // Use phone from NICE data
+                .birthDate(niceData.getBirthDate()) // Use birthDate from NICE data
+                .gender(niceData.getGender()) // Use gender from NICE data
+                .di(niceData.getDi()) // Store DI (consider encryption)
+                .role(UserRoleType.USER)
+                .status("ACTIVE")
+                .provider("LOCAL")
+                .build();
+
+        try {
+            userRepository.save(user);
+            log.info("[AuthService] User {} signed up successfully with UUID: {}", user.getUsername(), user.getUuid());
+        } catch (DataAccessException e) {
+            log.error("[AuthService] Database error during signup for username: {}. Error: {}", request.getUsername(), e.getMessage(), e);
+            // This could be a more specific exception based on the cause, e.g., ConstraintViolationException
+            // For now, a general runtime exception that will be caught by GlobalExceptionHandler
+            throw new RuntimeException("회원가입 처리 중 데이터베이스 오류가 발생했습니다. 관리자에게 문의해주세요.");
+        }
+    }
+
+    @Override
     public ResponseEntity<ApiResponseSchema<Void>> logoutUser(HttpServletRequest request) {
         SecurityContextHolder.clearContext();
         return ResponseEntity.ok(ApiResponseSchema.success("로그아웃이 완료되었습니다."));
+    }
+
+    // Implementation for checking username availability
+    @Override
+    @Transactional(readOnly = true)
+    public ResponseEntity<ApiResponseSchema<Map<String, Object>>> checkUsernameAvailability(String username) {
+        boolean available = !userRepository.existsByUsername(username);
+        Map<String, Object> result = new HashMap<>();
+        result.put("available", available);
+        if (!available) {
+            result.put("message", "이미 사용 중인 사용자 ID입니다.");
+        }
+        return ResponseEntity.ok(ApiResponseSchema.success(result, available ? "사용 가능한 사용자 ID입니다." : "이미 사용 중인 사용자 ID입니다."));
     }
 } 
  

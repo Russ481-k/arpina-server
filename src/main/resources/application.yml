@@ -194,3 +194,11 @@ jwt:
 app:
   api:
     base-url: ${GLOBALS_IP:http://localhost:${server.port:8080}}
+
+nice:
+  checkplus:
+    site-code: ${NICE_CHECKPLUS_SITE_CODE} # Mandatory: Define in your .env file
+    site-password: ${NICE_CHECKPLUS_SITE_PASSWORD} # Mandatory: Define in your .env file
+    base-callback-url: ${app.api.base-url}
+    frontend-redirect-success-url: ${NICE_CHECKPLUS_FRONTEND_REDIRECT_SUCCESS_URL} # Default for dev, override in .env if needed
+    frontend-redirect-fail-url: ${NICE_CHECKPLUS_FRONTEND_REDIRECT_FAIL_URL} # Default for dev, override in .env if needed

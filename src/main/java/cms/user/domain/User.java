@@ -46,11 +46,35 @@ public class User implements UserDetails {
     @Column(name = "status", nullable = false, length = 20)
     private String status;
 
-    @Column(name = "organization_id", nullable = false, length = 36)
+    @Column(name = "organization_id", length = 36)
     private String organizationId;
 
-    @Column(name = "group_id", nullable = false, length = 36)
+    @Column(name = "group_id", length = 36)
     private String groupId;
+
+    @Column(name = "gender", length = 10)
+    private String gender;
+
+    @Column(name = "phone", length = 20)
+    private String phone;
+
+    @Column(name = "address", length = 255)
+    private String address;
+
+    @Column(name = "car_no", length = 50)
+    private String carNo;
+
+    @Column(name = "temp_pw_flag", columnDefinition = "TINYINT(1) DEFAULT 0")
+    private boolean tempPwFlag;
+
+    @Column(name = "birth_date", length = 8) // YYYYMMDD
+    private String birthDate;
+
+    @Column(name = "di", length = 255) // Encrypted DI length might be longer
+    private String di;
+
+    @Column(name = "provider", length = 50) // Added provider field
+    private String provider;
 
     @Column(name = "reset_token", length = 255)
     private String resetToken;

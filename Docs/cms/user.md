@@ -143,7 +143,7 @@
   "enrollId": 9999,
   "amount": 65000,
   "paidAt": "2025-04-18T13:00:00+09:00",
-  "status": "SUCCESS" // SUCCESS | CANCELED | PARTIAL
+  "status": "SUCCESS" // SUCCESS | CANCELED | PARTIAL | REFUND_REQUESTED
 }
 ```
 
@@ -178,19 +178,55 @@
 
 ---
 
-### 7. Database DDL (추가 필드)
+### 7. Database DDL
 
-```sql
-ALTER TABLE user
-  ADD temp_pw_flag TINYINT DEFAULT 0 COMMENT '임시 비밀번호 여부';
+#### 7.1 `user` 테이블 수정
 
-ALTER TABLE enroll
-  ADD expire_dt DATETIME,
-  ADD renewal_flag TINYINT DEFAULT 0,
-  ADD cancel_status ENUM('NONE','REQ','PENDING','APPROVED','DENIED') DEFAULT 'NONE',
-  ADD cancel_reason VARCHAR(150),
-  ADD refund_amount INT DEFAULT 0;
-```
+ALTER TABLE `user`
+ADD COLUMN `car_no` VARCHAR(50) DEFAULT NULL COMMENT '차량번호' AFTER `group_id`,
+ADD COLUMN `temp_pw_flag` TINYINT(1) DEFAULT 0 COMMENT '임시비밀번호여부 (0: 아니오, 1: 예)' AFTER `car_no`, -- 문서에 이미 언급된 필드
+ADD COLUMN `phone` VARCHAR(50) DEFAULT NULL COMMENT '전화번호' AFTER `temp_pw_flag`,
+ADD COLUMN `address` VARCHAR(255) DEFAULT NULL COMMENT '주소' AFTER `phone`;
+
+#### 7.2 `enroll` 테이블 생성
+
+CREATE TABLE `enroll` (
+`id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '수강신청 ID (PK)',
+`user_uuid` VARCHAR(36) NOT NULL COMMENT '사용자 UUID (FK)',
+`lesson_id` BIGINT NOT NULL COMMENT '강좌 ID',
+`status` VARCHAR(50) NOT NULL COMMENT '상태 (UNPAID, PAID, CANCELED, CANCELED_UNPAID)',
+`expire_dt` TIMESTAMP NULL DEFAULT NULL COMMENT '결제 만료 일시',
+`renewal_flag` TINYINT(1) DEFAULT 0 COMMENT '재수강 여부 (0: 아니오, 1: 예)',
+`cancel_status` VARCHAR(20) DEFAULT 'NONE' COMMENT '취소 상태 (NONE, REQ, PENDING, APPROVED, DENIED)',
+`cancel_reason` VARCHAR(255) DEFAULT NULL COMMENT '취소 사유',
+`refund_amount` INT DEFAULT NULL COMMENT '환불 금액',
+`locker_id` INT DEFAULT NULL COMMENT '라커 ID',
+`locker_zone` VARCHAR(50) DEFAULT NULL COMMENT '라커 구역',
+`locker_carry_over` TINYINT(1) DEFAULT 0 COMMENT '라커 연장 여부 (0: 아니오, 1: 예)',
+`created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '생성 일시',
+`updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '수정 일시',
+PRIMARY KEY (`id`),
+KEY `fk_enroll_user_uuid` (`user_uuid`),
+CONSTRAINT `fk_enroll_user_uuid` FOREIGN KEY (`user_uuid`) REFERENCES `user` (`uuid`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='수강 신청 정보';
+
+#### 7.3 `payment` 테이블 생성
+
+CREATE TABLE `payment` (
+`id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '결제 ID (PK)',
+`enroll_id` BIGINT NOT NULL COMMENT '수강신청 ID (FK)',
+`amount` INT NOT NULL COMMENT '결제 금액',
+`paid_at` TIMESTAMP NULL DEFAULT NULL COMMENT '결제 일시',
+`status` VARCHAR(50) NOT NULL COMMENT '결제 상태 (SUCCESS, CANCELED, PARTIAL, REFUND_REQUESTED)',
+`pg_provider` VARCHAR(50) DEFAULT NULL COMMENT 'PG사 정보',
+`pg_token` VARCHAR(255) DEFAULT NULL COMMENT 'PG 거래 토큰',
+`merchant_uid` VARCHAR(255) DEFAULT NULL COMMENT '가맹점 주문번호',
+`created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '생성 일시',
+`updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '수정 일시',
+PRIMARY KEY (`id`),
+KEY `fk_payment_enroll_id` (`enroll_id`),
+CONSTRAINT `fk_payment_enroll_id` FOREIGN KEY (`enroll_id`) REFERENCES `enroll` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='결제 정보';
 
 ---
 
@@ -210,10 +246,10 @@ ALTER TABLE enroll
 | 컴포넌트           | 구현 포인트                                              |
 | ------------------ | -------------------------------------------------------- |
 | **EnrollCard**     | 상태 Badge + 버튼 (`Checkout` red / `Cancel` blue)       |
-| **Countdown**      | `expireDt` diff 실시간 표시, 0 초 → 카드 회색 “결제만료” |
+| **Countdown**      | `expireDt` diff 실시간 표시, 0 초 → 카드 회색 "결제만료" |
 | **Checkout Modal** | `CheckoutDto` 요약 + 아임포트 Script 호출                |
 | **Renewal Modal**  | 라커 carry 토글, 성공 Toast                              |
-| **Empty State**    | 일러스트 + “아직 신청 내역이 없어요”                     |
+| **Empty State**    | 일러스트 + "아직 신청 내역이 없어요"                     |
 
 ---
 

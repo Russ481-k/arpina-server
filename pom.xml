@@ -485,6 +485,12 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-validation</artifactId>
 		</dependency>
+
+		<dependency>
+			<groupId>com.niceid</groupId>
+			<artifactId>niceid</artifactId>
+			<version>1.2</version>
+		</dependency>
 	</dependencies>
 
 	<profiles>

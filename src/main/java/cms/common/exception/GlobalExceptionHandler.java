@@ -24,6 +24,11 @@ import cms.template.exception.CannotDeleteFixedTemplateException;
 import cms.template.exception.TemplateNotFoundException;
 import org.springframework.security.access.AccessDeniedException;
 
+import cms.common.exception.DuplicateDiException;
+import cms.common.exception.DuplicateEmailException;
+import cms.common.exception.DuplicateUsernameException;
+import cms.common.exception.NiceVerificationException;
+
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -44,12 +49,6 @@ public class GlobalExceptionHandler {
         String errorMessage = e.getBindingResult().getAllErrors().get(0).getDefaultMessage();
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiResponseSchema.error(errorMessage, "VALIDATION_ERROR"));
-    }
-
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<ApiResponseSchema<Void>> handleException(Exception e) {
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ApiResponseSchema.error("서버 내부 오류가 발생했습니다.", "INTERNAL_SERVER_ERROR"));
     }
 
     @ExceptionHandler({ResourceNotFoundException.class, EntityNotFoundException.class})
@@ -105,6 +104,36 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleCannotDeleteFixedTemplateException(CannotDeleteFixedTemplateException e) {
         ErrorResponse response = new ErrorResponse(HttpStatus.BAD_REQUEST.value(), e.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+    }
+
+    @ExceptionHandler(DuplicateDiException.class)
+    public ResponseEntity<ApiResponseSchema<Void>> handleDuplicateDiException(DuplicateDiException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiResponseSchema.error(e.getMessage(), "DUPLICATE_DI"));
+    }
+
+    @ExceptionHandler(DuplicateEmailException.class)
+    public ResponseEntity<ApiResponseSchema<Void>> handleDuplicateEmailException(DuplicateEmailException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiResponseSchema.error(e.getMessage(), "DUPLICATE_EMAIL"));
+    }
+
+    @ExceptionHandler(DuplicateUsernameException.class)
+    public ResponseEntity<ApiResponseSchema<Void>> handleDuplicateUsernameException(DuplicateUsernameException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiResponseSchema.error(e.getMessage(), "DUPLICATE_USERNAME"));
+    }
+
+    @ExceptionHandler(NiceVerificationException.class)
+    public ResponseEntity<ApiResponseSchema<Void>> handleNiceVerificationException(NiceVerificationException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponseSchema.error(e.getMessage(), "NICE_VERIFICATION_FAILED"));
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiResponseSchema<Void>> handleException(Exception e) {
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ApiResponseSchema.error("서버 내부 오류가 발생했습니다. 관리자에게 문의해주세요.", "INTERNAL_SERVER_ERROR"));
     }
 
     private String getStackTraceAsString(Throwable e) {
