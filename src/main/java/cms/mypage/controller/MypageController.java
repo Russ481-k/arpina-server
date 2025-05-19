@@ -1,7 +1,7 @@
 package cms.mypage.controller;
 
 import cms.mypage.dto.*;
-import cms.mypage.service.EnrollService;
+import cms.enroll.service.EnrollmentService;
 import cms.mypage.service.MypagePaymentService;
 import cms.mypage.service.MypageProfileService;
 import cms.user.domain.User;
@@ -28,7 +28,7 @@ import java.util.Map;
 public class MypageController {
 
     private final MypageProfileService mypageProfileService;
-    private final EnrollService enrollService;
+    private final EnrollmentService enrollService;
     private final MypagePaymentService mypagePaymentService;
 
     @Operation(summary = "Get user profile", description = "현재 로그인된 사용자의 프로필 정보를 조회합니다.")

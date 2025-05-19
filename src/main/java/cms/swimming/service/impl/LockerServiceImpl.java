@@ -12,7 +12,7 @@ import javax.persistence.EntityNotFoundException;
 import java.util.List;
 import java.util.stream.Collectors;
 
-@Service
+@Service("swimmingLockerServiceImpl")
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class LockerServiceImpl implements LockerService {

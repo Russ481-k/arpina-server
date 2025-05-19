@@ -2,9 +2,15 @@ package cms.swimming.controller;
 
 import cms.common.dto.ApiResponseSchema;
 import cms.swimming.dto.*;
-import cms.swimming.service.EnrollService;
+import cms.swimming.dto.CancelRequestDto;
+import cms.swimming.dto.EnrollRequestDto;
+import cms.swimming.dto.EnrollResponseDto;
+import cms.swimming.dto.LessonDto;
+import cms.swimming.dto.LockerDto;
+import cms.enroll.service.EnrollmentService;
 import cms.swimming.service.LessonService;
 import cms.swimming.service.LockerService;
+import cms.user.domain.User;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -16,6 +22,7 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -33,7 +40,7 @@ public class SwimmingUserController {
 
     private final LessonService lessonService;
     private final LockerService lockerService;
-    private final EnrollService enrollService;
+    private final EnrollmentService enrollmentService;
 
     // 1. 수업 조회 API
     @Operation(summary = "열린 수업 목록 조회", description = "신청 가능한 수업 목록을 페이징하여 제공합니다.")
@@ -79,90 +86,78 @@ public class SwimmingUserController {
     }
 
     // 3. 신청 및 취소 API
-    @Operation(summary = "수업 신청", description = "수업을 신청하고 결제 정보를 함께 등록합니다.")
+    @Operation(summary = "수업 신청", description = "수업을 신청합니다. 결제는 마이페이지에서 진행됩니다.")
     @PostMapping("/enroll")
     public ResponseEntity<ApiResponseSchema<EnrollResponseDto>> createEnroll(
             @Valid @RequestBody EnrollRequestDto enrollRequest,
             Authentication authentication,
             HttpServletRequest request) {
-        // 인증 정보에서 사용자 ID와 이름 추출
-        Long userId = getUserIdFromAuth(authentication);
-        String userName = getUserNameFromAuth(authentication);
+        User currentUser = getAuthenticatedUser(authentication);
         String clientIp = request.getRemoteAddr();
         
-        EnrollResponseDto enrollResponse = enrollService.createEnroll(userId, userName, enrollRequest, clientIp);
+        EnrollResponseDto enrollResponse = enrollmentService.createInitialEnrollment(currentUser, enrollRequest, clientIp);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponseSchema.success(enrollResponse, "수업 신청 및 결제가 완료되었습니다."));
+                .body(ApiResponseSchema.success(enrollResponse, "수업 신청이 완료되었습니다. 마이페이지에서 결제를 진행해주세요."));
     }
 
-    @Operation(summary = "신청 취소", description = "수업 신청을 취소합니다. 개강 후에는 관리자 승인이 필요합니다.")
+    @Operation(summary = "신청 취소", description = "수업 신청을 취소합니다. 개강 전 신청 건에 한해 사용자 직접 취소가 가능합니다.")
     @PostMapping("/enroll/{enrollId}/cancel")
-    public ResponseEntity<ApiResponseSchema<EnrollResponseDto>> cancelEnroll(
+    public ResponseEntity<ApiResponseSchema<Void>> cancelEnroll(
             @Parameter(description = "취소할 신청 ID") @PathVariable Long enrollId,
             @Valid @RequestBody CancelRequestDto cancelRequest,
-            Authentication authentication,
-            HttpServletRequest request) {
-        Long userId = getUserIdFromAuth(authentication);
-        String clientIp = request.getRemoteAddr();
+            Authentication authentication) {
+        User currentUser = getAuthenticatedUser(authentication);
         
-        EnrollResponseDto cancelResponse = enrollService.cancelEnroll(userId, enrollId, cancelRequest, clientIp);
-        return ResponseEntity.ok(ApiResponseSchema.success(cancelResponse, "신청 취소가 처리되었습니다."));
+        enrollmentService.requestEnrollmentCancellation(currentUser, enrollId, cancelRequest.getReason());
+        
+        return ResponseEntity.ok(ApiResponseSchema.success("신청 취소가 요청되었습니다."));
     }
 
     // 4. 신청 내역 조회 API
-    @Operation(summary = "내 신청 내역 조회", description = "로그인한 사용자의 모든 신청 내역을 조회합니다.")
+    @Operation(summary = "내 신청 내역 조회", description = "로그인한 사용자의 모든 신청 내역을 조회합니다. (Mypage DTO 사용)")
     @GetMapping("/my-enrolls")
-    public ResponseEntity<ApiResponseSchema<List<EnrollResponseDto>>> getMyEnrolls(
+    public ResponseEntity<ApiResponseSchema<Page<cms.mypage.dto.EnrollDto>>> getMyEnrolls(
+            @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
             Authentication authentication) {
-        Long userId = getUserIdFromAuth(authentication);
-        List<EnrollResponseDto> enrolls = enrollService.getUserEnrolls(userId);
+        User currentUser = getAuthenticatedUser(authentication);
+        Page<cms.mypage.dto.EnrollDto> enrolls = enrollmentService.getEnrollments(currentUser, null, pageable);
         return ResponseEntity.ok(ApiResponseSchema.success(enrolls, "신청 내역 조회 성공"));
     }
 
-    @Operation(summary = "내 신청 내역 상태별 조회", description = "로그인한 사용자의 신청 내역을 상태별로 조회합니다.")
+    @Operation(summary = "내 신청 내역 상태별 조회", description = "로그인한 사용자의 신청 내역을 상태별로 조회합니다. (Mypage DTO 사용)")
     @GetMapping("/my-enrolls/status")
-    public ResponseEntity<ApiResponseSchema<Page<EnrollResponseDto>>> getMyEnrollsByStatus(
-            @Parameter(description = "신청 상태 (APPLIED, CANCELED, PENDING)") @RequestParam String status,
+    public ResponseEntity<ApiResponseSchema<Page<cms.mypage.dto.EnrollDto>>> getMyEnrollsByStatus(
+            @Parameter(description = "신청 상태 (e.g. UNPAID, PAID, CANCELED - pay_status field from Enroll)") @RequestParam String status,
             @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
             Authentication authentication) {
-        Long userId = getUserIdFromAuth(authentication);
-        Page<EnrollResponseDto> enrolls = enrollService.getUserEnrollsByStatus(userId, status, pageable);
+        User currentUser = getAuthenticatedUser(authentication);
+        Page<cms.mypage.dto.EnrollDto> enrolls = enrollmentService.getEnrollments(currentUser, status, pageable);
         return ResponseEntity.ok(ApiResponseSchema.success(enrolls, "상태별 신청 내역 조회 성공"));
     }
 
-    @Operation(summary = "특정 신청 상세 조회", description = "특정 신청의 상세 정보를 조회합니다.")
+    @Operation(summary = "특정 신청 상세 조회", description = "특정 신청의 상세 정보를 조회합니다. (Mypage DTO 사용)")
     @GetMapping("/enrolls/{enrollId}")
-    public ResponseEntity<ApiResponseSchema<EnrollResponseDto>> getEnrollDetail(
+    public ResponseEntity<ApiResponseSchema<cms.mypage.dto.EnrollDto>> getEnrollDetail(
             @Parameter(description = "조회할 신청 ID") @PathVariable Long enrollId,
             Authentication authentication) {
-        Long userId = getUserIdFromAuth(authentication);
-        EnrollResponseDto enroll = enrollService.getEnrollById(enrollId);
-        
-        // 본인 신청만 조회 가능
-        if (!userId.equals(enroll.getUserId())) {
-            ApiResponseSchema<EnrollResponseDto> errorResponse = ApiResponseSchema.error("본인의 신청 정보만 조회할 수 있습니다.", "FORBIDDEN");
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorResponse);
-        }
+        User currentUser = getAuthenticatedUser(authentication);
+        cms.mypage.dto.EnrollDto enroll = enrollmentService.getEnrollmentDetails(currentUser, enrollId);
         
         return ResponseEntity.ok(ApiResponseSchema.success(enroll, "신청 상세 조회 성공"));
     }
 
     // 보조 메소드
-    private Long getUserIdFromAuth(Authentication authentication) {
-        // 인증 처리 방식에 따라 구현 (JWT, Session 등)
-        // 여기서는 예시로 간단하게 처리
-        if (authentication == null || !authentication.isAuthenticated()) {
-            throw new IllegalStateException("로그인이 필요한 서비스입니다.");
+    private User getAuthenticatedUser(Authentication authentication) {
+        if (authentication == null || !authentication.isAuthenticated() || authentication.getPrincipal() == null) {
+            throw new IllegalStateException("로그인이 필요한 서비스입니다. 인증 정보가 유효하지 않습니다.");
         }
-        return Long.parseLong(authentication.getName()); // 실제 구현에 맞게 수정 필요
-    }
-    
-    private String getUserNameFromAuth(Authentication authentication) {
-        // 인증 처리 방식에 따라 구현
-        // 여기서는 예시로 간단하게 처리
-        if (authentication == null || !authentication.isAuthenticated()) {
-            throw new IllegalStateException("로그인이 필요한 서비스입니다.");
+        Object principal = authentication.getPrincipal();
+        if (principal instanceof User) {
+            return (User) principal;
+        } else if (principal instanceof UserDetails) {
+            throw new IllegalStateException("인증 객체가 User 타입이 아닙니다. UserDetails 타입 변환 로직이 필요합니다: " + principal.getClass().getName());
+        } else {
+            throw new IllegalStateException("인증 객체 타입이 예상과 다릅니다: " + principal.getClass().getName());
         }
-        return authentication.getPrincipal().toString(); // 실제 구현에 맞게 수정 필요
     }
 } 

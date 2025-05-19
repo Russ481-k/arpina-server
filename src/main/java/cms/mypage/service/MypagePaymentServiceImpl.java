@@ -94,7 +94,7 @@ public class MypagePaymentServiceImpl implements MypagePaymentService {
         PaymentDto dto = new PaymentDto();
         dto.setPaymentId(payment.getId());
         if (payment.getEnroll() != null) {
-            dto.setEnrollId(payment.getEnroll().getId());
+            dto.setEnrollId(payment.getEnroll().getEnrollId());
         }
         dto.setAmount(payment.getAmount());
         if (payment.getPaidAt() != null) {

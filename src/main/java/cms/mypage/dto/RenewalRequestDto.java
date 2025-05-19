@@ -8,4 +8,6 @@ import lombok.Setter;
 public class RenewalRequestDto {
   private Long lessonId;
   private boolean carryLocker;
+  private Long existingLockerIdToCarry;
+  private boolean wantsNewLocker;
 } 

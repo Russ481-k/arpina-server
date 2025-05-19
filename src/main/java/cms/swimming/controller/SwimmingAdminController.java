@@ -2,9 +2,9 @@ package cms.swimming.controller;
 
 import cms.common.dto.ApiResponseSchema;
 import cms.swimming.dto.*;
-import cms.swimming.service.EnrollService;
 import cms.swimming.service.LessonService;
 import cms.swimming.service.LockerService;
+import cms.enroll.service.EnrollmentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -24,7 +24,7 @@ import javax.validation.Valid;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/v1/admin/swimming")
+@RequestMapping("/admin/swimming")
 @RequiredArgsConstructor
 @Tag(name = "swimming_admin", description = "수영장 관리자 API")
 @SecurityRequirement(name = "bearerAuth")
@@ -33,7 +33,7 @@ public class SwimmingAdminController {
 
     private final LessonService lessonService;
     private final LockerService lockerService;
-    private final EnrollService enrollService;
+    private final EnrollmentService enrollmentService;
 
     // 1. 강습 관리 API
     @Operation(summary = "모든 강습 목록 조회", description = "모든 강습 목록을 페이징하여 조회합니다.")
@@ -98,18 +98,17 @@ public class SwimmingAdminController {
     @GetMapping("/enrolls")
     @PreAuthorize("hasAnyRole('CS_AGENT', 'SUPER_ADMIN')")
     public ResponseEntity<ApiResponseSchema<Page<EnrollResponseDto>>> getAllEnrolls(
-            @Parameter(description = "신청 상태 (APPLIED, CANCELED, PENDING)") @RequestParam(required = false) String status,
+            @Parameter(description = "신청 상태 (APPLIED, CANCELED, COMPLETED, EXPIRED, PAID, UNPAID, REFUNDED)") @RequestParam(required = false) String status,
             @Parameter(description = "강습 ID로 필터링") @RequestParam(required = false) Long lessonId,
             @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
         
         Page<EnrollResponseDto> enrolls;
         if (lessonId != null) {
-            enrolls = enrollService.getEnrollsByLessonId(lessonId, pageable);
-        } else if (status != null) {
-            enrolls = enrollService.getUserEnrollsByStatus(null, status, pageable);
+            enrolls = enrollmentService.getAllEnrollmentsByLessonIdAdmin(lessonId, pageable);
+        } else if (status != null && !status.trim().isEmpty()) {
+            enrolls = enrollmentService.getAllEnrollmentsByStatusAdmin(status, pageable);
         } else {
-            // 전체 조회 로직 필요
-            enrolls = Page.empty();
+            enrolls = enrollmentService.getAllEnrollmentsAdmin(pageable);
         }
         
         return ResponseEntity.ok(ApiResponseSchema.success(enrolls, "신청 내역 조회 성공"));
@@ -122,8 +121,7 @@ public class SwimmingAdminController {
             @Parameter(description = "취소할 신청 ID") @PathVariable Long enrollId,
             @Parameter(description = "환불 비율 (0-100%)") @RequestParam Integer refundPct) {
         
-        // 취소 승인 로직 구현 필요
-        // enrollService.approveCancelRequest(enrollId, refundPct);
+        enrollmentService.approveEnrollmentCancellationAdmin(enrollId, refundPct);
         
         return ResponseEntity.ok(ApiResponseSchema.success("취소 요청이 승인되었으며, 환불이 처리되었습니다."));
     }
@@ -135,8 +133,7 @@ public class SwimmingAdminController {
             @Parameter(description = "취소할 신청 ID") @PathVariable Long enrollId,
             @Parameter(description = "거부 사유") @RequestParam String comment) {
         
-        // 취소 거부 로직 구현 필요
-        // enrollService.denyCancelRequest(enrollId, comment);
+        enrollmentService.denyEnrollmentCancellationAdmin(enrollId, comment);
         
         return ResponseEntity.ok(ApiResponseSchema.success("취소 요청이 거부되었습니다."));
     }

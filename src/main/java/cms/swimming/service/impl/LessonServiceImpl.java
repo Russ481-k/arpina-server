@@ -2,9 +2,10 @@ package cms.swimming.service.impl;
 
 import cms.swimming.domain.Lesson;
 import cms.swimming.dto.LessonDto;
-import cms.swimming.repository.EnrollRepository;
 import cms.swimming.repository.LessonRepository;
 import cms.swimming.service.LessonService;
+import cms.enroll.repository.EnrollRepository;
+import cms.swimming.domain.Locker;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -16,7 +17,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.stream.Collectors;
 
-@Service
+@Service("swimmingLessonServiceImpl")
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class LessonServiceImpl implements LessonService {
@@ -60,6 +61,12 @@ public class LessonServiceImpl implements LessonService {
 
     @Override
     public long countLockersByGender(Long lessonId, String gender) {
-        return enrollRepository.countLockersByGender(lessonId, gender);
+        Locker.LockerGender lockerGenderEnum;
+        try {
+            lockerGenderEnum = Locker.LockerGender.valueOf(gender.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid gender string for counting lockers: " + gender, e);
+        }
+        return enrollRepository.countLockersByGender(lessonId, lockerGenderEnum);
     }
 } 

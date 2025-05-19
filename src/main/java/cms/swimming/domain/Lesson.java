@@ -30,6 +30,9 @@ public class Lesson {
     @Column(name = "end_date", nullable = false)
     private LocalDate endDate;
 
+    @Column(name = "registration_end_date", nullable = false)
+    private LocalDate registrationEndDate;
+
     @Column(name = "capacity", nullable = false)
     private Integer capacity;
 
@@ -84,7 +87,8 @@ public class Lesson {
             Integer maleLockerCap, 
             Integer femaleLockerCap, 
             Integer price,
-            LessonStatus status) {
+            LessonStatus status,
+            LocalDate registrationEndDate) {
         this.title = title;
         this.startDate = startDate;
         this.endDate = endDate;
@@ -93,5 +97,6 @@ public class Lesson {
         this.femaleLockerCap = femaleLockerCap;
         this.price = price;
         this.status = status;
+        this.registrationEndDate = registrationEndDate;
     }
 } 
