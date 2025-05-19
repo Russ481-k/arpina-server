@@ -1,7 +1,6 @@
 package cms.swimming.controller;
 
 import cms.common.dto.ApiResponseSchema;
-import cms.swimming.dto.*;
 import cms.swimming.dto.CancelRequestDto;
 import cms.swimming.dto.EnrollRequestDto;
 import cms.swimming.dto.EnrollResponseDto;

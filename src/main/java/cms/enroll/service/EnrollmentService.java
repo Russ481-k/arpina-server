@@ -6,7 +6,6 @@ import cms.mypage.dto.RenewalRequestDto;
 import cms.user.domain.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import cms.swimming.dto.EnrollRequestDto;
 import cms.swimming.dto.EnrollResponseDto;
 
 public interface EnrollmentService {

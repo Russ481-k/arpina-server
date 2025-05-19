@@ -69,14 +69,14 @@ public class NiceController {
 
             UriComponentsBuilder urlBuilder = UriComponentsBuilder.fromUriString(frontendSuccessUrl)
                                 .queryParam("status", "success")
-                                .queryParam("key", resultKey);
-
-            if (isAlreadyJoined) {
-                urlBuilder.queryParam("joined", "true");
-                if (existingUsername != null) {
-                    urlBuilder.queryParam("username", existingUsername);
-                }
-                log.info("[NICE] User with DI already joined. Redirecting with joined=true. Username: {}", existingUsername);
+                                .queryParam("key", resultKey)
+                                .queryParam("joined", String.valueOf(isAlreadyJoined));
+            
+            // Only add username and error code if we have a duplicate user
+            if (isAlreadyJoined && existingUsername != null) {
+                urlBuilder.queryParam("username", existingUsername)
+                          .queryParam("nice_error_code", "DUPLICATE_DI");
+                log.info("[NICE] User with DI already joined. Redirecting with joined=true and error_code=DUPLICATE_DI. Username: {}", existingUsername);
             } else {
                 log.info("[NICE] New user. Redirecting for signup.");
             }
