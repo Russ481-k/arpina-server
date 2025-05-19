@@ -58,6 +58,8 @@ public class SecurityConfig {
 			.sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
 			.and()
 			.authorizeHttpRequests()
+				// 우선 순위가 높은 수영 API 규칙 (모든 HTTP 메서드 허용)
+				.antMatchers("/api/v1/swimming/**").permitAll()
 				.antMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 				.antMatchers(HttpMethod.GET, "/api/v1/cms/enterprises", "/api/v1/cms/enterprises/{id}").permitAll()
 				.antMatchers(
@@ -83,7 +85,8 @@ public class SecurityConfig {
 					"/api/v1/cms/bbs/master",
 					"/api/v1/cms/schedule/public**",
 					"/api/v1/cms/schedule/**",
-					"/api/v1/cms/file/public/**"
+					"/api/v1/cms/file/public/**",
+					"/api/v1/swimming/**"
 				).permitAll()
 				.antMatchers(
 					HttpMethod.POST, "/api/v1/cms/enterprises"
