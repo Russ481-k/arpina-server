@@ -8,10 +8,14 @@ import cms.payment.domain.Payment;
 import cms.payment.repository.PaymentRepository;
 import cms.pg.service.PaymentGatewayService;
 import cms.user.domain.User;
+import cms.common.exception.BusinessRuleException;
+import cms.common.exception.ErrorCode;
+import cms.common.exception.ResourceNotFoundException;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus; // For potential use in BusinessRuleException
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -51,30 +55,35 @@ public class MypagePaymentServiceImpl implements MypagePaymentService {
     @Override
     public void requestPaymentCancellation(User user, Long paymentId) {
         Payment payment = paymentRepository.findById(paymentId)
-                .orElseThrow(() -> new RuntimeException("Payment not found with ID: " + paymentId));
+                .orElseThrow(() -> new ResourceNotFoundException("결제 정보를 찾을 수 없습니다 (ID: " + paymentId + ")", ErrorCode.PAYMENT_INFO_NOT_FOUND));
         
         Enroll enroll = payment.getEnroll();
         if (enroll == null) {
-            throw new IllegalStateException("Enrollment information not found for this payment.");
+            throw new BusinessRuleException("결제에 연결된 수강 신청 정보를 찾을 수 없습니다.", ErrorCode.ENROLLMENT_NOT_FOUND, HttpStatus.INTERNAL_SERVER_ERROR);
         }
         if (!enroll.getUser().getUuid().equals(user.getUuid())) {
-            throw new SecurityException("You do not have permission to cancel this payment.");
+            throw new BusinessRuleException(ErrorCode.ACCESS_DENIED, HttpStatus.FORBIDDEN);
         }
 
         if (!"SUCCESS".equalsIgnoreCase(payment.getStatus())) {
-            throw new IllegalStateException("Payment is not in a cancellable state (must be SUCCESS). Current status: " + payment.getStatus());
+            throw new BusinessRuleException("성공 상태의 결제만 취소할 수 있습니다. 현재 상태: " + payment.getStatus(), ErrorCode.PAYMENT_CANCEL_NOT_ALLOWED);
         }
         
         if (enroll.getCancelStatus() != null && enroll.getCancelStatus() != CancelStatusType.NONE) {
-             throw new IllegalStateException("Enrollment cancellation is already in progress, completed, or denied.");
+             throw new BusinessRuleException("이미 취소 절차가 진행 중이거나 완료/거절된 수강 신청입니다.", ErrorCode.ALREADY_CANCELLED_ENROLLMENT);
         }
 
-        boolean refundInitiated = paymentGatewayService.requestRefund(
-            payment.getPgToken(), 
-            payment.getMerchantUid(), 
-            payment.getAmount(),
-            "User requested cancellation via My Page"
-        );
+        boolean refundInitiated;
+        try {
+            refundInitiated = paymentGatewayService.requestRefund(
+                payment.getPgToken(), 
+                payment.getMerchantUid(), 
+                payment.getAmount(),
+                "User requested cancellation via My Page"
+            );
+        } catch (Exception e) {
+            throw new BusinessRuleException("결제 게이트웨이를 통한 환불 요청에 실패했습니다. 잠시 후 다시 시도해주세요.", ErrorCode.PAYMENT_REFUND_FAILED);
+        }
 
         if (refundInitiated) {
             payment.setStatus("REFUND_REQUESTED");
@@ -85,7 +94,7 @@ public class MypagePaymentServiceImpl implements MypagePaymentService {
             
             // TODO: Notify admin about the refund request
         } else {
-            throw new RuntimeException("Failed to initiate payment cancellation with Payment Gateway for payment ID: " + paymentId);
+            throw new BusinessRuleException("결제 게이트웨이에서 환불 요청 처리를 시작하지 못했습니다.", ErrorCode.PAYMENT_REFUND_FAILED);
         }
     }
 

@@ -29,7 +29,7 @@ import cms.common.exception.DuplicateEmailException;
 import cms.common.exception.DuplicateUsernameException;
 import cms.common.exception.NiceVerificationException;
 
-@RestControllerAdvice
+// @RestControllerAdvice
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(BusinessException.class)
