@@ -1,7 +1,6 @@
 package cms.enroll.repository;
 
 import cms.enroll.domain.Enroll;
-import cms.swimming.domain.Locker;
 import cms.user.domain.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
