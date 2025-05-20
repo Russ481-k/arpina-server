@@ -26,15 +26,17 @@ public class MypageProfileServiceImpl implements MypageProfileService {
     @Override
     @Transactional(readOnly = true)
     public ProfileDto getProfile(User user) {
-        // User 엔티티에서 직접 정보를 가져오므로, DB에서 다시 로드할 필요는 없음 (user 객체가 이미 최신 상태라고 가정)
-        // 만약 user 객체가 detached 상태이거나 최신 정보 보장이 필요하면 userRepository.findById(user.getUuid()) 등으로 조회
+        // 항상 DB에서 최신 데이터 조회
+        User freshUser = userRepository.findById(user.getUuid())
+            .orElseThrow(() -> new RuntimeException("User not found with uuid: " + user.getUuid()));
+        
         ProfileDto profileDto = new ProfileDto();
-        profileDto.setName(user.getName());
-        profileDto.setUserId(user.getUsername()); // user.md 에는 userId로 되어있으나, User 엔티티에는 username 사용
-        profileDto.setPhone(user.getPhone()); // phone 필드 사용
-        profileDto.setAddress(user.getAddress()); // address 필드 사용
-        profileDto.setEmail(user.getEmail());
-        profileDto.setCarNo(user.getCarNo());
+        profileDto.setName(freshUser.getName());
+        profileDto.setUserId(freshUser.getUsername());
+        profileDto.setPhone(freshUser.getPhone());
+        profileDto.setAddress(freshUser.getAddress());
+        profileDto.setEmail(freshUser.getEmail());
+        profileDto.setCarNo(freshUser.getCarNo());
         return profileDto;
     }
 

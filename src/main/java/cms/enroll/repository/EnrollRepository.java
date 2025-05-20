@@ -27,8 +27,12 @@ public interface EnrollRepository extends JpaRepository<Enroll, Long> {
 
     Optional<Enroll> findByUserUuidAndLessonLessonIdAndStatus(String userUuid, Long lessonId, String status);
 
-    @Query("SELECT COUNT(e) FROM Enroll e JOIN e.locker l WHERE e.lesson.lessonId = :lessonId AND l.gender = :gender AND e.status = 'APPLIED'")
-    long countLockersByGender(@Param("lessonId") Long lessonId, @Param("gender") Locker.LockerGender gender);
+    @Query("SELECT COUNT(e) FROM Enroll e " +
+           "WHERE e.lesson.lessonId = :lessonId " +
+           "AND e.user.gender = :gender " +
+           "AND e.usesLocker = true " +
+           "AND e.status = 'APPLIED'")
+    long countUsedLockersByLessonAndUserGender(@Param("lessonId") Long lessonId, @Param("gender") String gender);
 
     @Query("SELECT COUNT(e) FROM Enroll e WHERE e.user.uuid = :userUuid AND e.status = 'APPLIED' " +
            "AND FUNCTION('YEAR', e.lesson.startDate) = FUNCTION('YEAR', :date) " +

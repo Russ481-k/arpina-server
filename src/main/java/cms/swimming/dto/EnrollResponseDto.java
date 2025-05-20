@@ -24,10 +24,7 @@ public class EnrollResponseDto {
     private String lessonTitle;
     private Integer lessonPrice;
 
-    private Long lockerId;
-    private String lockerNumber;
-    private String lockerZone;
-    private String lockerGender; // M, F
+    private boolean usesLocker; // Added to indicate if a locker was assigned
 
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime expireDt; // Added for initial enrollment response

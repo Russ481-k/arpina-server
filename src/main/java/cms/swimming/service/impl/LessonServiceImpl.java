@@ -5,7 +5,6 @@ import cms.swimming.dto.LessonDto;
 import cms.swimming.repository.LessonRepository;
 import cms.swimming.service.LessonService;
 import cms.enroll.repository.EnrollRepository;
-import cms.swimming.domain.Locker;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -61,12 +60,9 @@ public class LessonServiceImpl implements LessonService {
 
     @Override
     public long countLockersByGender(Long lessonId, String gender) {
-        Locker.LockerGender lockerGenderEnum;
-        try {
-            lockerGenderEnum = Locker.LockerGender.valueOf(gender.toUpperCase());
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Invalid gender string for counting lockers: " + gender, e);
+        if (gender == null || gender.trim().isEmpty()) {
+            throw new IllegalArgumentException("Gender cannot be null or empty for counting lockers.");
         }
-        return enrollRepository.countLockersByGender(lessonId, lockerGenderEnum);
+        return enrollRepository.countUsedLockersByLessonAndUserGender(lessonId, gender.toUpperCase());
     }
 } 

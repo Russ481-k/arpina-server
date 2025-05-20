@@ -42,14 +42,6 @@ public class LockerServiceImpl implements LockerService {
     }
 
     @Override
-    public List<LockerDto> getAvailableLockers(String gender) {
-        Locker.LockerGender lockerGender = Locker.LockerGender.valueOf(gender);
-        return lockerRepository.findAvailableLockers(lockerGender).stream()
-                .map(LockerDto::fromEntity)
-                .collect(Collectors.toList());
-    }
-
-    @Override
     public LockerDto getLockerById(Long lockerId) {
         Locker locker = lockerRepository.findById(lockerId)
                 .orElseThrow(() -> new EntityNotFoundException("사물함을 찾을 수 없습니다. ID: " + lockerId));

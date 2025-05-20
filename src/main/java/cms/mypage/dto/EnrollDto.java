@@ -20,7 +20,7 @@ public class EnrollDto {
   // Fields from EnrollmentServiceImpl's convertToMypageEnrollDto
   private OffsetDateTime applicationDate; 
   private OffsetDateTime paymentExpireDt; // Renamed from expireDt to be specific
-  private LockerDetails locker;
+  private boolean usesLocker;      // Added to indicate locker usage
   private RenewalWindow renewalWindow;
   private boolean isRenewal;
   private String cancelStatus;
@@ -36,17 +36,6 @@ public class EnrollDto {
     private String period;
     private String time;
     private BigDecimal price;
-  }
-
-  @Getter
-  @Setter
-  @Builder
-  @NoArgsConstructor
-  @AllArgsConstructor
-  public static class LockerDetails {
-    private Long id; // Changed from Integer to Long to match Locker entity ID
-    private String zone;
-    private boolean carryOver;
   }
 
   @Getter

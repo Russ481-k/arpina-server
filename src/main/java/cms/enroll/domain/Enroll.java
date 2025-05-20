@@ -2,7 +2,6 @@ package cms.enroll.domain;
 
 import cms.user.domain.User;
 import cms.swimming.domain.Lesson;
-import cms.swimming.domain.Locker;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.Builder;
@@ -10,7 +9,6 @@ import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 import javax.persistence.*;
 import java.time.LocalDateTime;
-import java.math.BigDecimal;
 import org.hibernate.annotations.ColumnDefault;
 
 @Entity
@@ -28,23 +26,16 @@ public class Enroll {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "enroll_id")
+    @Column(name = "id")
     private Long enrollId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_uuid", referencedColumnName = "uuid", nullable = false)
     private User user;
 
-    @Column(name = "user_name", nullable = false, length = 50)
-    private String userName;
-
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "lesson_id", nullable = false)
     private Lesson lesson;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "locker_id")
-    private Locker locker;
 
     @Column(name = "status", nullable = false, length = 20)
     private String status;
@@ -65,7 +56,7 @@ public class Enroll {
     @ColumnDefault("'NONE'")
     private CancelStatusType cancelStatus = CancelStatusType.NONE;
 
-    @Column(name = "cancel_reason", length = 100)
+    @Column(name = "cancel_reason", length = 255)
     private String cancelReason;
 
     @Column(name = "cancel_approved_at")
@@ -74,15 +65,12 @@ public class Enroll {
     @Column(name = "original_pay_status_before_cancel", length = 20)
     private String originalPayStatusBeforeCancel;
 
-    @Column(name = "refund_amount", precision = 10, scale = 2)
-    private BigDecimal refundAmount;
+    @Column(name = "refund_amount")
+    private Integer refundAmount;
 
-    @Column(name = "locker_zone", length = 50)
-    private String lockerZone;
-
-    @Column(name = "locker_carry_over", columnDefinition = "TINYINT(1) DEFAULT 0")
+    @Column(name = "uses_locker", nullable = false, columnDefinition = "TINYINT(1) DEFAULT 0")
     @ColumnDefault("0")
-    private boolean lockerCarryOver;
+    private boolean usesLocker;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     @ColumnDefault("CURRENT_TIMESTAMP")
@@ -92,13 +80,13 @@ public class Enroll {
     @ColumnDefault("CURRENT_TIMESTAMP")
     private LocalDateTime updatedAt;
 
-    @Column(name = "created_by", length = 50)
+    @Column(name = "created_by", length = 36)
     private String createdBy;
 
     @Column(name = "created_ip", length = 45)
     private String createdIp;
 
-    @Column(name = "updated_by", length = 50)
+    @Column(name = "updated_by", length = 36)
     private String updatedBy;
 
     @Column(name = "updated_ip", length = 45)

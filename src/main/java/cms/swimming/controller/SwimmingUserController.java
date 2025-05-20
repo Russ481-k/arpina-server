@@ -5,10 +5,10 @@ import cms.swimming.dto.CancelRequestDto;
 import cms.swimming.dto.EnrollRequestDto;
 import cms.swimming.dto.EnrollResponseDto;
 import cms.swimming.dto.LessonDto;
-import cms.swimming.dto.LockerDto;
+// import cms.swimming.dto.LockerDto; // Remains commented as its primary use 'getAvailableLockers' list was removed
 import cms.enroll.service.EnrollmentService;
 import cms.swimming.service.LessonService;
-import cms.swimming.service.LockerService;
+import cms.locker.service.LockerService; // Correct import for the new locker inventory service
 import cms.user.domain.User;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -29,6 +29,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.validation.Valid;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/swimming")
@@ -38,7 +39,7 @@ import java.util.List;
 public class SwimmingUserController {
 
     private final LessonService lessonService;
-    private final LockerService lockerService;
+    private final LockerService lockerService; // This is now cms.locker.service.LockerService
     private final EnrollmentService enrollmentService;
 
     // 1. 수업 조회 API
@@ -68,21 +69,33 @@ public class SwimmingUserController {
     }
 
     // 2. 사물함 조회 API
-    @Operation(summary = "사용 가능한 사물함 조회", description = "성별에 따라, 사용 가능한 사물함 목록을 조회합니다.")
-    @GetMapping("/lockers")
-    public ResponseEntity<ApiResponseSchema<List<LockerDto>>> getAvailableLockers(
-            @Parameter(description = "성별 (M/F)") @RequestParam String gender) {
-        List<LockerDto> lockers = lockerService.getAvailableLockers(gender);
-        return ResponseEntity.ok(ApiResponseSchema.success(lockers, "사용 가능한 사물함 조회 성공"));
+    // The old endpoint for listing available LockerDto objects is removed.
+
+    @Operation(summary = "사용 가능한 사물함 개수 조회", description = "성별에 따라 사용 가능한 사물함의 개수를 조회합니다.")
+    @GetMapping("/lockers/available-count")
+    public ResponseEntity<ApiResponseSchema<Map<String, Object>>> getAvailableLockerCount(
+            @Parameter(description = "성별 (MALE/FEMALE)") @RequestParam String gender) {
+        int count = lockerService.getAvailableLockerCount(gender.toUpperCase());
+        Map<String, Object> responseData = Map.of(
+            "gender", gender.toUpperCase(),
+            "availableCount", count
+        );
+        return ResponseEntity.ok(ApiResponseSchema.success(responseData, "사용 가능한 사물함 개수 조회 성공"));
     }
 
-    @Operation(summary = "특정 사물함 조회", description = "사물함 ID로 특정 사물함 정보를 조회합니다.")
-    @GetMapping("/lockers/{lockerId}")
-    public ResponseEntity<ApiResponseSchema<LockerDto>> getLockerDetail(
-            @Parameter(description = "조회할 사물함 ID") @PathVariable Long lockerId) {
-        LockerDto locker = lockerService.getLockerById(lockerId);
-        return ResponseEntity.ok(ApiResponseSchema.success(locker, "사물함 상세 조회 성공"));
-    }
+    // The endpoint for getting a specific LockerDto by ID is problematic as it belongs to the old system.
+    // It requires cms.swimming.service.LockerService and cms.swimming.dto.LockerDto.
+    // If individual locker details are no longer relevant, this should be removed.
+    // For now, commenting it out to ensure the controller compiles with the new LockerService.
+//    @Operation(summary = "특정 사물함 조회", description = "사물함 ID로 특정 사물함 정보를 조회합니다.")
+//    @GetMapping("/lockers/{lockerId}")
+//    public ResponseEntity<ApiResponseSchema<cms.swimming.dto.LockerDto>> getLockerDetail(
+//            @Parameter(description = "조회할 사물함 ID") @PathVariable Long lockerId) {
+//        // This would require injecting the *old* cms.swimming.service.LockerService
+//        // cms.swimming.dto.LockerDto locker = oldLockerService.getLockerById(lockerId);
+//        // return ResponseEntity.ok(ApiResponseSchema.success(locker, "사물함 상세 조회 성공"));
+//         return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).body(ApiResponseSchema.error("This endpoint is under review.", "DEPRECATED_FUNCTIONALITY"));
+//    }
 
     // 3. 신청 및 취소 API
     @Operation(summary = "수업 신청", description = "수업을 신청합니다. 결제는 마이페이지에서 진행됩니다.")
@@ -154,6 +167,8 @@ public class SwimmingUserController {
         if (principal instanceof User) {
             return (User) principal;
         } else if (principal instanceof UserDetails) {
+            // Consider creating a User object from UserDetails if possible, or fetching from DB
+            // For now, this path indicates a configuration or setup issue if User is expected.
             throw new IllegalStateException("인증 객체가 User 타입이 아닙니다. UserDetails 타입 변환 로직이 필요합니다: " + principal.getClass().getName());
         } else {
             throw new IllegalStateException("인증 객체 타입이 예상과 다릅니다: " + principal.getClass().getName());

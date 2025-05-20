@@ -17,7 +17,7 @@ public interface LockerRepository extends JpaRepository<Locker, Long> {
     List<Locker> findByZoneAndIsActive(String zone, Boolean isActive);
     
     // 사용 가능한 (신청되지 않은) 사물함 조회
-    @Query("SELECT l FROM Locker l WHERE l.isActive = true AND l.gender = :gender AND " +
-           "l.lockerId NOT IN (SELECT e.locker.lockerId FROM Enroll e WHERE e.status = 'APPLIED' AND e.locker IS NOT NULL)")
-    List<Locker> findAvailableLockers(Locker.LockerGender gender);
+//    @Query("SELECT l FROM Locker l WHERE l.isActive = true AND l.gender = :gender AND " +
+//           "l.lockerId NOT IN (SELECT e.locker.lockerId FROM Enroll e WHERE e.status = 'APPLIED' AND e.locker IS NOT NULL)")
+//    List<Locker> findAvailableLockers(Locker.LockerGender gender);
 } 
