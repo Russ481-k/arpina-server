@@ -31,9 +31,10 @@ public interface EnrollmentService {
      * 수강 신청에 대한 결제 준비(Checkout)를 진행합니다. (Mypage 전용)
      * @param user 현재 사용자
      * @param enrollId 신청 ID (모든 UNPAID 신청 건 대상)
+     * @param checkoutRequest 사용자의 사물함 희망 여부 포함
      * @return CheckoutDto 결제 준비 정보
      */
-    CheckoutDto processCheckout(User user, Long enrollId);
+    CheckoutDto processCheckout(User user, Long enrollId, cms.mypage.dto.CheckoutRequestDto checkoutRequest);
 
     /**
      * 수강 신청에 대한 결제를 처리합니다. (Mypage 전용)

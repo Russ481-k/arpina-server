@@ -136,12 +136,12 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 .orElseThrow(() -> new EntityNotFoundException("강습을 찾을 수 없습니다. ID: " + initialEnrollRequest.getLessonId()));
 
         if (lesson.getStatus() != Lesson.LessonStatus.OPEN) {
-            throw new IllegalStateException("신청 가능한 강습이 아닙니다. 상태: " + lesson.getStatus());
+            throw new BusinessRuleException(ErrorCode.LESSON_NOT_OPEN_FOR_ENROLLMENT, "신청 가능한 강습이 아닙니다. 현재 상태: " + lesson.getStatus());
         }
 
-        long currentPaidEnrollments = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
-        if (currentPaidEnrollments >= lesson.getCapacity()) {
-            throw new IllegalStateException("강습 정원이 초과되었습니다.");
+        long activeEnrollments = enrollRepository.countActiveEnrollmentsForLesson(lesson.getLessonId(), LocalDateTime.now());
+        if (activeEnrollments >= lesson.getCapacity()) {
+            throw new BusinessRuleException(ErrorCode.LESSON_CAPACITY_EXCEEDED, "강습 정원이 초과되었습니다. 현재 신청 인원: " + activeEnrollments + "/" + lesson.getCapacity());
         }
 
         Optional<Enroll> existingEnrollOpt = enrollRepository.findByUserUuidAndLessonLessonIdAndStatus(
@@ -149,39 +149,22 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         if (existingEnrollOpt.isPresent()) {
             Enroll exEnroll = existingEnrollOpt.get();
             if ("PAID".equals(exEnroll.getPayStatus())) {
-                throw new IllegalStateException("이미 해당 강습에 대해 결제 완료된 신청 내역이 존재합니다.");
+                throw new BusinessRuleException(ErrorCode.DUPLICATE_ENROLLMENT_ATTEMPT, "이미 해당 강습에 대해 결제 완료된 신청 내역이 존재합니다.");
             }
             if ("UNPAID".equals(exEnroll.getPayStatus()) && exEnroll.getExpireDt().isAfter(LocalDateTime.now())) {
-                 throw new IllegalStateException("이미 신청한 강습의 결제가능 시간이 남아있습니다. 마이페이지에서 결제를 진행해주세요. 만료시간: " + exEnroll.getExpireDt());
+                 throw new BusinessRuleException(ErrorCode.DUPLICATE_ENROLLMENT_ATTEMPT, "이미 신청한 강습의 결제가능 시간이 남아있습니다. 마이페이지에서 결제를 진행해주세요. 만료시간: " + exEnroll.getExpireDt());
             }
         }
 
         long monthlyEnrollments = enrollRepository.countUserEnrollmentsInMonth(user.getUuid(), lesson.getStartDate());
         if (monthlyEnrollments > 0) {
-            throw new IllegalStateException("같은 달에 이미 다른 강습을 신청하셨습니다. 한 달에 한 개의 강습만 신청 가능합니다.");
-        }
-
-        boolean useLockerForEnrollment = false;
-        // Assuming EnrollRequestDto has a field like 'wantsLocker' or similar
-        // For now, let's assume initialEnrollRequest.isWantsLocker() exists
-        if (initialEnrollRequest.isWantsLocker()) { 
-            if (user.getGender() == null || user.getGender().trim().isEmpty()) {
-                throw new IllegalStateException("라커를 신청하려면 사용자의 성별 정보가 필요합니다.");
-            }
-            // Check available lockers using the new lockerService (LockerInventoryService)
-            // The lesson specific locker capacities (maleLockerCap, femaleLockerCap) might need
-            // to be checked against the general inventory or this logic might simplify.
-            // For now, just try to assign from general inventory.
-            if (!lockerService.assignLocker(user.getGender())) {
-                throw new IllegalStateException(user.getGender() + " 성별의 사용 가능한 라커가 없습니다.");
-            }
-            useLockerForEnrollment = true;
+            throw new BusinessRuleException(ErrorCode.MONTHLY_ENROLLMENT_LIMIT_EXCEEDED, "같은 달에 이미 다른 강습을 신청하셨습니다. 한 달에 한 개의 강습만 신청 가능합니다.");
         }
 
         Enroll enroll = Enroll.builder()
                 .user(user)
                 .lesson(lesson)
-                .usesLocker(useLockerForEnrollment)
+                .usesLocker(false)
                 .status("APPLIED")
                 .payStatus("UNPAID")
                 .expireDt(LocalDateTime.now().plusHours(1))
@@ -221,7 +204,8 @@ public class EnrollmentServiceImpl implements EnrollmentService {
     }
 
     @Override
-    public CheckoutDto processCheckout(User user, Long enrollId) {
+    @Transactional // Ensure transactional behavior for updates
+    public CheckoutDto processCheckout(User user, Long enrollId, cms.mypage.dto.CheckoutRequestDto checkoutRequest) {
         if (user == null || user.getUuid() == null) {
              throw new BusinessRuleException(ErrorCode.AUTHENTICATION_FAILED, HttpStatus.UNAUTHORIZED);
         }
@@ -235,22 +219,61 @@ public class EnrollmentServiceImpl implements EnrollmentService {
             throw new BusinessRuleException("결제 대기 상태의 수강 신청이 아닙니다. 현재 상태: " + enroll.getPayStatus(), ErrorCode.NOT_UNPAID_ENROLLMENT_STATUS);
         }
         if (enroll.getExpireDt().isBefore(LocalDateTime.now())) {
-            enroll.setStatus("EXPIRED"); // 상태 변경은 유지
+            enroll.setStatus("EXPIRED");
             enroll.setPayStatus("EXPIRED");
             enrollRepository.save(enroll);
             throw new BusinessRuleException("결제 가능 시간이 만료되었습니다 (ID: " + enrollId + ")", ErrorCode.ENROLLMENT_PAYMENT_EXPIRED);
         }
+        
         Lesson lesson = enroll.getLesson();
-        if (lesson == null) { // Lesson 객체 null 체크 추가
+        if (lesson == null) {
             throw new ResourceNotFoundException("연결된 강좌 정보를 찾을 수 없습니다 (수강신청 ID: " + enrollId + ")", ErrorCode.LESSON_NOT_FOUND);
         }
 
+        // Locker logic starts here
+        if (Boolean.TRUE.equals(checkoutRequest.getWantsLocker())) {
+            if (user.getGender() == null || user.getGender().trim().isEmpty()) {
+                throw new BusinessRuleException(ErrorCode.USER_GENDER_REQUIRED_FOR_LOCKER, "라커를 신청하려면 사용자의 성별 정보가 필요합니다.");
+            }
+            String userGender = user.getGender().toUpperCase();
+            long lessonLockerCapacityForGender;
+            if ("MALE".equals(userGender)) {
+                lessonLockerCapacityForGender = lesson.getMaleLockerCap();
+            } else if ("FEMALE".equals(userGender)) {
+                lessonLockerCapacityForGender = lesson.getFemaleLockerCap();
+            } else {
+                throw new BusinessRuleException(ErrorCode.INVALID_USER_GENDER, "알 수 없는 사용자 성별입니다: " + user.getGender());
+            }
+
+            long currentlyUsedLockers = enrollRepository.countByLessonLessonIdAndUserGenderAndUsesLockerTrueAndPayStatusInAndExpireDtAfter(
+                lesson.getLessonId(), userGender, List.of("UNPAID"), LocalDateTime.now()
+            ) + enrollRepository.countByLessonLessonIdAndUserGenderAndUsesLockerTrueAndPayStatusIn(
+                lesson.getLessonId(), userGender, List.of("PAID")
+            );
+
+            if (currentlyUsedLockers >= lessonLockerCapacityForGender) {
+                throw new BusinessRuleException(ErrorCode.LESSON_LOCKER_CAPACITY_EXCEEDED_FOR_GENDER, user.getGender() + " 성별의 강습 사물함이 모두 사용 중입니다. 다른 강습을 이용하시거나 라커 없이 신청해주세요.");
+            }
+            enroll.setUsesLocker(true);
+        } else {
+            enroll.setUsesLocker(false);
+        }
+        enrollRepository.save(enroll); // Save changes to enroll.usesLocker
+        // Locker logic ends here
+
+        // TODO: Adjust amount if locker has a fee
+        // BigDecimal finalAmount = BigDecimal.valueOf(lesson.getPrice());
+        // if (enroll.isUsesLocker() && lesson.getLockerFee() > 0) { // Assuming lesson might have a lockerFee property
+        //    finalAmount = finalAmount.add(BigDecimal.valueOf(lesson.getLockerFee()));
+        // }
+
         CheckoutDto checkoutDto = new CheckoutDto();
         checkoutDto.setMerchantUid("enroll_" + enroll.getEnrollId() + "_" + System.currentTimeMillis());
-        checkoutDto.setAmount(new BigDecimal(lesson.getPrice()));
+        // checkoutDto.setAmount(finalAmount); // Use finalAmount after considering locker fee
+        checkoutDto.setAmount(BigDecimal.valueOf(lesson.getPrice())); // Placeholder: use lesson price for now
         checkoutDto.setLessonTitle(lesson.getTitle());
-        checkoutDto.setUserName(user.getName()); // User name from authenticated user
-        checkoutDto.setPgProvider("html5_inicis"); // Example PG provider
+        checkoutDto.setUserName(user.getName());
+        checkoutDto.setPgProvider("html5_inicis");
         return checkoutDto;
     }
 

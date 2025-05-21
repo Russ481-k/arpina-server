@@ -6,17 +6,18 @@ import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDate;
 import java.util.List;
+// List import might be unused if getLessonsByDateRange is fully removed
+// import java.util.List; 
 
 public interface LessonService {
     
-    // 모든 강습 조회 (페이징)
-    Page<LessonDto> getAllLessons(Pageable pageable);
-    
-    // 상태별 강습 조회 (페이징)
-    Page<LessonDto> getLessonsByStatus(String status, Pageable pageable);
-    
-    // 특정 기간 내 강습 조회
-    List<LessonDto> getLessonsByDateRange(LocalDate startDate, LocalDate endDate, String status);
+    // Old methods commented out as they are replaced by the consolidated getLessons:
+    // Page<LessonDto> getAllLessons(Pageable pageable);
+    // Page<LessonDto> getLessonsByStatus(String status, Pageable pageable);
+    // List<LessonDto> getLessonsByDateRange(LocalDate startDate, LocalDate endDate, String status);
+
+    // Consolidated method for fetching lessons with various filters
+    Page<LessonDto> getLessons(String status, List<Integer> months, LocalDate startDate, LocalDate endDate, Pageable pageable);
     
     // 특정 강습 상세 조회
     LessonDto getLessonById(Long lessonId);

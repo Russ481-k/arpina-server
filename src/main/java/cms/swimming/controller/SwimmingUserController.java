@@ -43,11 +43,15 @@ public class SwimmingUserController {
     private final EnrollmentService enrollmentService;
 
     // 1. 수업 조회 API
-    @Operation(summary = "열린 수업 목록 조회", description = "신청 가능한 수업 목록을 페이징하여 제공합니다.")
+    @Operation(summary = "수업 목록 조회", description = "다양한 조건(상태, 연도, 월, 기간)으로 필터링된 수업 목록을 페이징하여 제공합니다. 월은 여러 개를 콤마로 구분하여 전달할 수 있습니다 (예: month=5,6).")
     @GetMapping("/lessons")
-    public ResponseEntity<ApiResponseSchema<Page<LessonDto>>> getOpenLessons(
+    public ResponseEntity<ApiResponseSchema<Page<LessonDto>>> getLessons(
+            @RequestParam(required = false) String status,
+            @Parameter(description = "조회할 월 (여러 개 가능, 콤마로 구분)") @RequestParam(required = false) List<Integer> months,
+            @Parameter(description = "조회 시작 날짜 (YYYY-MM-DD)") @RequestParam(required = false) LocalDate startDate,
+            @Parameter(description = "조회 종료 날짜 (YYYY-MM-DD)") @RequestParam(required = false) LocalDate endDate,
             @PageableDefault(size = 10, sort = "startDate", direction = Sort.Direction.ASC) Pageable pageable) {
-        Page<LessonDto> lessons = lessonService.getLessonsByStatus("OPEN", pageable);
+        Page<LessonDto> lessons = lessonService.getLessons(status, months, startDate, endDate, pageable);
         return ResponseEntity.ok(ApiResponseSchema.success(lessons, "수업 목록 조회 성공"));
     }
 
@@ -59,18 +63,7 @@ public class SwimmingUserController {
         return ResponseEntity.ok(ApiResponseSchema.success(lesson, "수업 상세 조회 성공"));
     }
 
-    @Operation(summary = "기간별 수업 조회", description = "특정 기간의 수업 목록을 조회합니다.")
-    @GetMapping("/lessons/period")
-    public ResponseEntity<ApiResponseSchema<List<LessonDto>>> getLessonsByPeriod(
-            @Parameter(description = "시작 날짜 (YYYY-MM-DD)") @RequestParam LocalDate startDate,
-            @Parameter(description = "종료 날짜 (YYYY-MM-DD)") @RequestParam LocalDate endDate) {
-        List<LessonDto> lessons = lessonService.getLessonsByDateRange(startDate, endDate, "OPEN");
-        return ResponseEntity.ok(ApiResponseSchema.success(lessons, "기간별 수업 조회 성공"));
-    }
-
     // 2. 사물함 조회 API
-    // The old endpoint for listing available LockerDto objects is removed.
-
     @Operation(summary = "사용 가능한 사물함 개수 조회", description = "성별에 따라 사용 가능한 사물함의 개수를 조회합니다.")
     @GetMapping("/lockers/available-count")
     public ResponseEntity<ApiResponseSchema<Map<String, Object>>> getAvailableLockerCount(
@@ -82,20 +75,6 @@ public class SwimmingUserController {
         );
         return ResponseEntity.ok(ApiResponseSchema.success(responseData, "사용 가능한 사물함 개수 조회 성공"));
     }
-
-    // The endpoint for getting a specific LockerDto by ID is problematic as it belongs to the old system.
-    // It requires cms.swimming.service.LockerService and cms.swimming.dto.LockerDto.
-    // If individual locker details are no longer relevant, this should be removed.
-    // For now, commenting it out to ensure the controller compiles with the new LockerService.
-//    @Operation(summary = "특정 사물함 조회", description = "사물함 ID로 특정 사물함 정보를 조회합니다.")
-//    @GetMapping("/lockers/{lockerId}")
-//    public ResponseEntity<ApiResponseSchema<cms.swimming.dto.LockerDto>> getLockerDetail(
-//            @Parameter(description = "조회할 사물함 ID") @PathVariable Long lockerId) {
-//        // This would require injecting the *old* cms.swimming.service.LockerService
-//        // cms.swimming.dto.LockerDto locker = oldLockerService.getLockerById(lockerId);
-//        // return ResponseEntity.ok(ApiResponseSchema.success(locker, "사물함 상세 조회 성공"));
-//         return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).body(ApiResponseSchema.error("This endpoint is under review.", "DEPRECATED_FUNCTIONALITY"));
-//    }
 
     // 3. 신청 및 취소 API
     @Operation(summary = "수업 신청", description = "수업을 신청합니다. 결제는 마이페이지에서 진행됩니다.")
@@ -158,7 +137,7 @@ public class SwimmingUserController {
         return ResponseEntity.ok(ApiResponseSchema.success(enroll, "신청 상세 조회 성공"));
     }
 
-    // 보조 메소드
+    // 5. 보조 메소드
     private User getAuthenticatedUser(Authentication authentication) {
         if (authentication == null || !authentication.isAuthenticated() || authentication.getPrincipal() == null) {
             throw new IllegalStateException("로그인이 필요한 서비스입니다. 인증 정보가 유효하지 않습니다.");

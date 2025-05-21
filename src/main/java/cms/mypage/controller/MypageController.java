@@ -7,6 +7,7 @@ import cms.mypage.dto.PaymentDto;
 import cms.mypage.dto.PasswordChangeDto;
 import cms.mypage.dto.EnrollDto;
 import cms.mypage.dto.CheckoutDto;
+import cms.mypage.dto.CheckoutRequestDto;
 import cms.enroll.service.EnrollmentService;
 import cms.mypage.service.MypagePaymentService;
 import cms.mypage.service.MypageProfileService;
@@ -21,6 +22,7 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -121,13 +123,16 @@ public class MypageController {
         return ResponseEntity.ok(enrollDto);
     }
 
-    @Operation(summary = "Process checkout for enrollment", description = "수강 신청에 대한 결제 준비(Checkout)를 진행합니다.")
-    @PostMapping("/enroll/{id}/checkout")
+    @Operation(summary = "수강 신청 결제 준비", description = "선택한 수강 신청 건에 대해 결제를 준비합니다. PG사 연동에 필요한 정보를 반환합니다.")
+    @PostMapping("/enroll/{enrollId}/checkout")
     public ResponseEntity<CheckoutDto> processCheckout(
-            @AuthenticationPrincipal User user,
-            @PathVariable Long id) {
-        if (user == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        CheckoutDto checkoutDto = enrollService.processCheckout(user, id);
+            @Parameter(description = "신청 ID") @PathVariable Long enrollId,
+            @Parameter(description = "사물함 사용 희망 여부") @Valid @RequestBody CheckoutRequestDto checkoutRequest,
+            @AuthenticationPrincipal User user) {
+        if (user == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build(); 
+        }
+        CheckoutDto checkoutDto = enrollService.processCheckout(user, enrollId, checkoutRequest);
         return ResponseEntity.ok(checkoutDto);
     }
 

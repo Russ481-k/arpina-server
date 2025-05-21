@@ -41,7 +41,7 @@ public class SwimmingAdminController {
     @PreAuthorize("hasAnyRole('PROGRAM_ADMIN', 'SUPER_ADMIN')")
     public ResponseEntity<ApiResponseSchema<Page<LessonDto>>> getAllLessons(
             @PageableDefault(size = 10, sort = "startDate", direction = Sort.Direction.DESC) Pageable pageable) {
-        Page<LessonDto> lessons = lessonService.getAllLessons(pageable);
+        Page<LessonDto> lessons = lessonService.getLessons(null, null, null, null, pageable);
         return ResponseEntity.ok(ApiResponseSchema.success(lessons, "강습 목록 조회 성공"));
     }
 
@@ -49,9 +49,9 @@ public class SwimmingAdminController {
     @GetMapping("/lessons/status/{status}")
     @PreAuthorize("hasAnyRole('PROGRAM_ADMIN', 'SUPER_ADMIN', 'CS_AGENT')")
     public ResponseEntity<ApiResponseSchema<Page<LessonDto>>> getLessonsByStatus(
-            @Parameter(description = "강습 상태 (OPEN, CLOSED, FINISHED)") @PathVariable String status,
+            @Parameter(description = "강습 상태 (OPEN, CLOSED, ONGOING, COMPLETED)") @PathVariable String status,
             @PageableDefault(size = 10, sort = "startDate", direction = Sort.Direction.DESC) Pageable pageable) {
-        Page<LessonDto> lessons = lessonService.getLessonsByStatus(status, pageable);
+        Page<LessonDto> lessons = lessonService.getLessons(status, null, null, null, pageable);
         return ResponseEntity.ok(ApiResponseSchema.success(lessons, "강습 목록 조회 성공"));
     }
 

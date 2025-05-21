@@ -70,7 +70,11 @@ public class Lesson {
     private String updatedIp;
 
     public enum LessonStatus {
-        OPEN, CLOSED, FINISHED
+        OPEN, // 접수중
+        CLOSED, // 접수마감
+        ONGOING, // 수강중
+        COMPLETED // 수강종료
+        // WAIT, FINISHED // Old values, replaced by ONGOING, COMPLETED and a more explicit OPEN/CLOSED distinction
     }
 
     // 수업 상태 변경 메소드

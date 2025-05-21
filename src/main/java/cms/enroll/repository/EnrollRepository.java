@@ -10,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -47,4 +48,23 @@ public interface EnrollRepository extends JpaRepository<Enroll, Long> {
     Page<Enroll> findByPayStatus(String payStatus, Pageable pageable);
     Page<Enroll> findByStatus(String status, Pageable pageable);
     Page<Enroll> findByLesson(cms.swimming.domain.Lesson lesson, Pageable pageable);
+
+    long countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(Long lessonId, String status, String payStatus, LocalDateTime expireDt);
+
+    // Method to count active enrollments for a lesson (PAID or (UNPAID and APPLIED and not expired))
+    @Query("SELECT COUNT(e) FROM Enroll e WHERE e.lesson.lessonId = :lessonId AND (e.payStatus = 'PAID' OR (e.payStatus = 'UNPAID' AND e.status = 'APPLIED' AND e.expireDt > :now))")
+    long countActiveEnrollmentsForLesson(@Param("lessonId") Long lessonId, @Param("now") LocalDateTime now);
+
+    // Method to count UNPAID, APPLIED, active locker users for a lesson by gender
+    @Query("SELECT COUNT(e) FROM Enroll e WHERE e.lesson.lessonId = :lessonId AND e.user.gender = :gender AND e.usesLocker = true AND e.payStatus IN :payStatuses AND e.status = 'APPLIED' AND e.expireDt > :now")
+    long countByLessonLessonIdAndUserGenderAndUsesLockerTrueAndPayStatusInAndExpireDtAfter(@Param("lessonId") Long lessonId, @Param("gender") String gender, @Param("payStatuses") List<String> payStatuses, @Param("now") LocalDateTime now);
+
+    // Method to count PAID locker users for a lesson by gender
+    @Query("SELECT COUNT(e) FROM Enroll e WHERE e.lesson.lessonId = :lessonId AND e.user.gender = :gender AND e.usesLocker = true AND e.payStatus IN :payStatuses")
+    long countByLessonLessonIdAndUserGenderAndUsesLockerTrueAndPayStatusIn(@Param("lessonId") Long lessonId, @Param("gender") String gender, @Param("payStatuses") List<String> payStatuses);
+
+    // For monthly enrollment check (assuming this already exists and is correct)
+    // If it doesn't exist or needs specific logic, it would be defined here.
+    // Example: @Query("SELECT COUNT(e) FROM Enroll e WHERE e.user.uuid = :userUuid AND YEAR(e.lesson.startDate) = YEAR(:lessonStartDate) AND MONTH(e.lesson.startDate) = MONTH(:lessonStartDate) AND e.payStatus IN ('PAID', 'UNPAID')")
+    // long countUserEnrollmentsInMonth(@Param("userUuid") String userUuid, @Param("lessonStartDate") LocalDate lessonStartDate);
 } 

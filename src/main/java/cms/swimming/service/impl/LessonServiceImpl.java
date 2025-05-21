@@ -15,6 +15,9 @@ import javax.persistence.EntityNotFoundException;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.stream.Collectors;
+import javax.persistence.criteria.Predicate;
+import java.util.ArrayList;
+import org.springframework.data.jpa.domain.Specification;
 
 @Service("swimmingLessonServiceImpl")
 @RequiredArgsConstructor
@@ -25,25 +28,41 @@ public class LessonServiceImpl implements LessonService {
     private final EnrollRepository enrollRepository;
 
     @Override
-    public Page<LessonDto> getAllLessons(Pageable pageable) {
-        return lessonRepository.findAll(pageable)
-                .map(LessonDto::fromEntity);
-    }
+    public Page<LessonDto> getLessons(String status, List<Integer> months, LocalDate startDate, LocalDate endDate, Pageable pageable) {
+        Specification<Lesson> spec = (root, query, criteriaBuilder) -> {
+            List<Predicate> predicates = new ArrayList<>();
 
-    @Override
-    public Page<LessonDto> getLessonsByStatus(String status, Pageable pageable) {
-        Lesson.LessonStatus lessonStatus = Lesson.LessonStatus.valueOf(status);
-        return lessonRepository.findByStatus(lessonStatus, pageable)
-                .map(LessonDto::fromEntity);
-    }
+            if (status != null && !status.trim().isEmpty()) {
+                try {
+                    Lesson.LessonStatus lessonStatus = Lesson.LessonStatus.valueOf(status.toUpperCase());
+                    predicates.add(criteriaBuilder.equal(root.get("status"), lessonStatus));
+                } catch (IllegalArgumentException e) {
+                    // TODO: Log this error or throw a specific business exception for invalid status format
+                    // For instance: throw new BusinessRuleException(ErrorCode.INVALID_LESSON_STATUS_FORMAT);
+                    // Depending on requirements, can also choose to ignore or add a predicate for no results.
+                }
+            }
 
-    @Override
-    public List<LessonDto> getLessonsByDateRange(LocalDate startDate, LocalDate endDate, String status) {
-        Lesson.LessonStatus lessonStatus = Lesson.LessonStatus.valueOf(status);
-        return lessonRepository.findByDateRangeAndStatus(startDate, endDate, lessonStatus)
-                .stream()
-                .map(LessonDto::fromEntity)
-                .collect(Collectors.toList());
+            if (months != null && !months.isEmpty()) {
+                predicates.add(criteriaBuilder.function("MONTH", Integer.class, root.get("startDate")).in(months));
+            }
+
+            // Logic for date range: finds lessons that *overlap* with the given range.
+            // A lesson (ls, le) overlaps with query range (qs, qe) if lesson_start_date <= query_end_date AND lesson_end_date >= query_start_date.
+            if (startDate != null && endDate != null) {
+                predicates.add(criteriaBuilder.lessThanOrEqualTo(root.get("startDate"), endDate));
+                predicates.add(criteriaBuilder.greaterThanOrEqualTo(root.get("endDate"), startDate));
+            } else if (startDate != null) {
+                // If only startDate is given, find lessons that are ongoing or start after this date (i.e., their endDate is after this startDate).
+                predicates.add(criteriaBuilder.greaterThanOrEqualTo(root.get("endDate"), startDate));
+            } else if (endDate != null) {
+                // If only endDate is given, find lessons that start on or before this date.
+                predicates.add(criteriaBuilder.lessThanOrEqualTo(root.get("startDate"), endDate));
+            }
+
+            return criteriaBuilder.and(predicates.toArray(new Predicate[0]));
+        };
+        return lessonRepository.findAll(spec, pageable).map(LessonDto::fromEntity);
     }
 
     @Override

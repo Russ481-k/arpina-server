@@ -25,6 +25,7 @@ public enum ErrorCode {
     PROFILE_UPDATE_FAILED("U006", "프로필 업데이트 중 오류가 발생했습니다."),
     TEMP_PASSWORD_ISSUE_FAILED("U007", "임시 비밀번호 발급 중 오류가 발생했습니다."),
     INVALID_CURRENT_PASSWORD("U008", "현재 비밀번호가 올바르지 않습니다."),
+    INVALID_USER_GENDER("U009", "유효하지 않은 사용자 성별 값입니다."),
 
     // --- 수강신청 (Enrollment) 관련 오류 코드 (E001 ~ E099) ---
     ENROLLMENT_NOT_FOUND("E001", "수강 신청 정보를 찾을 수 없습니다."),
@@ -41,6 +42,7 @@ public enum ErrorCode {
     ENROLLMENT_RENEWAL_NOT_ALLOWED("E012", "재수강(갱신)을 할 수 없는 상태입니다."),
     USER_GENDER_REQUIRED_FOR_LOCKER("E013", "라커를 신청하거나 반납하려면 사용자의 성별 정보가 필요합니다."),
     ALREADY_CANCELLED_ENROLLMENT("E014", "이미 취소 처리된 수강 신청입니다."),
+    LESSON_LOCKER_CAPACITY_EXCEEDED_FOR_GENDER("E015", "해당 성별의 강습 사물함 정원이 초과되었습니다."),
 
     // --- 결제 (Payment) 관련 오류 코드 (P001 ~ P099) ---
     PAYMENT_INFO_NOT_FOUND("P001", "결제 정보를 찾을 수 없습니다."),
