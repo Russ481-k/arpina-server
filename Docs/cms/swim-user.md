@@ -33,31 +33,43 @@
       participant U as 사용자
       participant FE as Frontend
       participant API as REST API
-      participant PG as PG
-      Note over FE,API: 🔒 Tx / 잔여 Lock
+      participant KISPG_Window as KISPG 결제창
+      participant KISPG_Server as KISPG 서버
+
+      Note over FE,API: 🔒 Tx / 잔여 Lock (5분)
       U->>FE: 강습 카드 선택 ('신청하기')
       FE->>API: POST /api/v1/swimming/enroll (lesson_id)
       API-->>FE: EnrollInitiationResponseDto (enrollId, paymentPageUrl, paymentExpiresAt)
+
       alt 잔여좌석 있음
-          FE->>U: 결제 페이지로 리디렉션
+          FE->>U: 결제 페이지로 리디렉션 (paymentPageUrl)
           U->>FE: (결제 페이지) 사물함 선택 (선택 사항)
-          FE->>API: (결제 페이지) GET /api/v1/payment/details/{enrollId} (로드 시)
-          API-->>FE: PaymentPageDetailsDto (금액, 라커정보, 5분 만료시각)
+          FE->>API: GET /api/v1/payment/details/{enrollId} (CMS 정보 로드)
+          API-->>FE: PaymentPageDetailsDto (금액, 라커정보, 5분 만료시각 등)
+          FE->>API: GET /api/v1/payment/kispg-init-params/{enrollId} (KISPG 파라미터 로드)
+          API-->>FE: KISPG Init Params (mid, moid, requestHash 등)
           FE->>U: (결제 페이지) 5분 카운트다운 시작, 결제정보 확인
           U->>FE: (결제 페이지) [결제하기] 클릭
-          FE->>PG: 결제창 호출 (amount)
-          PG-->>FE: SUCCESS (pg_tid)
-          FE->>API: POST /api/v1/payment/confirm/{enrollId} (pg_tid, wantsLocker)
-          API-->>PG: 검증
-          API-->>FE: 200 OK → 상태 PAID
-          FE->>U: (결제 페이지) 결제 완료 화면 -> 마이페이지 이동 안내
+          FE->>KISPG_Window: KISPG 결제창 호출 (수신한 파라미터 사용)
+          KISPG_Window->>U: 결제 수단 선택 및 인증
+          U->>KISPG_Window: 인증 완료
+          KISPG_Window-->>KISPG_Server: 결제 시도
+          KISPG_Server-->>API: POST /api/v1/kispg/payment-notification (Webhook - 결제 결과 통지: tid, 성공/실패 등)
+          API-->>KISPG_Server: Webhook 수신 응답 ("OK")
+          Note over API: Webhook 처리: KISPG 데이터 검증, Enroll/Payment 상태 업데이트 (PAID 등)
+          KISPG_Server-->>KISPG_Window: 결제 처리 완료
+          KISPG_Window-->>FE: 지정된 Return URL로 사용자 리디렉션 (결제 결과 포함 가능)
+          FE->>API: POST /api/v1/payment/confirm/{enrollId} (pgToken=tid from KISPG, wantsLocker) - UX 업데이트 및 최종 사물함 상태 전달
+          API-->>FE: 200 OK (상태: PAYMENT_SUCCESSFUL 또는 PAYMENT_PROCESSING)
+          FE->>U: (결제 페이지) 최종 결제 상태 안내 -> 마이페이지 이동 안내
       else 잔여좌석 없음 또는 오류
           API-->>FE: 오류 응답
           FE->>U: 신청 불가 안내
       end
-      alt 5분 타임아웃 또는 PG 실패
+
+      alt 5분 타임아웃 또는 KISPG 결제창에서 사용자 취소/실패
           FE->>U: (결제 페이지) 이전 페이지로 리디렉션, "시간 초과/결제 실패" 토스트
-          Note over FE,API: Enroll.pay_status -> PAYMENT_TIMEOUT 또는 UNPAID 유지
+          Note over FE,API: Enroll.pay_status -> PAYMENT_TIMEOUT (배치) 또는 UNPAID 유지
       end
   ```
 
@@ -65,13 +77,13 @@
 
   ## 3. **화면 정의**
 
-  | ID       | 화면                | 주요 UI 요소                                                                                              | 전송 API                                                                        |
-  | -------- | ------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-  | **P-01** | 강습 목록           | ① 필터 모달(상태, 월, 시간대)② 강습 카드 Grid - 버튼색: `신청(Y)/잔여없음(gray)`                          | GET /api/v1/swimming/lessons                                                    |
-  | **P-02** | **결제 페이지**     | ① 신청 요약 ② **5분 카운트다운 타이머** ③ 사물함 선택 ④ PG 드롭인 UI                                      | GET /api/v1/payment/details/{enrollId}, POST /api/v1/payment/confirm/{enrollId} |
-  | **P-03** | 마이페이지-신청내역 | ① 리스트(상태 Badge: `PAID`, `CANCELED`, `PAYMENT_TIMEOUT`) ② ~~1h 카운트다운~~ ③ ~~결제~~/취소/환불 버튼 | GET /api/v1/swimming/my-enrolls                                                 |
-  | **P-04** | ~~결제처리~~        | (P-02 결제 페이지에 통합됨)                                                                               | ~~POST /api/v1/swimming/pay~~                                                   |
-
+  | ID       | 화면                | 주요 UI 요소                                                                                                            | 전송 API                                                                                                                                       |
+  | -------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+  | **P-01** | 강습 목록           | ① 필터 모달(상태, 월, 시간대)② 강습 카드 Grid - 버튼색: `신청(Y)/잔여없음(gray)`                                        | GET /api/v1/swimming/lessons                                                                                                                   |
+  | **P-02** | **결제 페이지**     | ① 신청 요약 ② **5분 카운트다운 타이머** ③ 사물함 선택 ④ KISPG 결제 UI 연동                                              | GET /api/v1/payment/details/{enrollId}, GET /api/v1/payment/kispg-init-params/{enrollId}, POST /api/v1/payment/confirm/{enrollId} (KISPG 연동) |
+  | **P-03** | 마이페이지-신청내역 | ① 리스트(상태 Badge: `PAID`, `CANCELED`, `PAYMENT_TIMEOUT`, `UNPAID` (결제 계속 가능 시)) ② 취소/환불 버튼 (KISPG 연동) | GET /api/v1/swimming/my-enrolls (또는 Mypage API `/enroll`)                                                                                    |
+  | **P-04** | ~~결제처리~~        | (P-02 KISPG 결제 페이지에 통합됨)                                                                                       | ~~POST /api/v1/swimming/pay~~ (제거됨)                                                                                                         |
+  | **P-05** | 재등록 모달         | 이전 수강 강습 제안 + 사물함 유지 여부                                                                                  | POST /api/v1/mypage/renewal (성공 시 KISPG 결제 페이지로 이동)                                                                                 |
 
   > 모바일: P-01, P-03는 Masonry Grid → 1 열, P-02(결제 페이지)는 풀스크린 모달 또는 전용 페이지.
 
@@ -90,19 +102,20 @@
   ### 4-2. 엔드포인트
 
   | Method  | URL                                       | Req Body/QS                                               | Res Body                                                                       | 비고                                                                                                                                                                                                                                                                                                                                          |
-  | ------- | ----------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | ------- | ----------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
   | GET     | /api/v1/swimming/lessons                  | status, year, month, startDate, endDate, page, size, sort | Page<LessonDTO>                                                                | 수업 목록 조회 (상태: OPEN, CLOSED, ONGOING, COMPLETED 등, 연도, 월, 기간별 필터링 및 페이징). 'year' 매개변수는 컨트롤러에서 받지만, 현재 서비스 로직에서는 'month'를 주로 사용하며 'year' 단독 필터링은 지원되지 않을 수 있습니다. LessonDTO는 `lesson` 테이블 스키마(DDL 섹션 참조)를 따르며, `registration_end_date`를 포함하지 않습니다. |
   | GET     | /api/v1/swimming/lessons/{lessonId}       | -                                                         | LessonDTO                                                                      | 특정 수업 상세 정보. LessonDTO는 위와 동일.                                                                                                                                                                                                                                                                                                   |
-  | GET     | /api/v1/swimming/lockers/availability     | lessonId                                                  | Map<String, Integer> (e.g. {"maleAvailable":10, "femaleAvailable":5})          | 특정 강습의 성별 사용 가능 라커 수 조회. (이전 `/api/v1/swimming/lockers` 대체). 결제 페이지 내 라커 선택 UI에 활용.                                                                                                                                                                                                                          |
-  | POST    | /api/v1/swimming/enroll                   | EnrollRequestDto (lessonId: Long)                         | **EnrollInitiationResponseDto** ({enrollId, paymentPageUrl, paymentExpiresAt}) | 수업 초기 신청. 성공 시 `enroll` 레코드 UNPAID 상태로 생성 (`expire_dt`은 5분 후). 결제 페이지로 이동할 정보 반환. 신청 시점에 즉시 좌석 확보 시도.                                                                                                                                                                                           |
-  | POST    | /api/v1/swimming/enroll/{enrollId}/cancel | CancelRequestDto                                          | EnrollResponseDto                                                              | 신청 취소 (마이페이지 등에서 사용).                                                                                                                                                                                                                                                                                                           |
-  | GET     | /api/v1/swimming/my-enrolls               | -                                                         | List<EnrollDTO>                                                                | 내 신청 내역 전체 조회. `EnrollDTO`는 `user.md` (Mypage API) 문서의 4.3절 스키마를 따르며, `usesLocker` 등의 상세 정보를 포함합니다. `payStatus`에 `PAYMENT_TIMEOUT` 추가.                                                                                                                                                                    |
+  | GET     | /api/v1/swimming/lockers/availability     | lessonId                                                  | Map<String, Integer> (e.g. {"maleAvailable":10, "femaleAvailable":5})          | 특정 강습의 성별 사용 가능 라커 수 조회. 결제 페이지 내 라커 선택 UI에 활용.                                                                                                                                                                                                                                                                  |
+  | POST    | /api/v1/swimming/enroll                   | EnrollRequestDto (lessonId: Long)                         | **EnrollInitiationResponseDto** ({enrollId, paymentPageUrl, paymentExpiresAt}) | 수업 초기 신청. 성공 시 `enroll` 레코드 UNPAID 상태로 생성 (`expire_dt`은 5분 후). KISPG 결제 페이지로 이동할 정보 반환. 신청 시점에 즉시 좌석 확보 시도.                                                                                                                                                                                     |
+  | POST    | /api/v1/swimming/enroll/{enrollId}/cancel | CancelRequestDto                                          | EnrollResponseDto                                                              | 신청 취소 (마이페이지 등에서 사용, KISPG 환불 연동).                                                                                                                                                                                                                                                                                          |
+  | GET     | /api/v1/swimming/my-enrolls               | -                                                         | List<EnrollDTO>                                                                | 내 신청 내역 전체 조회. `EnrollDTO`는 `user.md` (Mypage API) 문서의 4.3절 스키마를 따르며, `usesLocker` 등의 상세 정보를 포함합니다. `payStatus`에 `PAYMENT_TIMEOUT` 추가. `paymentPageUrl`은 KISPG 결제 페이지로 안내.                                                                                                                       |
   | GET     | /api/v1/swimming/my-enrolls/status        | status, page, size                                        | Page<EnrollDTO>                                                                | 상태별 신청 내역(페이징). `EnrollDTO`는 `user.md` (Mypage API) 문서의 4.3절 스키마를 따릅니다.                                                                                                                                                                                                                                                |
   | GET     | /api/v1/swimming/enrolls/{enrollId}       | -                                                         | EnrollDTO                                                                      | 특정 신청 상세 정보. `EnrollDTO`는 `user.md` (Mypage API) 문서의 4.3절 스키마를 따릅니다.                                                                                                                                                                                                                                                     |
-  | **NEW** | **GET**                                   | **/api/v1/payment/details/{enrollId}**                    | -                                                                              | **PaymentPageDetailsDto**                                                                                                                                                                                                                                                                                                                     | **결제 페이지 전용.** `enrollId`로 결제에 필요한 상세 정보(강습명, 금액, 라커 옵션, 사용자 성별, 결제 만료 시각) 조회. `enroll.expire_dt` 및 `pay_status=UNPAID` 유효성 검사. |
-  | **NEW** | **POST**                                  | **/api/v1/payment/confirm/{enrollId}**                    | `{ pgToken: String, wantsLocker: Boolean }`                                    | 200 OK / Error                                                                                                                                                                                                                                                                                                                                | **결제 페이지 전용.** PG 결제 성공 후 호출. PG토큰 검증, 최종 좌석/라커 가능여부 확인 후 `enroll.pay_status`를 `PAID`로 변경 및 `payment` 레코드 생성. Webhook 병행 권장.     |
-  | GET     | /api/v1/swimming/renewal                  | -                                                         | List<RenewalDTO>                                                               | (구현 예정) 재등록 안내                                                                                                                                                                                                                                                                                                                       |
-  | POST    | /api/v1/swimming/renewal                  | lesson_id, carry_locker(Y/N)                              | 200                                                                            | (구현 예정) 기존 locker 유지 가능                                                                                                                                                                                                                                                                                                             |
+  | **NEW** | **GET**                                   | **/api/v1/payment/details/{enrollId}**                    | -                                                                              | **PaymentPageDetailsDto**                                                                                                                                                                                                                                                                                                                     | **KISPG 결제 페이지 전용.** `enrollId`로 결제에 필요한 CMS 내부 상세 정보(강습명, 금액, 라커 옵션, 사용자 성별, 결제 만료 시각) 조회. `enroll.expire_dt` 및 `pay_status=UNPAID` 유효성 검사. |
+  | **NEW** | **GET**                                   | **/api/v1/payment/kispg-init-params/{enrollId}**          | -                                                                              | **KISPGInitParamsDto** (가칭, `mid`, `moid`, `requestHash` 등 KISPG 명세에 따름)                                                                                                                                                                                                                                                              | **KISPG 결제 페이지 전용.** `enrollId`로 KISPG 결제창 호출에 필요한 파라미터 조회. (상세 내용은 `Docs/cms/kispg-payment-integration.md` 참조)                                                |
+  | **NEW** | **POST**                                  | **/api/v1/payment/confirm/{enrollId}**                    | `{ pgToken: String, wantsLocker: Boolean }`                                    | 200 OK (상태: PAYMENT_SUCCESSFUL/PROCESSING) / Error                                                                                                                                                                                                                                                                                          | **KISPG 결제 페이지 전용.** KISPG 결제 후 `returnUrl`에서 호출. 주 목적은 UX 관리 및 `wantsLocker` 최종 반영. 실제 결제 확정은 KISPG Webhook을 통함.                                         |
+  | GET     | /api/v1/mypage/renewal                    | -                                                         | List<RenewalDTO>                                                               | (마이페이지 API 경로 사용) 재등록 안내                                                                                                                                                                                                                                                                                                        |
+  | POST    | /api/v1/mypage/renewal                    | lesson_id, carry_locker(Y/N)                              | EnrollInitiationResponseDto                                                    | (마이페이지 API 경로 사용) 기존 locker 유지 가능. 성공 시 KISPG 결제 페이지로 이동.                                                                                                                                                                                                                                                           |
 
   **EnrollInitiationResponseDto 스키마:**
 
@@ -110,7 +123,7 @@
   {
     "enrollId": 12345,
     "lessonId": 678,
-    "paymentPageUrl": "/payment/process?enroll_id=12345", // 예시 URL
+    "paymentPageUrl": "/payment/process?enroll_id=12345", // 예시 URL (KISPG 결제 연동)
     "paymentExpiresAt": "2025-07-01T10:05:00Z" // UTC, 5분 후
   }
   ```
@@ -163,27 +176,27 @@
 
   ## 6. **비즈니스 룰**
 
-  | 구분                         | 세부 규칙                                                                                                                                                                                        |
-  | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-  | **선착순**                   | _PG 결제 SUCCESS 시점 (`POST /api/v1/payment/confirm/{enrollId}`)_ 에 `pay_status=PAID` 로 바뀌어야 정원 확정. `POST /api/v1/swimming/enroll` 시점에 정원 가능성이 있어야 결제 페이지 접근 가능. |
-  | **5분 결제 페이지 타임아웃** | `enroll.expire_dt < NOW()` + `pay_status='UNPAID'` ⇒ `PAYMENT_TIMEOUT`. 프론트엔드는 타이머 만료 시 이전 페이지로 리디렉션 및 안내 토스트.                                                       |
-  | **미성년자 제한**            | `user.adult_verified=0` 이면 `/api/v1/swimming/enroll` → 4003                                                                                                                                    |
-  | **사물함 사용 신청**         | **결제 페이지에서** `wantsLocker: true`로 최종 선택. 시스템은 해당 시점에 사용자의 성별을 기준으로 배정 시도 및 최종 결제 시 확정.                                                               |
-  | **사물함 재고(강습별)**      | `lesson.[gender]_locker_cap` 내에서 사용 가능. **결제 페이지 진입 및 최종 결제 시** 해당 강습의 성별 라커 잔여분 확인.                                                                           |
-  | **결제 페이지 접근 제한**    | `/api/v1/swimming/enroll` 호출 시, 강습의 (실제 PAID 수강생 수 + 현재 유효한 결제 페이지 접근자 수) < 강습 정원인 경우에만 결제 페이지 접근 관련 정보(`EnrollInitiationResponseDto`) 반환.       |
-  | **재등록 우선권**            | 재등록 기간 D-7~D-5, 신규 오픈 D-4; 기간 외 API 403                                                                                                                                              |
-  | **취소/환불**                | 사용 개시 전 취소 → PG 전액 취소, 이후 관리자 검토(부분 환불)                                                                                                                                    |
-  | **월별 중복 제한**           | 동일 사용자는 같은 달에 하나의 강습만 신청 가능 (오류코드 4004: 월별 중복 신청)                                                                                                                  |
+  | 구분                         | 세부 규칙                                                                                                                                                                                                      |
+  | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | **선착순**                   | _KISPG Webhook (`POST /api/v1/kispg/payment-notification`) 처리 완료 시점_ 에 `pay_status=PAID` 로 바뀌어야 정원 확정. `POST /api/v1/swimming/enroll` 시점에 정원 가능성이 있어야 KISPG 결제 페이지 접근 가능. |
+  | **5분 결제 페이지 타임아웃** | `enroll.expire_dt < NOW()` + `pay_status='UNPAID'` ⇒ `PAYMENT_TIMEOUT`. 프론트엔드는 KISPG 결제 페이지에서 타이머 만료 시 이전 페이지로 리디렉션 및 안내 토스트.                                               |
+  | **미성년자 제한**            | `user.adult_verified=0` 이면 `/api/v1/swimming/enroll` → 4003                                                                                                                                                  |
+  | **사물함 사용 신청**         | **KISPG 결제 페이지에서** `wantsLocker: true`로 최종 선택. 시스템은 해당 시점에 사용자의 성별을 기준으로 배정 시도 및 KISPG Webhook 처리 또는 `/api/v1/payment/confirm` 시점에 확정.                           |
+  | **사물함 재고(강습별)**      | `lesson.[gender]_locker_cap` 내에서 사용 가능. **KISPG 결제 페이지 진입 및 최종 결제 시** 해당 강습의 성별 라커 잔여분 확인.                                                                                   |
+  | **결제 페이지 접근 제한**    | `/api/v1/swimming/enroll` 호출 시, 강습의 (실제 PAID 수강생 수 + 현재 유효한 KISPG 결제 페이지 접근자 수) < 강습 정원인 경우에만 결제 페이지 접근 관련 정보(`EnrollInitiationResponseDto`) 반환.               |
+  | **재등록 우선권**            | 재등록 기간 D-7~D-5, 신규 오픈 D-4; 기간 외 `POST /api/v1/mypage/renewal` API 403                                                                                                                              |
+  | **취소/환불**                | 레슨 시작 전 취소 → KISPG 전액 취소 연동. 이후 관리자 검토(KISPG 부분 환불 연동)                                                                                                                               |
+  | **월별 중복 제한**           | 동일 사용자는 같은 달에 하나의 강습만 신청 가능 (오류코드 4004: 월별 중복 신청)                                                                                                                                |
 
   ***
 
   ## 7. 배치/이벤트 (User Side 관련)
 
-  | 이름                      | 주기     | 설명                                                                                                        |
-  | ------------------------- | -------- | ----------------------------------------------------------------------------------------------------------- |
-  | **payment-timeout-sweep** | 1-5 min  | `UNPAID` & `expire_dt` 초과 레코드 → `PAYMENT_TIMEOUT`, (결제 페이지에서 선택했던) locker roll-back 등 처리 |
-  | **pg-webhook**            | 실시간   | PG callback 검증, 위·변조 체크 ◀→ enroll·payment 갱신                                                       |
-  | **renewal-notifier**      | 하루 1회 | 재등록 대상자 알림(LMS)                                                                                     |
+  | 이름                      | 주기     | 설명                                                                                                              |
+  | ------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------- |
+  | **payment-timeout-sweep** | 1-5 min  | `UNPAID` & `expire_dt` 초과 레코드 → `PAYMENT_TIMEOUT`, (KISPG 결제 페이지에서 선택했던) locker roll-back 등 처리 |
+  | **pg-webhook**            | 실시간   | KISPG callback 검증, 위·변조 체크 ◀→ enroll·payment 갱신                                                          |
+  | **renewal-notifier**      | 하루 1회 | 재등록 대상자 알림(LMS)                                                                                           |
 
   ***
 
@@ -191,9 +204,9 @@
 
   1.  **동시 클릭 (`/enroll`)** → DB `SELECT … FOR UPDATE` + UNIQUE 인덱스(`lesson_id`,`user_id` ON `enroll` table WHERE `pay_status != 'PAYMENT_TIMEOUT' or CANCELED_UNPAID`)
       - 정원 초과 시 결제 페이지 접근 불가 응답.
-  2.  **PG 결제 실패 (결제 페이지)** → `payment.status=FAIL`, `enroll` 그대로 UNPAID (5분 내 재시도 가능).
+  2.  **KISPG 결제 실패 (결제 페이지)** → `payment.status=FAIL`, `enroll` 그대로 UNPAID (5분 내 재시도 가능).
   3.  **결제 페이지 타임아웃** → 프론트엔드 자동 리디렉션 (e.g. 강습 목록) + "5분 시간 초과" 토스트. `enroll.pay_status`는 배치 또는 다음 접근 시 `PAYMENT_TIMEOUT` 처리.
-  4.  **Webhook 지연**(PG > 5 초) → 프론트 Poll `/api/v1/swimming/enrolls/{id}` (마이페이지에서) 5 회(2 s 간격) 후 로딩 모달 종료 (결제 페이지에서는 즉시 결과 피드백 가정)
+  4.  **Webhook 지연**(KISPG > 5 초) → 프론트 Poll `/api/v1/swimming/enrolls/{id}` (마이페이지에서) 5 회(2 s 간격) 후 로딩 모달 종료 (결제 페이지에서는 즉시 결과 피드백 가정)
 
   ***
 
@@ -218,13 +231,14 @@
   - **상태별 버튼색 (강습 목록)**:
     - `OPEN` (신청 가능) → Blue "신청하기"
     - `CLOSED` (정원 마감 등) → Gray "마감"
-  - **결제 페이지 (`pages/payment/process.jsx` 또는 유사 경로)**:
+  - **결제 페이지 (`pages/payment/process.jsx` 또는 유사 경로, KISPG 연동)**:
+    - **API 호출**: `GET /api/v1/payment/details/{enrollId}` (CMS 정보), `GET /api/v1/payment/kispg-init-params/{enrollId}` (KISPG 파라미터) 호출.
     - **5분 카운트다운 타이머**: React `useState` 및 `useEffect`를 사용하여 명확하게 표시. 만료 시 Next.js `useRouter`를 사용하여 자동 리디렉션 및 `react-toastify` 같은 라이브러리로 토스트 "5분의 시간이 경과되어 결제 이전 창으로 이동합니다." 표시.
     - **라커 선택 UI**: 성별에 따른 잔여 개수 표시, 선택 시 React `useState`로 즉시 총 결제 금액 업데이트.
-    - PG 연동: Iamport 등 PG사 UI 드롭인.
+    - KISPG 연동: KISPG 제공 방식(SDK 또는 form POST)으로 결제창 호출. KISPG `returnUrl` 처리 시 `POST /api/v1/payment/confirm/{enrollId}` 호출.
   - **마이페이지 신청 내역 (`components/EnrollCard.jsx` 또는 유사)**:
-    - `UNPAID` (결제 시도 전/실패 후 5분 이내, `enroll.paymentPageUrl` 사용 가능 시) → Yellow `<Link href={enroll.paymentPageUrl}><a>결제 페이지로 이동</a></Link>` (만약 `enroll.expire_dt`가 유효하고, 사용자가 결제 페이지에서 이탈한 경우 다시 진입 허용. 단, 이 경우 남은 시간만 카운트) 또는 "결제 진행 중" (만료 전).
-    - `PAID` → Green "결제완료" + 영수증 링크
+    - `UNPAID` (결제 시도 전/실패 후 5분 이내, `enroll.paymentPageUrl` 사용 가능 시, KISPG 연동) → Yellow `<Link href={enroll.paymentPageUrl}><a>결제 페이지로 이동</a></Link>` (만약 `enroll.expire_dt`가 유효하고, 사용자가 결제 페이지에서 이탈한 경우 다시 진입 허용. 단, 이 경우 남은 시간만 카운트) 또는 "결제 진행 중" (만료 전).
+    - `PAID` (KISPG 결제 완료) → Green "결제완료" + 영수증 링크 (필요시 KISPG 제공 링크 또는 자체 생성)
     - `CANCELED_*` → Red "취소됨"
     - `PAYMENT_TIMEOUT` → Gray "시간 초과"
   - **Accessibility**: 강습 카드 ALT 텍스트 "{요일·시간대} 초급반 잔여 {n}석"
@@ -235,10 +249,10 @@
 
   1. PG 상용키 교체 & 도메인 whitelisting
   2. Webhook URL 방화벽 허용
-  3. **payment-timeout-sweep** 배치 crontab 등록 (주기: 1-5분)
-  4. 잔여좌석 모니터 Grafana Dashboard (PAID 뿐 아니라 UNPAID+expire_dt 유효 건 포함)
-  5. **신규 결제 페이지 UI/UX 최종 검토**
-  6. **결제 페이지 타임아웃 리디렉션 및 토스트 메시지 확인**
+  3. **payment-timeout-sweep** 배치 crontab 등록 (주기: 1-5분, KISPG 연동)
+  4. 잔여좌석 모니터 Grafana Dashboard (PAID 뿐 아니라 UNPAID+expire_dt 유효 건 포함, KISPG 연동)
+  5. **신규 KISPG 결제 페이지 UI/UX 최종 검토**
+  6. **KISPG 결제 페이지 타임아웃 리디렉션 및 토스트 메시지 확인**
 
   ***
 

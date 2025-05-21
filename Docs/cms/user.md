@@ -2,7 +2,7 @@
 
 > **Base URL (Authenticated):** `/api/v1/mypage` > **Auth:** `Authorization: Bearer {JWT}` _(필수)_
 > 모든 엔드포인트는 **HTTPS** + **JWT** 필수이며, 로그인된 일반 회원 권한(`ROLE_USER`)으로 접근한다.
-> **결제**는 **전용 결제 페이지**에서 진행된다. 강습 신청 후 해당 페이지로 리디렉션된다.
+> **결제**는 **전용 결제 페이지**에서 KISPG를 통해 진행된다. 강습 신청 (`/api/v1/swimming/enroll` 또는 마이페이지 `/renewal`) 후 해당 페이지로 리디렉션된다.
 
 ---
 
@@ -45,23 +45,32 @@
 
 #### 3.3 수강 내역 관리 (Enrollments on Mypage)
 
-| #   | Method       | URL                             | Req.Body / QS                              | Resp                            | Scope | Comment                                                                 |
-| --- | ------------ | ------------------------------- | ------------------------------------------ | ------------------------------- | ----- | ----------------------------------------------------------------------- |
-| 1   | GET          | `/enroll`                       | `status?`                                  | List<EnrollDto>                 | USER  | 현 사용자의 모든 enrollments 조회 (payStatus에 `PAYMENT_TIMEOUT` 추가)  |
-| 2   | GET          | `/enroll/{id}`                  | –                                          | EnrollDto                       | USER  | 특정 enrollment 상세 조회                                               |
-| 3   | ~~**POST**~~ | ~~**`/enroll/{id}/checkout`**~~ | `CheckoutRequestDto ({wantsLocker: Bool})` | `CheckoutDto`                   | USER  | **(제거됨 - 결제 페이지 로직으로 이전)**                                |
-| 4   | ~~**POST**~~ | ~~**`/enroll/{id}/pay`**~~      | `{ "pgToken": "" }`                        | 200 / Error                     | USER  | **(제거됨 - 결제 페이지 로직으로 이전)**                                |
-| 5   | PATCH        | `/enroll/{id}/cancel`           | `{ "reason": "" }`                         | Requested                       | USER  | enrollment 취소 요청
-| 6   | POST         | `/renewal`                      | `RenewalRequestDto`                        | **EnrollInitiationResponseDto** | USER  | 신규 재수강 신청 (enroll 테이블에 레코드 생성, 이후 결제 페이지로 이동) |
+| #   | Method       | URL                             | Req.Body / QS                              | Resp                            | Scope | Comment                                                                       |
+| --- | ------------ | ------------------------------- | ------------------------------------------ | ------------------------------- | ----- | ----------------------------------------------------------------------------- |
+| 1   | GET          | `/enroll`                       | `status?`                                  | List<EnrollDto>                 | USER  | 현 사용자의 모든 enrollments 조회 (payStatus에 `PAYMENT_TIMEOUT` 추가)        |
+| 2   | GET          | `/enroll/{id}`                  | –                                          | EnrollDto                       | USER  | 특정 enrollment 상세 조회                                                     |
+| 3   | ~~**POST**~~ | ~~**`/enroll/{id}/checkout`**~~ | `CheckoutRequestDto ({wantsLocker: Bool})` | `CheckoutDto`                   | USER  | **(제거됨 - KISPG 결제 페이지 로직으로 이전)**                                |
+| 4   | ~~**POST**~~ | ~~**`/enroll/{id}/pay`**~~      | `{ "pgToken": "" }`                        | 200 / Error                     | USER  | **(제거됨 - KISPG 결제 페이지 로직으로 이전)**                                |
+| 5   | PATCH        | `/enroll/{id}/cancel`           | `{ "reason": "" }`                         | Requested                       | USER  | enrollment 취소 요청 (결제 전/후 모두 가능, KISPG 환불 연동)                  |
+| 6   | POST         | `/renewal`                      | `RenewalRequestDto`                        | **EnrollInitiationResponseDto** | USER  | 신규 재수강 신청 (enroll 테이블에 레코드 생성, 이후 KISPG 결제 페이지로 이동) |
 
 #### 3.4 결제 내역 (Payment)
 
-| Method | URL                    | Req.Body | Resp              | Scope |
-| ------ | ---------------------- | -------- | ----------------- | ----- |
-| GET    | `/payment`             | page…    | List\<PaymentDto> | USER  |
-| POST   | `/payment/{id}/cancel` | –        | Requested         | USER  |
+| Method | URL                    | Req.Body          | Resp              | Scope |
+| ------ | ---------------------- | ----------------- | ----------------- | ----- | ------------------------------------------------- |
+| GET    | `/payment`             | page…             | List\<PaymentDto> | USER  |
+| POST   | `/payment/{id}/cancel` | `{ "reason": ""}` | Requested         | USER  | KISPG 환불 연동. 사용자 요청 후 관리자 승인 필요. |
 
-> **~~Checkout → Pay 시퀀스~~ (제거됨)** > ~~① FE `POST /enroll/{id}/checkout` (body: `{ "wantsLocker": true/false }`) → 서버가 사물함 가능여부 확인 후 금액·주문번호 `CheckoutDto` 반환~~ > ~~② FE 아임포트 **카드 결제** 실행 (`merchantUid`, `amount` 전달)~~ > ~~③ 성공 시 PG 콜백 파라미터 `pgToken` 수신~~ > ~~④ FE `POST /enroll/{id}/pay` → 서버가 **영수증 검증** 후 `status=PAID` 확정~~
+> **~~Checkout → Pay 시퀀스~~ (제거됨)** > ~~① FE `POST /enroll/{id}/checkout` (body: `{ "wantsLocker": true/false }`) → 서버가 사물함 가능여부 확인 후 금액·주문번호 `CheckoutDto` 반환~~ > ~~② FE 아임포트 **카드 결제** 실행 (`merchantUid`, `amount` 전달)~~ > ~~③ 성공 시 PG 콜백 파라미터 `pgToken` 수신~~ > ~~④ FE `POST /enroll/{id}/pay` → 서버가 **영수증 검증** 후 `status=PAID` 확정~~ > **신규 결제 흐름:**
+>
+> 1. 사용자 강습 신청 (`POST /api/v1/swimming/enroll` 또는 마이페이지 `POST /renewal`).
+> 2. 성공 시 `EnrollInitiationResponseDto` (`enrollId`, `paymentPageUrl`, `paymentExpiresAt` 등) 수신.
+> 3. 사용자는 `paymentPageUrl`로 이동 (예: `/payment/process?enroll_id={enrollId}`).
+> 4. 결제 페이지에서 `GET /api/v1/payment/details/{enrollId}` (CMS 정보) 및 `GET /api/v1/payment/kispg-init-params/{enrollId}` (KISPG 파라미터) 호출.
+> 5. KISPG 결제창 연동 및 결제 진행.
+> 6. KISPG가 백엔드 `POST /api/v1/kispg/payment-notification` (Webhook)으로 결과 전송.
+> 7. 백엔드가 Webhook 처리 후 `Enroll` 및 `Payment` 상태 업데이트.
+> 8. 사용자는 KISPG의 `returnUrl`로 돌아오며, 프론트엔드는 `POST /api/v1/payment/confirm/{enrollId}`를 호출하여 UX 업데이트 및 최종 `wantsLocker` 상태 전달.
 
 ---
 
@@ -102,7 +111,7 @@
   },
   "status": "UNPAID", // pay_status 값 (UNPAID, PAID, PAYMENT_TIMEOUT, CANCELED_UNPAID)
   "applicationDate": "2025-05-17T10:00:00+09:00",
-  "paymentExpireDt": "2025-05-17T10:05:00+09:00", // enroll.expire_dt (결제 페이지 만료 시간)
+  "paymentExpireDt": "2025-05-17T10:05:00+09:00", // enroll.expire_dt (KISPG 결제 페이지 만료 시간)
   "usesLocker": true, // 결제 시 확정된 사물함 사용 여부
   "isRenewal": false,
   "cancelStatus": "NONE", // NONE, REQ, APPROVED, DENIED
@@ -112,7 +121,7 @@
     "close": "2025-05-22T00:00:00+09:00"
   },
   "canAttemptPayment": false, // (계산된 필드) 현재 이 신청 건에 대해 결제 페이지로 이동하여 결제를 시도할 수 있는지 여부 (status가 UNPAID이고 paymentExpireDt가 지나지 않았을 때 등)
-  "paymentPageUrl": "/payment/process?enroll_id=9999" // (추가) status가 UNPAID이고 만료 전일 경우, 결제 페이지로 이동할 URL
+  "paymentPageUrl": "/payment/process?enroll_id=9999" // (추가) status가 UNPAID이고 만료 전일 경우, KISPG 결제 페이지로 이동할 URL
 }
 ```
 
@@ -120,9 +129,9 @@
 
 ```jsonc
 // 이 DTO는 더 이상 Mypage API에서 직접 사용되지 않음.
-// 결제 페이지 관련 API (e.g., /api/v1/payment/details/{enrollId})에서 유사한 정보를 제공.
+// KISPG 결제 페이지 관련 API (e.g., /api/v1/payment/details/{enrollId} 및 /api/v1/payment/kispg-init-params/{enrollId})에서 필요한 정보를 제공.
 // {
-//   "merchantUid": "swim_9999_202505181300",
+//   "merchantUid": "swim_9999_202505181300", // KISPG의 moid에 해당
 //   "amount": 65000,
 //   "lessonTitle": "수영 강습 프로그램",
 //   "userName": "양순민",
@@ -145,9 +154,12 @@
 {
   "paymentId": 1,
   "enrollId": 9999,
-  "amount": 65000,
-  "paidAt": "2025-04-18T13:00:00+09:00",
-  "status": "SUCCESS" // SUCCESS | CANCELED | PARTIAL | REFUND_REQUESTED
+  "tid": "kistest00m...", // (추가) KISPG 거래번호
+  "paid_amt": 70000, // (수정) 초기 승인 총액 (기존 amount에서 변경)
+  "refunded_amt": 0, // (추가) 누적 환불액
+  "paidAt": "2025-04-18T13:00:00+09:00", // 기존 필드명 유지 (결제일시)
+  "refund_dt": null, // (추가) 마지막 환불 시각
+  "status": "SUCCESS" // SUCCESS | CANCELED | PARTIAL_REFUNDED | REFUND_REQUESTED
 }
 ```
 
@@ -180,6 +192,7 @@
 | TEMP_PW_REQUIRED     | 403  | 임시 PW 변경 필요       | temp_pw_flag = 1                                              |
 | NO_AUTH              | 401  | 인증 필요               | JWT 누락/만료                                                 |
 | PAYMENT_TIMEOUT_INFO | 200  | 결제 시간 초과          | (Mypage에서 상태 조회 시) `enroll.pay_status=PAYMENT_TIMEOUT` |
+| KISPG_ERROR          | 500  | KISPG 연동 오류         | PG사 통신 또는 처리 중 오류 발생                              |
 
 ---
 
@@ -228,11 +241,12 @@ CREATE TABLE `enroll` (
 `lesson_id` BIGINT NOT NULL COMMENT '강습 ID (FK from lesson.lesson_id)',\
 `uses_locker` BOOLEAN NOT NULL DEFAULT FALSE COMMENT '사물함 사용 여부 (결제 시 최종 확정)',\
 `status` VARCHAR(20) NOT NULL COMMENT '신청 상태(APPLIED, CANCELED, PENDING) - 초기 신청시 상태',\
-`pay_status` VARCHAR(20) NOT NULL DEFAULT 'UNPAID' COMMENT '결제 상태(UNPAID, PAID, CANCELED_UNPAID, PAYMENT_TIMEOUT)',\
-`expire_dt` DATETIME NOT NULL COMMENT '결제 페이지 접근 및 시도 만료 시간 (신청시점 + 5분)',\
+`pay_status` VARCHAR(20) NOT NULL DEFAULT 'UNPAID' COMMENT '결제 상태(UNPAID, PAID, PARTIALLY_REFUNDED, CANCELED_UNPAID, PAYMENT_TIMEOUT, PAYMENT_FAILED)',\
+`expire_dt` DATETIME NOT NULL COMMENT '결제 페이지 접근 및 시도 만료 시간 (신청시점 + 5분, KISPG 연동)',\
 `renewal_flag` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '재등록 여부(1: 재등록, 0: 신규)',\
 `cancel_reason` VARCHAR(100) COMMENT '취소 사유',\
 `cancel_status` VARCHAR(20) DEFAULT 'NONE' COMMENT '취소 상태 (NONE, REQ, PENDING, APPROVED, DENIED)',\
+`remain_days` INT DEFAULT NULL COMMENT '취소 시 계산된 잔여일수 (감사용)',\
 `refund_amount` INT DEFAULT NULL COMMENT '환불 금액',\
 `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '신청일시',\
 `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '수정일시',\
@@ -257,40 +271,32 @@ INDEX `idx_renewal` (`renewal_flag`)\
 CREATE TABLE `payment` (\
 `payment_id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '결제 ID (PK)',\
 `enroll_id` BIGINT NOT NULL COMMENT '신청 ID (FK from enroll.enroll_id)',\
-`tid` VARCHAR(100) NOT NULL COMMENT 'PG사 거래 ID',\
-`pg_provider` VARCHAR(20) NOT NULL COMMENT 'PG사 제공업체(kakao, nice 등)', -- swim-user.md has VARCHAR(20), mypage had VARCHAR(50). 20으로 통일.
-`amount` INT NOT NULL COMMENT '결제 금액',\
-`paid_at` TIMESTAMP NULL DEFAULT NULL COMMENT '결제 일시 (mypage DDL)', -- swim-user.md DDL에는 없었지만 유용하여 추가
-`refund_amount` INT COMMENT '환불 금액 (swim-user.md DDL)',\
-`refund_dt` DATETIME COMMENT '환불 일시 (swim-user.md DDL)',\
-`pg_auth_code` VARCHAR(100) COMMENT 'PG사 인증 코드 (swim-user.md DDL)',\
-`card_info` VARCHAR(100) COMMENT '카드 정보(마스킹 처리) (swim-user.md DDL)',\
-`status` VARCHAR(20) NOT NULL COMMENT '결제 상태(PAID, CANCELED, PARTIAL_REFUNDED, FAILED)', -- swim-user.md VARCHAR(20), mypage VARCHAR(50). 20으로 통일.
-`pg_token` VARCHAR(255) DEFAULT NULL COMMENT 'PG 거래 토큰 (mypage DDL)', -- swim-user.md DDL에는 없었음. 추가.
-`merchant_uid` VARCHAR(255) DEFAULT NULL COMMENT '가맹점 주문번호 (mypage DDL)', -- swim-user.md DDL에는 없었음. 추가.
-`created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '결제/생성일시',\
+`tid` VARCHAR(255) COMMENT 'KISPG 거래 ID',\
+`pg_provider` VARCHAR(50) DEFAULT 'KISPG' COMMENT 'PG사 (KISPG 등)',\
+`paid_amt` INT COMMENT '실 결제 금액 (PG사 통지 금액)',\
+`status` VARCHAR(20) NOT NULL COMMENT '결제 상태(PAID, FAILED, CANCELED, PARTIALLY_REFUNDED, REFUND_REQUESTED)',\
+`paid_at` DATETIME COMMENT '결제 완료 일시',\
+`refunded_amt` INT DEFAULT 0 COMMENT '총 환불 금액',\
+`refund_dt` DATETIME COMMENT '최종 환불 일시',\
+`error_msg` TEXT COMMENT '결제/환불 실패 시 PG 오류 메시지',\
+`created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '생성일시',\
 `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '수정일시',\
-`created_by` VARCHAR(50) COMMENT '등록자 (swim-user.md DDL)',\
-`created_ip` VARCHAR(45) COMMENT '등록 IP (swim-user.md DDL)',\
-`updated_by` VARCHAR(50) COMMENT '수정자 (swim-user.md DDL)',\
-`updated_ip` VARCHAR(45) COMMENT '수정 IP (swim-user.md DDL)',\
-FOREIGN KEY (`enroll_id`) REFERENCES `enroll` (`enroll_id`) ON DELETE RESTRICT ON UPDATE CASCADE,\
-UNIQUE KEY `uk_tid` (`tid`),\
-INDEX `idx_enroll` (`enroll_id`),\
-INDEX `idx_status` (`status`),\
-INDEX `idx_created_at` (`created_at`)\
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='결제 정보 테이블 (결제 페이지에서 처리됨)';\
+FOREIGN KEY (`enroll_id`) REFERENCES `enroll` (`enroll_id`)
+) COMMENT '결제 및 KISPG 연동 정보 테이블';\
 
 ---
 
 ### 8. Security & Workflow
 
-1. **JWT + Refresh** – 모든 호출 보호, 만료 시 자동 재발급
-2. **Password Flow** – 임시PW 로그인 시 `/mypage/password?force=1` 강제 이동
-3. **Initial Enrollment (`/api/v1/swimming/enroll`)** – 서버가 정원, 중복 등 확인 후 `EnrollInitiationResponseDto` (결제페이지 URL, 만료시간 포함) 반환.
-4. **Payment Page (`/api/v1/payment/details/{enrollId}` & `/api/v1/payment/confirm/{enrollId}`)** – 서버가 금액·정원·라커 재검증 후 PG 연동, 성공 시 `enroll.pay_status=PAID` 확정 (선착순 보장).
-5. **Payment Timeout (`enroll.expire_dt`)** – `expire_dt < NOW()` & `pay_status='UNPAID'` in `enroll` table → `PAYMENT_TIMEOUT` (배치 또는 후속 접근 시 처리).
-6. **Partial Refund** – `/mypage/payment/{id}/cancel` (또는 관리자 API) → 관리자 승인 후 PG `partialCancel`
+- **결제 흐름:** 사용자가 강습을 신청하면(`POST /api/v1/swimming/enroll` 또는 마이페이지에서 `POST /renewal`), 시스템은 `EnrollInitiationResponseDto`를 반환합니다. 이 DTO에는 KISPG 결제 페이지로 리디렉션할 `paymentPageUrl`과 5분 결제 만료 시간(`paymentExpiresAt`)이 포함됩니다. 사용자는 이 URL로 이동하여 결제를 진행합니다. 결제 페이지는 KISPG 연동에 필요한 파라미터를 백엔드(`GET /api/v1/payment/kispg-init-params/{enrollId}`)로부터 받아 KISPG 결제창을 호출합니다. KISPG는 결제 결과를 백엔드의 Webhook URL (`POST /api/v1/kispg/payment-notification`)로 비동기적으로 통지하며, 이때 백엔드는 결제 정보를 검증하고 `Enroll` 및 `Payment` 테이블 상태를 업데이트합니다. 사용자가 KISPG 결제 후 돌아오는 `returnUrl`에서는 프론트엔드가 백엔드의 `POST /api/v1/payment/confirm/{enrollId}`를 호출하여 사용자 경험을 관리하고 최종 사물함 선택 등을 기록합니다.
+- **취소 및 환불 (KISPG 연동):**
+  - 사용자가 마이페이지에서 `PATCH /enroll/{id}/cancel`을 통해 취소 요청 시, 또는 관리자가 취소를 승인할 경우, 백엔드는 KISPG의 환불 API를 호출하여 처리합니다.
+  - 전액 또는 부분 환불이 가능하며, KISPG의 `tid`를 사용하여 해당 거래를 특정합니다.
+  - 환불 결과(성공/실패)에 따라 `Payment` 테이블의 `refunded_amt`, `refund_dt`, `status` 등이 업데이트되고, `Enroll` 테이블의 `pay_status`도 변경됩니다 (예: `PARTIALLY_REFUNDED`, `CANCELED`).
+  - KISPG 환불 API 호출 시 필요한 보안 파라미터(`cancelEncData` 등)는 백엔드에서 안전하게 생성 및 관리됩니다.
+- **보안:**
+  - 모든 민감한 KISPG 연동 정보 (`merchantKey` 등)는 서버에 안전하게 저장되며 프론트엔드에 노출되지 않습니다.
+  - KISPG Webhook 수신 시 `encData` 검증 및 IP 화이트리스팅을 통해 통신의 무결성과 발신처를 확인합니다.
 
 ---
 

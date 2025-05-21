@@ -76,7 +76,7 @@ public class NiceController {
             if (isAlreadyJoined && existingUsername != null) {
                 urlBuilder.queryParam("username", existingUsername)
                           .queryParam("nice_error_code", "DUPLICATE_DI");
-                log.info("[NICE] User with DI already joined. Redirecting with joined=true and error_code=DUPLICATE_DI. Username: {}", existingUsername);
+                    log.info("[NICE] User with DI already joined. Redirecting with joined=true and error_code=DUPLICATE_DI. Username: {}", existingUsername);
             } else {
                 log.info("[NICE] New user. Redirecting for signup.");
             }
