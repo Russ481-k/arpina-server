@@ -71,7 +71,7 @@
   | **P-02** | **결제 페이지**     | ① 신청 요약 ② **5분 카운트다운 타이머** ③ 사물함 선택 ④ PG 드롭인 UI                                      | GET /api/v1/payment/details/{enrollId}, POST /api/v1/payment/confirm/{enrollId} |
   | **P-03** | 마이페이지-신청내역 | ① 리스트(상태 Badge: `PAID`, `CANCELED`, `PAYMENT_TIMEOUT`) ② ~~1h 카운트다운~~ ③ ~~결제~~/취소/환불 버튼 | GET /api/v1/swimming/my-enrolls                                                 |
   | **P-04** | ~~결제처리~~        | (P-02 결제 페이지에 통합됨)                                                                               | ~~POST /api/v1/swimming/pay~~                                                   |
-  | **P-05** | 재등록 모달         | 이전 수강 강습 제안 + 사물함 유지 여부                                                                    | GET /api/v1/swimming/renewal                                                    |
+
 
   > 모바일: P-01, P-03는 Masonry Grid → 1 열, P-02(결제 페이지)는 풀스크린 모달 또는 전용 페이지.
 

@@ -51,7 +51,7 @@
 | 2   | GET          | `/enroll/{id}`                  | –                                          | EnrollDto                       | USER  | 특정 enrollment 상세 조회                                               |
 | 3   | ~~**POST**~~ | ~~**`/enroll/{id}/checkout`**~~ | `CheckoutRequestDto ({wantsLocker: Bool})` | `CheckoutDto`                   | USER  | **(제거됨 - 결제 페이지 로직으로 이전)**                                |
 | 4   | ~~**POST**~~ | ~~**`/enroll/{id}/pay`**~~      | `{ "pgToken": "" }`                        | 200 / Error                     | USER  | **(제거됨 - 결제 페이지 로직으로 이전)**                                |
-| 5   | PATCH        | `/enroll/{id}/cancel`           | `{ "reason": "" }`                         | Requested                       | USER  | enrollment 취소 요청 (결제 전/후 모두 가능)                             |
+| 5   | PATCH        | `/enroll/{id}/cancel`           | `{ "reason": "" }`                         | Requested                       | USER  | enrollment 취소 요청
 | 6   | POST         | `/renewal`                      | `RenewalRequestDto`                        | **EnrollInitiationResponseDto** | USER  | 신규 재수강 신청 (enroll 테이블에 레코드 생성, 이후 결제 페이지로 이동) |
 
 #### 3.4 결제 내역 (Payment)
