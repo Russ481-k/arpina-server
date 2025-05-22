@@ -13,7 +13,7 @@
 **일반 흐름:**
 
 1.  사용자가 `POST /api/v1/swimming/enroll`을 통해 강습 신청을 시작합니다.
-2.  정원 여유가 있는 경우 (결제 완료(`PAID`) 건 + 결제창에서 활성 상태인 미결제(`UNPAID`) 건 고려), API는 `EnrollInitiationResponseDto` ( `enrollId`, `paymentPageUrl`, `paymentExpiresAt` 포함)를 반환합니다.
+2.  정원 여유가 있는 경우 (**결제 페이지 접근 슬롯 가용 시** - 상세 로직은 `Docs/cms/lesson-enrollment-capacity.md` 참조), API는 `EnrollInitiationResponseDto` ( `enrollId`, `paymentPageUrl`, `paymentExpiresAt` 포함)를 반환합니다.
 3.  사용자는 결제 페이지 (`paymentPageUrl`)로 리디렉션됩니다.
 4.  결제 페이지는 `GET /api/v1/payment/details/{enrollId}`를 통해 상세 정보를 가져옵니다.
 5.  사용자는 강습 정보, 가격, 사물함 옵션(해당하는 경우), 5분 카운트다운 타이머를 확인합니다.
@@ -180,14 +180,15 @@
 
 ## 6. 결제 흐름 관련 특정 오류 코드
 
-| 오류 코드                                               | HTTP | 추천 메시지 (EN/KR)                                                                                                |
-| ------------------------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------ |
-| `ENROLLMENT_PAYMENT_EXPIRED`                            | 400  | "Payment window has expired." / "결제 가능 시간이 만료되었습니다."                                                 |
-| `PAYMENT_ALREADY_COMPLETED`                             | 409  | "This enrollment has already been paid." / "이미 결제가 완료된 신청입니다."                                        |
-| `INVALID_ENROLLMENT_STATE_FOR_PAYMENT`                  | 409  | "Enrollment is not in a state that allows payment." / "결제가 불가능한 신청 상태입니다."                           |
-| `LESSON_CAPACITY_EXCEEDED_AT_CONFIRM`                   | 409  | "Lesson capacity was filled while processing payment." / "결제 중 정원이 마감되었습니다." (주로 Webhook에서 발생)  |
-| `LESSON_LOCKER_CAPACITY_EXCEEDED_FOR_GENDER_AT_CONFIRM` | 409  | "Locker capacity for your gender was filled." / "선택하신 성별의 사물함이 마감되었습니다." (주로 Webhook에서 발생) |
-| `PG_VERIFICATION_FAILED`                                | 400  | "Payment Gateway verification failed." / "결제 게이트웨이 검증에 실패했습니다." (주로 Webhook에서 발생)            |
-| `PAYMENT_PAGE_ACCESS_DENIED`                            | 403  | "Access to payment page denied (e.g. no capacity)." / "결제 페이지 접근이 거부되었습니다(정원 초과 등)."           |
+| 오류 코드                                               | HTTP | 추천 메시지 (EN/KR)                                                                                                   |
+| ------------------------------------------------------- | ---- | --------------------------------------------------------------------------------------------------------------------- |
+| `ENROLLMENT_PAYMENT_EXPIRED`                            | 400  | "Payment window has expired." / "결제 가능 시간이 만료되었습니다."                                                    |
+| `PAYMENT_ALREADY_COMPLETED`                             | 409  | "This enrollment has already been paid." / "이미 결제가 완료된 신청입니다."                                           |
+| `INVALID_ENROLLMENT_STATE_FOR_PAYMENT`                  | 409  | "Enrollment is not in a state that allows payment." / "결제가 불가능한 신청 상태입니다."                              |
+| `PAYMENT_PAGE_SLOT_UNAVAILABLE` (`LEC001`)              | 409  | "Payment page slot is unavailable." / "결제 페이지에 접근 가능한 인원이 가득 찼습니다." (주로 `/enroll` API에서 발생) |
+| `LESSON_CAPACITY_EXCEEDED_AT_CONFIRM`                   | 409  | "Lesson capacity was filled while processing payment." / "결제 중 정원이 마감되었습니다." (주로 Webhook에서 발생)     |
+| `LESSON_LOCKER_CAPACITY_EXCEEDED_FOR_GENDER_AT_CONFIRM` | 409  | "Locker capacity for your gender was filled." / "선택하신 성별의 사물함이 마감되었습니다." (주로 Webhook에서 발생)    |
+| `PG_VERIFICATION_FAILED`                                | 400  | "Payment Gateway verification failed." / "결제 게이트웨이 검증에 실패했습니다." (주로 Webhook에서 발생)               |
+| `PAYMENT_PAGE_ACCESS_DENIED`                            | 403  | "Access to payment page denied (e.g. no capacity)." / "결제 페이지 접근이 거부되었습니다(정원 초과 등)."              |
 
 이 신규 문서 `Docs/cms/payment-page-integration.md`는 결제 페이지 및 관련 백엔드 프로세스에 대한 보다 집중적이고 상세한 사양을 제공합니다.

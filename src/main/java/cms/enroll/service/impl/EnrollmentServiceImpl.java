@@ -139,9 +139,13 @@ public class EnrollmentServiceImpl implements EnrollmentService {
             throw new BusinessRuleException(ErrorCode.LESSON_NOT_OPEN_FOR_ENROLLMENT, "신청 가능한 강습이 아닙니다. 현재 상태: " + lesson.getStatus());
         }
 
-        long activeEnrollments = enrollRepository.countActiveEnrollmentsForLesson(lesson.getLessonId(), LocalDateTime.now());
-        if (activeEnrollments >= lesson.getCapacity()) {
-            throw new BusinessRuleException(ErrorCode.LESSON_CAPACITY_EXCEEDED, "강습 정원이 초과되었습니다. 현재 신청 인원: " + activeEnrollments + "/" + lesson.getCapacity());
+        // Lesson Enrollment Capacity Check
+        long paidEnrollments = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
+        long unpaidExpiringEnrollments = enrollRepository.countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(lesson.getLessonId(), "APPLIED", "UNPAID", LocalDateTime.now());
+        long availableSlots = lesson.getCapacity() - paidEnrollments - unpaidExpiringEnrollments;
+
+        if (availableSlots <= 0) {
+            throw new BusinessRuleException(ErrorCode.PAYMENT_PAGE_SLOT_UNAVAILABLE);
         }
 
         Optional<Enroll> existingEnrollOpt = enrollRepository.findByUserUuidAndLessonLessonIdAndStatus(
@@ -167,7 +171,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 .usesLocker(false)
                 .status("APPLIED")
                 .payStatus("UNPAID")
-                .expireDt(LocalDateTime.now().plusHours(1))
+                .expireDt(LocalDateTime.now().plusMinutes(5))
                 .renewalFlag(false)
                 .createdBy(user.getName())
                 .createdIp(ipAddress)
@@ -331,7 +335,8 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         Enroll.EnrollBuilder newEnrollBuilder = Enroll.builder()
             .user(user)
             .lesson(lesson)
-            .status("APPLIED").payStatus("UNPAID").expireDt(LocalDateTime.now().plusHours(24))
+            // Set expireDt to 5 minutes for consistency, assuming immediate payment redirection
+            .status("APPLIED").payStatus("UNPAID").expireDt(LocalDateTime.now().plusMinutes(5))
             .renewalFlag(true).cancelStatus(CancelStatusType.NONE)
             // Set usesLocker based on user's choice in renewal request.
             // Actual inventory update happens in PaymentServiceImpl.confirmPayment.

@@ -61,7 +61,7 @@
 | GET    | `/payment`             | page…             | List\<PaymentDto> | USER  |
 | POST   | `/payment/{id}/cancel` | `{ "reason": ""}` | Requested         | USER  | KISPG 환불 연동. 사용자 요청 후 관리자 승인 필요. |
 
-> **결제 흐름:** 사용자가 강습을 신청하면(`POST /api/v1/swimming/enroll` 또는 마이페이지에서 `POST /renewal`), 시스템은 `EnrollInitiationResponseDto`를 반환합니다. 이 DTO에는 KISPG 결제 페이지로 리디렉션할 `paymentPageUrl`과 5분 결제 만료 시간(`paymentExpiresAt`)이 포함됩니다. 사용자는 이 URL로 이동하여 결제를 진행합니다. 결제 페이지는 KISPG 연동에 필요한 파라미터를 백엔드(`GET /api/v1/payment/kispg-init-params/{enrollId}`)로부터 받아 KISPG 결제창을 호출합니다. KISPG는 결제 결과를 백엔드의 Webhook URL (`POST /api/v1/kispg/payment-notification`)로 비동기적으로 통지하며, 이때 백엔드는 결제 정보를 검증하고 `Enroll.payStatus`를 `PAID`로 변경하며, 필요한 경우 사물함 배정(`Enroll.usesLocker`가 true일 시 `locker_inventory` 업데이트 및 `Enroll.lockerAllocated=true` 설정) 및 `Payment` 테이블 레코드를 생성/업데이트합니다. 사용자가 KISPG 결제 후 돌아오는 `returnUrl`에서는 프론트엔드가 백엔드의 `POST /api/v1/payment/confirm/{enrollId}`를 호출하여 사용자 경험을 관리하고 사용자의 최종 사물함 사용 희망 여부(`wantsLocker` 파라미터)를 `Enroll.usesLocker` 필드에 기록합니다.
+> **결제 흐름:** 사용자가 강습을 신청하면(`POST /api/v1/swimming/enroll` 또는 마이페이지에서 `POST /renewal`), 시스템은 **결제 페이지 접근 슬롯이 확보된 경우에 한해 (상세 로직: `Docs/cms/lesson-enrollment-capacity.md` 참조)** `EnrollInitiationResponseDto`를 반환합니다. 이 DTO에는 KISPG 결제 페이지로 리디렉션할 `paymentPageUrl`과 5분 결제 만료 시간(`paymentExpiresAt`)이 포함됩니다. 사용자는 이 URL로 이동하여 결제를 진행합니다. 결제 페이지는 KISPG 연동에 필요한 파라미터를 백엔드(`GET /api/v1/payment/kispg-init-params/{enrollId}`)로부터 받아 KISPG 결제창을 호출합니다. KISPG는 결제 결과를 백엔드의 Webhook URL (`POST /api/v1/kispg/payment-notification`)로 비동기적으로 통지하며, 이때 백엔드는 결제 정보를 검증하고 `Enroll.payStatus`를 `PAID`로 변경하며, 필요한 경우 사물함 배정(`Enroll.usesLocker`가 true일 시 `locker_inventory` 업데이트 및 `Enroll.lockerAllocated=true` 설정) 및 `Payment` 테이블 레코드를 생성/업데이트합니다. 사용자가 KISPG 결제 후 돌아오는 `returnUrl`에서는 프론트엔드가 백엔드의 `POST /api/v1/payment/confirm/{enrollId}`를 호출하여 사용자 경험을 관리하고 사용자의 최종 사물함 사용 희망 여부(`wantsLocker` 파라미터)를 `Enroll.usesLocker` 필드에 기록합니다.
 
 ---
 
@@ -170,20 +170,21 @@
 
 ### 6. Error Codes
 
-| code                 | http | message                 | 설명                                                          |
-| -------------------- | ---- | ----------------------- | ------------------------------------------------------------- |
-| ~~SEAT_FULL~~        | 409  | ~~잔여 좌석 없음~~      | (Enroll API에서 처리)                                         |
-| ~~LOCKER_TAKEN~~     | 409  | ~~라커 이미 사용중~~    | (Payment API에서 처리)                                        |
-| ENROLL_NOT_FOUND     | 404  | 신청 없음               | 잘못된 enrollId                                               |
-| ~~PAYMENT_EXPIRED~~  | 400  | ~~결제 가능시간 만료~~  | (Payment API 또는 `enroll.status`로 확인)                     |
-| ~~ALREADY_PAID~~     | 409  | ~~이미 결제 완료~~      | (Payment API 또는 `enroll.status`로 확인)                     |
-| ~~PG_VERIFY_FAIL~~   | 400  | ~~PG 영수증 검증 실패~~ | (Payment API에서 처리)                                        |
-| CANCEL_PENDING       | 409  | 취소 심사 진행중        | 이미 취소 요청 상태                                           |
-| INVALID_PW           | 400  | 비밀번호 정책 위반      | 새 비밀번호 규칙 미충족                                       |
-| TEMP_PW_REQUIRED     | 403  | 임시 PW 변경 필요       | temp_pw_flag = 1                                              |
-| NO_AUTH              | 401  | 인증 필요               | JWT 누락/만료                                                 |
-| PAYMENT_TIMEOUT_INFO | 200  | 결제 시간 초과          | (Mypage에서 상태 조회 시) `enroll.pay_status=PAYMENT_TIMEOUT` |
-| KISPG_ERROR          | 500  | KISPG 연동 오류         | PG사 통신 또는 처리 중 오류 발생                              |
+| code                                   | http | message                 | 설명                                                                                     |
+| -------------------------------------- | ---- | ----------------------- | ---------------------------------------------------------------------------------------- |
+| ~~SEAT_FULL~~                          | 409  | ~~잔여 좌석 없음~~      | (Enroll API에서 처리)                                                                    |
+| ~~LOCKER_TAKEN~~                       | 409  | ~~라커 이미 사용중~~    | (Payment API에서 처리)                                                                   |
+| ENROLL_NOT_FOUND                       | 404  | 신청 없음               | 잘못된 enrollId                                                                          |
+| ~~PAYMENT_EXPIRED~~                    | 400  | ~~결제 가능시간 만료~~  | (Payment API 또는 `enroll.status`로 확인)                                                |
+| ~~ALREADY_PAID~~                       | 409  | ~~이미 결제 완료~~      | (Payment API 또는 `enroll.status`로 확인)                                                |
+| ~~PG_VERIFY_FAIL~~                     | 400  | ~~PG 영수증 검증 실패~~ | (Payment API에서 처리)                                                                   |
+| CANCEL_PENDING                         | 409  | 취소 심사 진행중        | 이미 취소 요청 상태                                                                      |
+| INVALID_PW                             | 400  | 비밀번호 정책 위반      | 새 비밀번호 규칙 미충족                                                                  |
+| TEMP_PW_REQUIRED                       | 403  | 임시 PW 변경 필요       | temp_pw_flag = 1                                                                         |
+| NO_AUTH                                | 401  | 인증 필요               | JWT 누락/만료                                                                            |
+| PAYMENT_TIMEOUT_INFO                   | 200  | 결제 시간 초과          | (Mypage에서 상태 조회 시) `enroll.pay_status=PAYMENT_TIMEOUT`                            |
+| KISPG_ERROR                            | 500  | KISPG 연동 오류         | PG사 통신 또는 처리 중 오류 발생                                                         |
+| PAYMENT_PAGE_SLOT_UNAVAILABLE (LEC001) | 409  | 결제 페이지 접근 불가   | 현재 해당 강습의 결제 페이지에 접근 가능한 인원이 가득 참. (주로 `/enroll` API에서 발생) |
 
 ---
 
@@ -279,7 +280,7 @@ FOREIGN KEY (`enroll_id`) REFERENCES `enroll` (`enroll_id`)
 
 ### 8. Security & Workflow
 
-- **결제 흐름:** 사용자가 강습을 신청하면(`POST /api/v1/swimming/enroll` 또는 마이페이지에서 `POST /renewal`), 시스템은 `EnrollInitiationResponseDto`를 반환합니다. 이 DTO에는 KISPG 결제 페이지로 리디렉션할 `paymentPageUrl`과 5분 결제 만료 시간(`paymentExpiresAt`)이 포함됩니다. 사용자는 이 URL로 이동하여 결제를 진행합니다. 결제 페이지는 KISPG 연동에 필요한 파라미터를 백엔드(`GET /api/v1/payment/kispg-init-params/{enrollId}`)로부터 받아 KISPG 결제창을 호출합니다. KISPG는 결제 결과를 백엔드의 Webhook URL (`POST /api/v1/kispg/payment-notification`)로 비동기적으로 통지하며, 이때 백엔드는 결제 정보를 검증하고 `Enroll.payStatus`를 `PAID`로 변경하며, 필요한 경우 사물함 배정(`Enroll.usesLocker`가 true일 시 `locker_inventory` 업데이트 및 `Enroll.lockerAllocated=true` 설정) 및 `Payment` 테이블 레코드를 생성/업데이트합니다. 사용자가 KISPG 결제 후 돌아오는 `returnUrl`에서는 프론트엔드가 백엔드의 `POST /api/v1/payment/confirm/{enrollId}`를 호출하여 사용자 경험을 관리하고 사용자의 최종 사물함 사용 희망 여부(`wantsLocker` 파라미터)를 `Enroll.usesLocker` 필드에 기록합니다.
+- **결제 흐름:** 사용자가 강습을 신청하면(`POST /api/v1/swimming/enroll` 또는 마이페이지에서 `POST /renewal`), 시스템은 **결제 페이지 접근 슬롯이 확보된 경우에 한해 (상세 로직: `Docs/cms/lesson-enrollment-capacity.md` 참조)** `EnrollInitiationResponseDto`를 반환합니다. 이 DTO에는 KISPG 결제 페이지로 리디렉션할 `paymentPageUrl`과 5분 결제 만료 시간(`paymentExpiresAt`)이 포함됩니다. 사용자는 이 URL로 이동하여 결제를 진행합니다. 결제 페이지는 KISPG 연동에 필요한 파라미터를 백엔드(`GET /api/v1/payment/kispg-init-params/{enrollId}`)로부터 받아 KISPG 결제창을 호출합니다. KISPG는 결제 결과를 백엔드의 Webhook URL (`POST /api/v1/kispg/payment-notification`)로 비동기적으로 통지하며, 이때 백엔드는 결제 정보를 검증하고 `Enroll.payStatus`를 `PAID`로 변경하며, 필요한 경우 사물함 배정(`Enroll.usesLocker`가 true일 시 `locker_inventory` 업데이트 및 `Enroll.lockerAllocated=true` 설정) 및 `Payment` 테이블 레코드를 생성/업데이트합니다. 사용자가 KISPG 결제 후 돌아오는 `returnUrl`에서는 프론트엔드가 백엔드의 `POST /api/v1/payment/confirm/{enrollId}`를 호출하여 사용자 경험을 관리하고 사용자의 최종 사물함 사용 희망 여부(`wantsLocker` 파라미터)를 `Enroll.usesLocker` 필드에 기록합니다.
 - **취소 및 환불 (KISPG 연동):**
   - 사용자가 마이페이지에서 `PATCH /enroll/{id}/cancel`을 통해 취소 요청 시, 또는 관리자가 취소를 승인할 경우, 백엔드는 KISPG의 환불 API를 호출하여 처리합니다.
   - 전액 또는 부분 환불이 가능하며, KISPG의 `tid`를 사용하여 해당 거래를 특정합니다.

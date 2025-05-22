@@ -5,10 +5,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.BindException;
-import org.springframework.validation.FieldError;
-import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import cms.common.dto.ApiResponseSchema;
 import cms.common.dto.ValidationErrorResponse;
@@ -23,11 +20,6 @@ import java.util.stream.Collectors;
 import cms.template.exception.CannotDeleteFixedTemplateException;
 import cms.template.exception.TemplateNotFoundException;
 import org.springframework.security.access.AccessDeniedException;
-
-import cms.common.exception.DuplicateDiException;
-import cms.common.exception.DuplicateEmailException;
-import cms.common.exception.DuplicateUsernameException;
-import cms.common.exception.NiceVerificationException;
 
 // @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -136,11 +128,4 @@ public class GlobalExceptionHandler {
                 .body(ApiResponseSchema.error("서버 내부 오류가 발생했습니다. 관리자에게 문의해주세요.", "INTERNAL_SERVER_ERROR"));
     }
 
-    private String getStackTraceAsString(Throwable e) {
-        StringBuilder sb = new StringBuilder();
-        for (StackTraceElement element : e.getStackTrace()) {
-            sb.append(element.toString()).append("\n");
-        }
-        return sb.toString();
-    }
 } 

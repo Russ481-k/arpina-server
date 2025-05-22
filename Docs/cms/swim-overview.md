@@ -72,6 +72,14 @@
       FE->>API: PATCH /mypage/enroll/{enrollId}/cancel (취소 요청)
       API-->>FE: 200 OK (요청 접수)
 
+      U->>FE: (마이페이지, 재수강 기간 18~22일) 재수강 신청 (lessonId, carryLocker)
+      FE->>API: POST /mypage/renewal (lessonId, carryLocker)
+      API-->>FE: EnrollInitiationResponseDto (결제 페이지로 이동)
+      Note over API: 재수강 시, 기존 사물함 사용 여부 확인.
+      Note over API: 사물함 유지 시: 새 Enroll에 lockerAllocated=true, 이전 Enroll에 lockerAllocated=false. locker_inventory.used_quantity 변동 없음.
+      Note over API: 사물함 신규 요청 시: 일반 신청과 동일하게 locker_inventory.used_quantity 증가.
+      FE->>U: KISPG 결제 페이지로 리디렉션 (위의 일반 결제 흐름과 유사하게 진행)
+
       Note over API,ADM: 관리자 검토 및 승인 (KISPG 연동)
       ADM->>BO: 취소 승인 (enrollId)
       BO->>KISPG_Server: KISPG 부분/전액 취소 API 호출 (계산된 환불액, tid)
@@ -112,19 +120,19 @@
 
   ### 4-2. 엔드포인트 (주요 흐름 관련)
 
-  | Method | URL                                              | Req Body/QS                                       | Res Body                                                                       | 비고                                                                                                                                                                                    |
-  | ------ | ------------------------------------------------ | ------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | GET    | /api/v1/swimming/lessons                         | status, year, month, startDate, endDate, pageable | Page<LessonDTO>                                                                | 수업 목록 조회.                                                                                                                                                                         |
-  | GET    | /public/locker/availability                      | lessonId                                          | LockerRemainDTO (e.g. {"maleAvailable":10, "femaleAvailable":5})               | (KISPG 결제 페이지용) 특정 강습의 성별 사용 가능 라커 수 조회.                                                                                                                          |
-  | POST   | **/api/v1/swimming/enroll**                      | { lessonId: Long }                                | **EnrollInitiationResponseDto** ({enrollId, paymentPageUrl, paymentExpiresAt}) | **핵심 변경.** 좌석 Lock 시도. 성공 시 `enroll` 생성 (UNPAID, 5분 expire_dt), KISPG 결제 페이지 이동 정보 반환.                                                                         |
-  | GET    | **/api/v1/payment/details/{enrollId}**           | -                                                 | **PaymentPageDetailsDto**                                                      | **신규 (KISPG 연동).** 결제 페이지에서 호출. 결제 필요 CMS 내부 정보 반환.                                                                                                              |
-  | GET    | **/api/v1/payment/kispg-init-params/{enrollId}** | -                                                 | **KISPGInitParamsDto** (가칭)                                                  | **신규 (KISPG 연동).** KISPG 결제창 호출에 필요한 파라미터 반환. (상세: `kispg-payment-integration.md`)                                                                                 |
-  | POST   | **/api/v1/payment/confirm/{enrollId}**           | `{ pgToken: String, wantsLocker: Boolean }`       | 200 OK (상태: PAYMENT_SUCCESSFUL/PROCESSING) / Error                           | **신규 (KISPG 연동).** KISPG `returnUrl`에서 호출. UX 및 `wantsLocker` 최종 반영. 주 결제처리는 Webhook. 사물함 자원 할당 및 `Enroll.payStatus` 변경 등 핵심 로직은 Webhook에서만 처리. |
-  | POST   | **/api/v1/kispg/payment-notification**           | (KISPG Webhook 명세 따름)                         | "OK" / Error                                                                   | **신규 (KISPG Webhook).** KISPG가 결제 결과 비동기 통지. 주 결제 처리 로직. (상세: `kispg-payment-integration.md`)                                                                      |
-  | GET    | /mypage/enroll                                   | status?                                           | List<EnrollDTO> (payStatus에 `PAYMENT_TIMEOUT` 추가, KISPG 연동)               | (마이페이지, user.md API 경로 사용) 내 신청 내역 조회.                                                                                                                                  |
-  | PATCH  | /mypage/enroll/{id}/cancel                       | reason                                            | 200 (KISPG 환불 연동)                                                          | (마이페이지, user.md API 경로 사용) 신청 취소.                                                                                                                                          |
-  | GET    | /mypage/renewal                                  | –                                                 | List<RenewalDTO>                                                               | (마이페이지, user.md API 경로 사용) 재등록 대상 조회.                                                                                                                                   |
-  | POST   | /mypage/renewal                                  | lessonId, carryLocker                             | EnrollInitiationResponseDto (또는 유사, KISPG 결제 페이지로 이동)              | (마이페이지, user.md API 경로 사용) 재등록 신청. 성공 시 KISPG 결제 페이지 이동 정보 반환.                                                                                              |
+  | Method | URL                                              | Req Body/QS                                       | Res Body                                                                       | 비고                                                                                                                                                                                                                                                                                   |
+  | ------ | ------------------------------------------------ | ------------------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | GET    | /api/v1/swimming/lessons                         | status, year, month, startDate, endDate, pageable | Page<LessonDTO>                                                                | 수업 목록 조회.                                                                                                                                                                                                                                                                        |
+  | GET    | /public/locker/availability                      | lessonId                                          | LockerRemainDTO (e.g. {"maleAvailable":10, "femaleAvailable":5})               | (KISPG 결제 페이지용) 특정 강습의 성별 사용 가능 라커 수 조회.                                                                                                                                                                                                                         |
+  | POST   | **/api/v1/swimming/enroll**                      | { lessonId: Long }                                | **EnrollInitiationResponseDto** ({enrollId, paymentPageUrl, paymentExpiresAt}) | **핵심 변경.** 좌석 Lock 시도. 성공 시 `enroll` 생성 (UNPAID, 5분 expire_dt), KISPG 결제 페이지 이동 정보 반환. **결제 페이지 접근 슬롯 부족 시 409 LEC001 에러 반환.**                                                                                                                |
+  | GET    | **/api/v1/payment/details/{enrollId}**           | -                                                 | **PaymentPageDetailsDto**                                                      | **신규 (KISPG 연동).** 결제 페이지에서 호출. 결제 필요 CMS 내부 정보 반환.                                                                                                                                                                                                             |
+  | GET    | **/api/v1/payment/kispg-init-params/{enrollId}** | -                                                 | **KISPGInitParamsDto** (가칭)                                                  | **신규 (KISPG 연동).** KISPG 결제창 호출에 필요한 파라미터 반환. (상세: `kispg-payment-integration.md`)                                                                                                                                                                                |
+  | POST   | **/api/v1/payment/confirm/{enrollId}**           | `{ pgToken: String, wantsLocker: Boolean }`       | 200 OK (상태: PAYMENT_SUCCESSFUL/PROCESSING) / Error                           | **신규 (KISPG 연동).** KISPG `returnUrl`에서 호출. UX 및 `wantsLocker` 최종 반영. 주 결제처리는 Webhook. 사물함 자원 할당 및 `Enroll.payStatus` 변경 등 핵심 로직은 Webhook에서만 처리.                                                                                                |
+  | POST   | **/api/v1/kispg/payment-notification**           | (KISPG Webhook 명세 따름)                         | "OK" / Error                                                                   | **신규 (KISPG Webhook).** KISPG가 결제 결과 비동기 통지. 주 결제 처리 로직. (상세: `kispg-payment-integration.md`)                                                                                                                                                                     |
+  | GET    | /mypage/enroll                                   | status?                                           | List<EnrollDTO> (payStatus에 `PAYMENT_TIMEOUT` 추가, KISPG 연동)               | (마이페이지, user.md API 경로 사용) 내 신청 내역 조회.                                                                                                                                                                                                                                 |
+  | PATCH  | /mypage/enroll/{id}/cancel                       | reason                                            | 200 (KISPG 환불 연동)                                                          | (마이페이지, user.md API 경로 사용) 신청 취소.                                                                                                                                                                                                                                         |
+  | GET    | /mypage/renewal                                  | –                                                 | List<RenewalDTO>                                                               | (마이페이지, user.md API 경로 사용) 재등록 대상 조회.                                                                                                                                                                                                                                  |
+  | POST   | /mypage/renewal                                  | lessonId, carryLocker                             | EnrollInitiationResponseDto (또는 유사, KISPG 결제 페이지로 이동)              | (마이페이지, user.md API 경로 사용) **매월 18일~22일 재수강 신청 기간에 사용.** 재수강 신청. 성공 시 KISPG 결제 페이지 이동 정보 반환. **사물함 유지(carryLocker) 요청 시, 백엔드는 이전 강습의 사물함 사용 상태를 확인하여 중복 점유를 방지하고 `locker_inventory`를 정확하게 관리.** |
 
   ***
 
@@ -159,6 +167,7 @@
          AND e.uses_locker = TRUE
          AND u.gender = :targetGender
          AND (e.pay_status = 'PAID' OR (e.pay_status = 'UNPAID' AND e.expire_dt > NOW())) -- PAID 되었거나, 아직 만료되지 않은 UNPAID (결제 페이지에서 점유 중) 건
+         AND e.lesson_id IN (SELECT lesson_id FROM lesson WHERE end_date >= CURDATE()) -- 현재 진행 중이거나 예정된 강습에 대해서만 카운트
       ) AS remaining_lockers
   FROM lesson l
   WHERE l.lesson_id = :targetLessonId;
@@ -180,26 +189,27 @@
 
   ## 6. **비즈니스 룰**
 
-  | 구분                          | 규칙                                                                                                                                                           |
-  | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | **선착순 (결제 페이지 접근)** | `/enroll` 시 강습의 (PAID 수 + 만료 전 UNPAID 수) < 정원이면 `EnrollInitiationResponseDto` (KISPG 결제 페이지 URL 포함) 반환. 아니면 접근 불가.                |
-  | **선착순 (최종 확정)**        | KISPG Webhook (`/api/v1/kispg/payment-notification`) 처리 시점에 최종 PG 결제 성공 및 좌석/라커 재확보 성공 시 `enroll.pay_status = 'PAID'`로 확정.            |
-  | **5분 결제 타임아웃**         | KISPG 결제 페이지 진입 후 `enroll.expire_dt` 도달 시 프론트 자동 이전 페이지 이동 + 토스트. 서버 배치가 `pay_status`를 `PAYMENT_TIMEOUT`으로 변경.             |
-  | **성별 라커**                 | KISPG 결제 페이지에서 `user.gender` 기준 해당 강습의 잔여 라커 확인 후 최종 선택 및 KISPG Webhook 또는 `/payment/confirm` 시점에 확정.                         |
-  | **미성년 차단**               | `adult_verified=0` → 403                                                                                                                                       |
-  | **재등록 우선권**             | 강습 종료 D-7 ~ D-4 동안만 `/mypage/renewal` 오픈 (성공 시 KISPG 결제 페이지로)                                                                                |
-  | **취소 가능**                 | 레슨 시작 전 사용자 즉시 취소 (`UNPAID`는 바로 `CANCELED_UNPAID`). `PAID` 건은 **관리자 검토 후 승인 시 KISPG 통해 부분/전액 환불 처리.** 시작 후 관리자 검토. |
+  | 구분                          | 규칙                                                                                                                                                                                                                                                                                                                                                  |
+  | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | **선착순 (결제 페이지 접근)** | `/enroll` 시 강습의 **결제 페이지 접근 슬롯 (정원 - PAID 건수 - 만료 전 UNPAID 건수) > 0** 이면 `EnrollInitiationResponseDto` (KISPG 결제 페이지 URL 포함) 반환. 아니면 `409 LEC001 PAYMENT_PAGE_SLOT_UNAVAILABLE` 오류.                                                                                                                              |
+  | **선착순 (최종 확정)**        | KISPG Webhook (`/api/v1/kispg/payment-notification`) 처리 시점에 최종 PG 결제 성공 및 좌석/라커 재확보 성공 시 `enroll.pay_status = 'PAID'`로 확정.                                                                                                                                                                                                   |
+  | **5분 결제 타임아웃**         | KISPG 결제 페이지 진입 후 `enroll.expire_dt` 도달 시 프론트 자동 이전 페이지 이동 + 토스트. 서버 배치가 `pay_status`를 `PAYMENT_TIMEOUT`으로 변경.                                                                                                                                                                                                    |
+  | **성별 라커**                 | KISPG 결제 페이지에서 `user.gender` 기준 해당 강습의 잔여 라커 확인 후 최종 선택 및 KISPG Webhook 또는 `/payment/confirm` 시점에 확정. **배정된 사물함은 강습 종료 시 시스템에 의해 자동 회수됩니다 (단, 재수강으로 사물함이 이전되는 경우는 예외).**                                                                                                 |
+  | **미성년 차단**               | `adult_verified=0` → 403                                                                                                                                                                                                                                                                                                                              |
+  | **재등록 우선권**             | **재수강(기존 회원) 신청 기간: 매월 18일 00:00 ~ 22일 23:59.** 이 기간에 `/mypage/renewal` API를 통해 다음 달 강습을 신청할 수 있는 우선권 부여. **신규 회원 신청 기간: 매월 25일 00:00 ~ 말일 23:59** (또는 강습 시작 전까지). 재수강 기간 외 `/mypage/renewal` API 호출 시 403 에러. **다음 달 강습은 일반적으로 매월 22일경 시스템에 생성됩니다.** |
+  | **취소 가능**                 | 레슨 시작 전 사용자 즉시 취소 (`UNPAID`는 바로 `CANCELED_UNPAID`). `PAID` 건은 **관리자 검토 후 승인 시 KISPG 통해 부분/전액 환불 처리.** 시작 후 관리자 검토.                                                                                                                                                                                        |
 
   ***
 
   ## 7. 배치/이벤트
 
-  | 이름                      | 주기    | 설명                                                                                                                       |
-  | ------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------- |
-  | renewal-notifier          | daily   | 재등록 창 오픈 대상자 LMS 발송                                                                                             |
-  | **payment-timeout-sweep** | 1-5 min | `UNPAID` & `expire_dt` 초과 레코드 (KISPG 결제 미완료) → `PAYMENT_TIMEOUT`, (결제 페이지에서 선택했던) 라커 자동 회수 처리 |
-  | **cancel-retry**          | 5 min   | **PG 취소 실패 건 (`pending` 상태) 자동 재시도 (KISPG)**                                                                   |
-  | **pg-reconcile**          | daily   | **KISPG 거래내역과 DB 정합성 대사**                                                                                        |
+  | 이름                                       | 주기     | 설명                                                                                                                                          |
+  | ------------------------------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+  | renewal-notifier                           | daily    | 재등록 창 오픈 대상자 LMS 발송                                                                                                                |
+  | **payment-timeout-sweep**                  | 1-5 min  | `UNPAID` & `expire_dt` 초과 레코드 (KISPG 결제 미완료) → `PAYMENT_TIMEOUT`, (결제 페이지에서 선택했던) 라커 자동 회수 처리                    |
+  | **cancel-retry**                           | 5 min    | **PG 취소 실패 건 (`pending` 상태) 자동 재시도 (KISPG)**                                                                                      |
+  | **pg-reconcile**                           | daily    | **KISPG 거래내역과 DB 정합성 대사**                                                                                                           |
+  | **lesson-completion-locker-release-sweep** | 하루 1회 | 종료된 강습에 배정된 사물함 자동 회수 처리. **재수강으로 인해 `lockerAllocated=false` 처리된 이전 강습 건은 이 배치에서 중복 처리되지 않음.** |
 
   ***
 
@@ -214,14 +224,17 @@
 
   ## 9. 테스트 케이스 (발췌)
 
-  | ID    | 시나리오                                                                                    | 기대                                                                                              |
-  | ----- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-  | TC-01 | 남·여 라커 모두 0 남은 상태에서 KISPG 결제 페이지 진입, 라커 선택 시도                      | 라커 선택 불가 안내. 라커 없이 KISPG 결제는 가능.                                                 |
-  | TC-02 | 동일 user·lesson 중복 `/enroll` (이전 건이 `PAYMENT_TIMEOUT` 상태, KISPG 결제 미완료)       | 신규 `enroll` 생성 및 KISPG 결제 페이지 접근 가능.                                                |
-  | TC-03 | 미성년자 `/enroll`                                                                          | 403 `JUNIOR_BLOCKED`                                                                              |
-  | TC-04 | 재등록 창 외 `/renewal` (KISPG 결제 연동)                                                   | 403                                                                                               |
-  | TC-05 | KISPG 결제 페이지에서 5분 초과 후 PG 결제 성공 (PG는 성공했으나, `/confirm` 호출 전에 만료) | `/payment/confirm` 호출 시 4002 `PAYMENT_EXPIRED`. KISPG는 별도 망취소 필요할 수 있음(운영 정책). |
-  | TC-06 | 정원 1명 남음. User A `/enroll` 성공 -> KISPG 결제 페이지. User B `/enroll` 시도            | User B는 4008 `PAYMENT_PAGE_ACCESS_DENIED` 또는 4001 `SEAT_FULL`.                                 |
+  | ID    | 시나리오                                                                                                       | 기대                                                                                                                                       |
+  | ----- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+  | TC-01 | 남·여 라커 모두 0 남은 상태에서 KISPG 결제 페이지 진입, 라커 선택 시도                                         | 라커 선택 불가 안내. 라커 없이 KISPG 결제는 가능.                                                                                          |
+  | TC-02 | 동일 user·lesson 중복 `/enroll` (이전 건이 `PAYMENT_TIMEOUT` 상태, KISPG 결제 미완료)                          | 신규 `enroll` 생성 및 KISPG 결제 페이지 접근 가능.                                                                                         |
+  | TC-03 | 미성년자 `/enroll`                                                                                             | 403 `JUNIOR_BLOCKED`                                                                                                                       |
+  | TC-04 | 재등록 창 외 `/renewal` (KISPG 결제 연동)                                                                      | 403                                                                                                                                        |
+  | TC-05 | KISPG 결제 페이지에서 5분 초과 후 PG 결제 성공 (PG는 성공했으나, `/confirm` 호출 전에 만료)                    | `/payment/confirm` 호출 시 4002 `PAYMENT_EXPIRED`. KISPG는 별도 망취소 필요할 수 있음(운영 정책).                                          |
+  | TC-06 | 정원 1명 남음. User A `/enroll` 성공 -> KISPG 결제 페이지. User B `/enroll` 시도                               | User B는 `409 LEC001 PAYMENT_PAGE_SLOT_UNAVAILABLE` (또는 4001 `SEAT_FULL` - 상세 구현에 따라).                                            |
+  | TC-07 | 기존 회원 A가 재수강 기간(18~22일)에 이전 강습에서 사용하던 사물함을 유지하며 재수강 신청 및 결제 완료.        | API: 새 Enroll에 `lockerAllocated=true`, 이전 Enroll은 `lockerAllocated=false`. `locker_inventory.used_quantity` 변동 없음. FE: 결제 완료. |
+  | TC-08 | 기존 회원 B가 재수강 기간에 이전 강습에서 사물함을 사용하지 않았으나, 재수강 시 사물함 신규 신청 및 결제 완료. | API: 새 Enroll에 `lockerAllocated=true`. `locker_inventory.used_quantity` 1 증가. FE: 결제 완료.                                           |
+  | TC-09 | 신규 회원 C가 신규 회원 신청 기간(25일 이후)에 강습 신청 및 사물함 포함 결제 완료.                             | API: 새 Enroll에 `lockerAllocated=true`. `locker_inventory.used_quantity` 1 증가. FE: 결제 완료.                                           |
 
   ***
 

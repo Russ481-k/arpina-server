@@ -67,4 +67,24 @@ public interface EnrollRepository extends JpaRepository<Enroll, Long> {
     // If it doesn't exist or needs specific logic, it would be defined here.
     // Example: @Query("SELECT COUNT(e) FROM Enroll e WHERE e.user.uuid = :userUuid AND YEAR(e.lesson.startDate) = YEAR(:lessonStartDate) AND MONTH(e.lesson.startDate) = MONTH(:lessonStartDate) AND e.payStatus IN ('PAID', 'UNPAID')")
     // long countUserEnrollmentsInMonth(@Param("userUuid") String userUuid, @Param("lessonStartDate") LocalDate lessonStartDate);
+
+    // For renewal locker transfer: find the latest paid enrollment with a locker for the user from the previous month
+    @Query("SELECT e FROM Enroll e " +
+           "WHERE e.user.uuid = :userUuid " +
+           "AND e.payStatus = 'PAID' " +
+           "AND e.lockerAllocated = true " +
+           "AND e.lesson.endDate < :currentLessonStartDate " +
+           "AND FUNCTION('YEAR', e.lesson.endDate) = FUNCTION('YEAR', :previousMonthDate) " +
+           "AND FUNCTION('MONTH', e.lesson.endDate) = FUNCTION('MONTH', :previousMonthDate) " +
+           "ORDER BY e.lesson.endDate DESC, e.createdAt DESC")
+    List<Enroll> findPreviousPaidLockerEnrollmentsForUser(
+            @Param("userUuid") String userUuid, 
+            @Param("currentLessonStartDate") LocalDate currentLessonStartDate, 
+            @Param("previousMonthDate") LocalDate previousMonthDate);
+
+    // For LessonCompletionLockerReleaseSweepJob: find enrollments for lessons ended before a certain date with lockers allocated.
+    @Query("SELECT e FROM Enroll e " +
+           "WHERE e.lesson.endDate < :date " +
+           "AND e.lockerAllocated = true")
+    List<Enroll> findByLesson_EndDateBeforeAndLockerAllocatedIsTrue(@Param("date") LocalDate date);
 } 

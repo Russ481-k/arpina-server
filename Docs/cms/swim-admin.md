@@ -25,16 +25,16 @@ _(Spring Boot REST API + React Admin SPA 기준)_
 
 ## 2. 백오피스 화면 구조
 
-| ID        | 메뉴          | 주요 UI                                  | 설명                                                                                                                                                                 |
-| --------- | ------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **AD-01** | Dashboard     | KPI Card(신청·좌석·매출) 잔여 라커 Donut | 실시간 운영 지표 (매출에는 `PAID` 건만, 좌석에는 `PAID` + 유효 `UNPAID`건 고려)                                                                                      |
-| **AD-02** | Lesson 관리   | DataGrid + 복제 버튼                     | 강습명·기간·정원·가격 CRUD. 강습별 남녀 라커 정원(`male_locker_cap` 등) 설정.                                                                                        |
-| **AD-03** | Locker 관리   | 성별 총 라커 수, 현재 사용량 관리        | 전체 라커 재고(`locker_inventory`) 관리 (예: 남/여 총량 수정)                                                                                                        |
-| **AD-04** | Enroll 현황   | Table(Status Badge) + Search             | `APPLIED` (내부 `payStatus`: `PAID`, `PARTIALLY_REFUNDED`, `UNPAID` (결제만료 전), `PAYMENT_TIMEOUT`), `CANCELED` 리스트. 사물함 사용 여부 표시. `remain_days` 표시. |
-| **AD-05** | Cancel Review | Drawer: 출석·환불 % 슬라이더             | 개강 後 취소 승인/반려. **환불액 자동계산 (`paid_amt`, `remain_days` 기반) 및 KISPG 부분취소 연동.**                                                                 |
-| **AD-06** | Payment 관리  | 결제·환불 탭, KISPG TID, 엑셀 DL         | 결제 승인·부분/전액 환불. **`tid`, `paid_amt`, `refunded_amt` 등 KISPG 관련 정보 표시.** KISPG Webhook (`payment-notification`)으로 자동 처리. 수동 개입은 예외적.   |
-| **AD-07** | 통계·리포트   | Bar & Line Chart + XLS Export            | 월별 매출·이용자·라커 사용률 (KISPG `paid_amt` 기준)                                                                                                                 |
-| **AD-08** | 시스템 설정   | 권한 매핑, Cron 로그                     | 배치(`payment-timeout-sweep`, KISPG `cancel-retry`, `pg-reconcile`)·Webhook (`kispg/payment-notification`) 모니터                                                    |
+| ID        | 메뉴          | 주요 UI                                  | 설명                                                                                                                                                                                                                             |
+| --------- | ------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **AD-01** | Dashboard     | KPI Card(신청·좌석·매출) 잔여 라커 Donut | 실시간 운영 지표 (매출에는 `PAID` 건만, 좌석에는 `PAID` + 유효 `UNPAID`(결제 페이지 접근 슬롯 점유 중) 건 고려). **잔여 라커는 현재 유효한(종료되지 않은 강습에 배정된, 재수강으로 이전된 사물함 포함) 사물함을 제외하고 계산.** |
+| **AD-02** | Lesson 관리   | DataGrid + 복제 버튼                     | 강습명·기간·정원·가격 CRUD. **다음 달 강습은 일반적으로 매월 22일경 생성 또는 복제 기능을 통해 준비됩니다.**                                                                                                                     |
+| **AD-03** | Locker 관리   | 성별 총 라커 수, 현재 사용량 관리        | 전체 라커 재고(`locker_inventory`) 관리 (예: 남/여 총량 수정)                                                                                                                                                                    |
+| **AD-04** | Enroll 현황   | Table(Status Badge) + Search             | `APPLIED` (내부 `payStatus`: `PAID`, `PARTIALLY_REFUNDED`, `UNPAID` (결제만료 전, 결제 페이지 접근 슬롯 점유 중), `PAYMENT_TIMEOUT`), `CANCELED` 리스트. 사물함 사용 여부 표시. `remain_days` 표시.                              |
+| **AD-05** | Cancel Review | Drawer: 출석·환불 % 슬라이더             | 개강 後 취소 승인/반려. **환불액 자동계산 (`paid_amt`, `remain_days` 기반) 및 KISPG 부분취소 연동.**                                                                                                                             |
+| **AD-06** | Payment 관리  | 결제·환불 탭, KISPG TID, 엑셀 DL         | 결제 승인·부분/전액 환불. **`tid`, `paid_amt`, `refunded_amt` 등 KISPG 관련 정보 표시.** KISPG Webhook (`payment-notification`)으로 자동 처리. 수동 개입은 예외적.                                                               |
+| **AD-07** | 통계·리포트   | Bar & Line Chart + XLS Export            | 월별 매출·이용자·라커 사용률 (KISPG `paid_amt` 기준)                                                                                                                                                                             |
+| **AD-08** | 시스템 설정   | 권한 매핑, Cron 로그                     | 배치(`payment-timeout-sweep`, KISPG `cancel-retry`, `pg-reconcile`)·Webhook (`kispg/payment-notification`) 모니터                                                                                                                |
 
 ---
 
@@ -163,27 +163,30 @@ _(Spring Boot REST API + React Admin SPA 기준)_
 
 ## 6. 비즈니스 룰 (Admin)
 
-| 구분                       | 내용                                                                                                                                                                                                                                                                                                                                                                         |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **강습 마감**              | (lesson.capacity - (PAID 수강생 + 만료 전 UNPAID 수강생)) <= 0 또는 관리자가 `CLOSED` → 프론트 '마감' 표시.                                                                                                                                                                                                                                                                  |
-| **부분 환불**              | `approve-cancel` 호출 시, 서버는 **잔여일수/환불액 자동 계산 (`max(0, EndDate – Today + 1)` 등) 후 KISPG 부분 취소 API (`partCanFlg=1`, `canAmt=환불액`) 호출.** `payment.refunded_amt` 누적, `enroll.pay_status` 등 업데이트. KISPG `tid` 필수.                                                                                                                             |
-| **취소 승인**              | 개강 후 취소 요청 `PENDING` → 승인 시 `enroll.status=CANCELED`, `enroll.pay_status`는 환불 상태로 변경 (예: `PARTIALLY_REFUNDED`, `CANCELED`). **위 "부분 환불" 로직과 연동.**                                                                                                                                                                                               |
-| **라커 재고 관리**         | 관리자는 `locker_inventory`에서 성별 전체 라커 수를 설정. 사용자가 강습 신청 후 결제 페이지에서 `uses_locker`를 선택하고 KISPG Webhook을 통해 결제가 최종 확인되면, 해당 성별의 글로벌 `locker_inventory.used_quantity`가 업데이트됩니다. `PAYMENT_TIMEOUT`된 신청건의 라커 예약 시도는 자동으로 반영되지 않거나, 해당 `used_quantity`가 롤백됩니다 (세부 구현에 따라 다름). |
-| **`PAYMENT_TIMEOUT` 처리** | 관리자는 `PAYMENT_TIMEOUT` 상태의 신청 목록을 조회하고, 필요한 경우 후속 조치(예: 사용자에게 알림)를 할 수 있다. 이 상태의 신청은 KISPG 결제 시도 실패 또는 만료로 간주.                                                                                                                                                                                                     |
-| **KISPG 연동 보안**        | KISPG 취소 API 호출 시 `encData` (SHA-256 해시: `mid+ediDate+canAmt+merchantKey`) 사용. KISPG Webhook (`payment-notification`) 수신 시 IP 화이트리스트 (`1.233.179.201`) 및 해시 검증. `merchantKey` 서버 보안 저장.                                                                                                                                                         |
-| **트랜잭션 관리**          | KISPG 부분취소는 `payment` 행에 `SELECT ... FOR UPDATE` 잠금 후 KISPG API 호출 및 DB 업데이트를 단일 트랜잭션으로 처리하여 경합 방지. 실패 시 롤백 및 알림. KISPG Webhook 처리 시에도 정원/라커 확인 및 DB 업데이트는 트랜잭션으로 관리.                                                                                                                                     |
+| 구분               | 내용                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **강습 마감**      | (lesson.capacity - (PAID 수강생 + 만료 전 UNPAID 수강생(결제 페이지 접근 슬롯 점유 중))) <= 0 또는 관리자가 `CLOSED` → 프론트 '마감' 표시.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| **부분 환불**      | `approve-cancel` 호출 시, 서버는 **잔여일수/환불액 자동 계산 (`max(0, EndDate – Today + 1)` 등) 후 KISPG 부분 취소 API (`partCanFlg=1`, `canAmt=환불액`) 호출.** `payment.refunded_amt` 누적, `enroll.pay_status` 등 업데이트. KISPG `tid` 필수.                                                                                                                                                                                                                                                                                                                                                                                        |
+| **취소 승인**      | 개강 후 취소 요청 `PENDING` → 승인 시 `enroll.status=CANCELED`, `enroll.pay_status`는 환불 상태로 변경 (예: `PARTIALLY_REFUNDED`, `CANCELED`). **위 "부분 환불" 로직과 연동.**                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| **라커 재고 관리** | 관리자는 `locker_inventory`에서 성별 전체 라커 수를 설정. 사용자가 강습 신청 후 결제 페이지에서 `uses_locker`를 선택하고 KISPG Webhook을 통해 결제가 최종 확인되면, 해당 성별의 글로벌 `locker_inventory.used_quantity`가 업데이트됩니다. `PAYMENT_TIMEOUT`된 신청건의 라커 예약 시도는 자동으로 반영되지 않거나, 해당 `used_quantity`가 롤백됩니다. **`PAYMENT_TIMEOUT` 처리 시 해당 신청 건이 점유하던 결제 페이지 접근 슬롯은 해제됩니다. 강습이 종료되면(`lesson.end_date` 경과) 해당 강습에 배정되었던 사물함(재수강으로 이전되지 않은 경우)은 배치 작업을 통해 자동으로 회수되어 `locker_inventory.used_quantity`가 감소합니다.** |
+
+**재수강 시 사물함 처리:** 사용자가 재수강(`renewal_flag=true`)하고 사물함 유지를 원하여 결제가 완료된 경우, 시스템은 이전 강습의 사물함 할당 상태를 확인합니다. 만약 이전 강습에서 사물함을 사용 중이었다면, `locker_inventory.used_quantity`를 증가시키지 않고 새 강습으로 사물함 사용을 이전합니다 (이전 강습의 `enroll.lockerAllocated`는 `false`로 변경). 이전 강습에서 사물함을 사용하지 않았거나 재수강 시 사물함을 원치 않으면 일반적인 증감 로직을 따릅니다. |
+| **`PAYMENT_TIMEOUT` 처리** | 관리자는 `PAYMENT_TIMEOUT` 상태의 신청 목록을 조회하고, 필요한 경우 후속 조치(예: 사용자에게 알림)를 할 수 있다. 이 상태의 신청은 KISPG 결제 시도 실패 또는 만료로 간주. **이 상태로 변경 시 해당 신청 건이 점유하던 결제 페이지 접근 슬롯은 해제됩니다.** |
+| **KISPG 연동 보안** | KISPG 취소 API 호출 시 `encData` (SHA-256 해시: `mid+ediDate+canAmt+merchantKey`) 사용. KISPG Webhook (`payment-notification`) 수신 시 IP 화이트리스트 (`1.233.179.201`) 및 해시 검증. `merchantKey` 서버 보안 저장. |
+| **트랜잭션 관리** | KISPG 부분취소는 `payment` 행에 `SELECT ... FOR UPDATE` 잠금 후 KISPG API 호출 및 DB 업데이트를 단일 트랜잭션으로 처리하여 경합 방지. 실패 시 롤백 및 알림. KISPG Webhook 처리 시에도 정원/라커 확인 및 DB 업데이트는 트랜잭션으로 관리. **결제 페이지 접근 슬롯 할당/해제 로직도 트랜잭션 내에서 일관되게 처리됩니다.** |
 
 ---
 
 ## 7. 배치 & 모니터링
 
-| Job                       | 주기    | 관리자 UI      | 설명                                                                               |
-| ------------------------- | ------- | -------------- | ---------------------------------------------------------------------------------- |
-| pg-webhook sync           | 실시간  | AD-08 Cron Log | KISPG Webhook (`payment-notification`) 수신 및 처리. 관리자 UI에서 로그 확인 가능. |
-| renewal-notifier          | daily   | 스케줄 리스트  |                                                                                    |
-| **payment-timeout-sweep** | 1-5 min | AD-08 Cron Log | KISPG 결제 페이지 만료 건 처리.                                                    |
-| **cancel-retry**          | 5 min   | AD-08 Cron Log | **`pending` 상태의 KISPG 취소 실패 건 자동 재시도 (최대 3회)**                     |
-| **pg-reconcile**          | daily   | AD-08 Cron Log | **KISPG `/v2/order` API로 전일 KISPG 결제/취소 내역과 DB 대사 작업**               |
+| Job                                        | 주기     | 관리자 UI      | 설명                                                                                                                                          |
+| ------------------------------------------ | -------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| pg-webhook sync                            | 실시간   | AD-08 Cron Log | KISPG Webhook (`payment-notification`) 수신 및 처리. 관리자 UI에서 로그 확인 가능.                                                            |
+| renewal-notifier                           | daily    | 스케줄 리스트  |                                                                                                                                               |
+| **payment-timeout-sweep**                  | 1-5 min  | AD-08 Cron Log | KISPG 결제 페이지 만료 건 처리.                                                                                                               |
+| **cancel-retry**                           | 5 min    | AD-08 Cron Log | **`pending` 상태의 KISPG 취소 실패 건 자동 재시도 (최대 3회)**                                                                                |
+| **pg-reconcile**                           | daily    | AD-08 Cron Log | **KISPG `/v2/order` API로 전일 KISPG 결제/취소 내역과 DB 대사 작업**                                                                          |
+| **lesson-completion-locker-release-sweep** | 하루 1회 | AD-08 Cron Log | 종료된 강습에 배정된 사물함 자동 회수 처리. **재수강으로 인해 `lockerAllocated=false` 처리된 이전 강습 건은 이 배치에서 중복 처리되지 않음.** |
 
 Grafana Dashboard → 신청·매출·라커 KPI 실시간 파이프. (KPI에는 `PAYMENT_TIMEOUT` 건 제외, KISPG `paid_amt` 기준). **"KISPG 부분취소 실패율 < 0.5%" 알람 추가.** "KISPG Webhook 수신 지연/실패" 알람 추가.
 
@@ -191,16 +194,19 @@ Grafana Dashboard → 신청·매출·라커 KPI 실시간 파이프. (KPI에는
 
 ## 8. 테스트 케이스 (Admin)
 
-| ID    | 시나리오                                                     | 예상 결과                                                                                                          |
-| ----- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| AD-01 | 강습 정원=0 시 자동 `status=CLOSED` (유효 신청자 고려)       | Lesson 목록 '마감'                                                                                                 |
-| AD-02 | 사물함 `is_active=0` 설정 (만약 개별 라커 관리 시나리오라면) | 결제 페이지 라커 드롭다운에 미표시 또는 비활성화                                                                   |
-| AD-03 | 부분 환불 70 % 승인                                          | `payment.refunded_amt` = `paid_amt`×0.7 (KISPG API 성공 후). `enroll.pay_status` 변경. KISPG `tid` 사용.           |
-| AD-04 | 취소 반려                                                    | enroll.status 그대로, 회원에게 메시지                                                                              |
-| AD-05 | Enroll 현황에서 `PAYMENT_TIMEOUT` 상태 조회                  | KISPG 결제 시간 초과된 신청 목록 확인 가능.                                                                        |
-| AD-06 | `payment-timeout-sweep` 배치 실행 후                         | 만료된 `UNPAID` 신청이 `PAYMENT_TIMEOUT`으로 변경되고, 해당 신청이 KISPG 결제 페이지에서 사용하려던 라커가 회수됨. |
-| AD-07 | KISPG 부분 취소 API 호출 실패 시 (네트워크 오류 등)          | DB 롤백, 관리자 알림. `cancel-retry` 배치가 재시도.                                                                |
-| AD-08 | `pg-reconcile` 배치 실행 시 KISPG 내역과 DB 불일치 발견      | 관리자 알림 및 수동 확인 필요.                                                                                     |
+| ID    | 시나리오                                                     | 예상 결과                                                                                                                                                                                      |
+| ----- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AD-01 | 강습 정원=0 시 자동 `status=CLOSED` (유효 신청자 고려)       | Lesson 목록 '마감' (유효 신청자는 PAID 및 만료 전 UNPAID(결제 페이지 접근 슬롯 점유 중) 건 포함)                                                                                               |
+| AD-02 | 사물함 `is_active=0` 설정 (만약 개별 라커 관리 시나리오라면) | 결제 페이지 라커 드롭다운에 미표시 또는 비활성화                                                                                                                                               |
+| AD-03 | 부분 환불 70 % 승인                                          | `payment.refunded_amt` = `paid_amt`×0.7 (KISPG API 성공 후). `enroll.pay_status` 변경. KISPG `tid` 사용.                                                                                       |
+| AD-04 | 취소 반려                                                    | enroll.status 그대로, 회원에게 메시지                                                                                                                                                          |
+| AD-05 | Enroll 현황에서 `PAYMENT_TIMEOUT` 상태 조회                  | KISPG 결제 시간 초과된 신청 목록 확인 가능.                                                                                                                                                    |
+| AD-06 | `payment-timeout-sweep` 배치 실행 후                         | 만료된 `UNPAID` 신청이 `PAYMENT_TIMEOUT`으로 변경되고, 해당 신청이 KISPG 결제 페이지에서 사용하려던 라커가 회수되며, **점유했던 결제 페이지 접근 슬롯이 해제됨.**                              |
+| AD-07 | KISPG 부분 취소 API 호출 실패 시 (네트워크 오류 등)          | DB 롤백, 관리자 알림. `cancel-retry` 배치가 재시도.                                                                                                                                            |
+| AD-08 | `pg-reconcile` 배치 실행 시 KISPG 내역과 DB 불일치 발견      | 관리자 알림 및 수동 확인 필요.                                                                                                                                                                 |
+| AD-09 | `lesson-completion-locker-release-sweep` 배치 실행 후        | 종료된 강습에 배정되었던 사물함들이 `locker_inventory`에서 회수되고, `Enroll` 레코드의 `lockerAllocated`가 `false`로 업데이트됨. 대시보드의 잔여 라커 수에 반영됨.                             |
+| AD-10 | 기존 회원 A가 재수강 신청(사물함 유지) 및 결제 완료 후.      | 관리자 Enroll 현황에서 새로운 강습 신청 건에 `lockerAllocated=true` 확인. `locker_inventory`의 `used_quantity`는 이전과 동일하게 유지됨. 이전 강습 신청 건은 `lockerAllocated=false`로 변경됨. |
+| AD-11 | 기존 회원 B가 재수강 신청(사물함 신규 사용) 및 결제 완료 후. | 관리자 Enroll 현황에서 새로운 강습 신청 건에 `lockerAllocated=true` 확인. `locker_inventory`의 `used_quantity`가 1 증가함.                                                                     |
 
 ---
 
