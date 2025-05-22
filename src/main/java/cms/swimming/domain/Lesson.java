@@ -36,12 +36,6 @@ public class Lesson {
     @Column(name = "capacity", nullable = false)
     private Integer capacity;
 
-    @Column(name = "male_locker_cap", nullable = false)
-    private Integer maleLockerCap;
-
-    @Column(name = "female_locker_cap", nullable = false)
-    private Integer femaleLockerCap;
-
     @Column(name = "price", nullable = false)
     private Integer price;
 
@@ -88,8 +82,6 @@ public class Lesson {
             LocalDate startDate, 
             LocalDate endDate, 
             Integer capacity, 
-            Integer maleLockerCap, 
-            Integer femaleLockerCap, 
             Integer price,
             LessonStatus status,
             LocalDate registrationEndDate) {
@@ -97,8 +89,6 @@ public class Lesson {
         this.startDate = startDate;
         this.endDate = endDate;
         this.capacity = capacity;
-        this.maleLockerCap = maleLockerCap;
-        this.femaleLockerCap = femaleLockerCap;
         this.price = price;
         this.status = status;
         this.registrationEndDate = registrationEndDate;

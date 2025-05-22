@@ -43,6 +43,7 @@ public enum ErrorCode {
     USER_GENDER_REQUIRED_FOR_LOCKER("E013", "라커를 신청하거나 반납하려면 사용자의 성별 정보가 필요합니다."),
     ALREADY_CANCELLED_ENROLLMENT("E014", "이미 취소 처리된 수강 신청입니다."),
     LESSON_LOCKER_CAPACITY_EXCEEDED_FOR_GENDER("E015", "해당 성별의 강습 사물함 정원이 초과되었습니다."),
+    LOCKER_INVENTORY_NOT_FOUND("E016", "사물함 재고 정보를 찾을 수 없습니다."),
 
     // --- 결제 (Payment) 관련 오류 코드 (P001 ~ P099) ---
     PAYMENT_INFO_NOT_FOUND("P001", "결제 정보를 찾을 수 없습니다."),

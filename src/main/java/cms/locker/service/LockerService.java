@@ -1,7 +1,9 @@
 package cms.locker.service;
- 
+
+import cms.locker.dto.LockerAvailabilityDto;
+
 public interface LockerService {
-    int getAvailableLockerCount(String gender);
-    boolean assignLocker(String gender);
-    void releaseLocker(String gender);
+    LockerAvailabilityDto getLockerAvailabilityByGender(String gender);
+    void incrementUsedQuantity(String gender);
+    void decrementUsedQuantity(String gender);
 } 

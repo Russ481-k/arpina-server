@@ -5,10 +5,10 @@
 
   ## 0. 문서 목표
 
-  | 항목      | 내용                                                                                                                        |
-  | --------- | --------------------------------------------------------------------------------------------------------------------------- |
-  | 범위      | **일반 회원**: 강습·사물함 신청·취소신청·재등록 (결제는 전용 페이지) **관리자**: 프로그램·사물함·신청·취소승인관리리·통계 관리            |
-  | 달성 지표 | ① 선착순(결제 완료 기준) ② **5분 내 결제 완료** ③ 신청 후 0 오류 좌석·라커 관리 ④ 관리자 한 화면 KPI 확인 |
+  | 항목      | 내용                                                                                                                           |
+  | --------- | ------------------------------------------------------------------------------------------------------------------------------ |
+  | 범위      | **일반 회원**: 강습·사물함 신청·취소신청·재등록 (결제는 전용 페이지) **관리자**: 프로그램·사물함·신청·취소승인관리리·통계 관리 |
+  | 달성 지표 | ① 선착순(결제 완료 기준) ② **5분 내 결제 완료** ③ 신청 후 0 오류 좌석·라커 관리 ④ 관리자 한 화면 KPI 확인                      |
 
   ***
 
@@ -53,7 +53,7 @@
         KISPG_Window-->>KISPG_Server: 결제 시도
         KISPG_Server-->>API: POST /api/v1/kispg/payment-notification (Webhook)
         API-->>KISPG_Server: Webhook ACK
-        Note over API: Webhook: KISPG 데이터 검증, Enroll/Payment PAID 상태 변경
+        Note over API: Webhook: KISPG 데이터 검증, Enroll/Payment PAID 상태 변경, 사물함 배정(Enroll.usesLocker=true 및 결제 성공 시 locker_inventory 업데이트 및 Enroll.lockerAllocated=true 설정)
         KISPG_Server-->>KISPG_Window: 결제 완료
         KISPG_Window-->>FE: KISPG Return URL로 리디렉션
         FE->>API: POST /api/v1/payment/confirm/{enrollId} (UX용, wantsLocker 전달)
@@ -112,19 +112,19 @@
 
   ### 4-2. 엔드포인트 (주요 흐름 관련)
 
-  | Method | URL                                              | Req Body/QS                                       | Res Body                                                                       | 비고                                                                                                               |
-  | ------ | ------------------------------------------------ | ------------------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-  | GET    | /api/v1/swimming/lessons                         | status, year, month, startDate, endDate, pageable | Page<LessonDTO>                                                                | 수업 목록 조회.                                                                                                    |
-  | GET    | /public/locker/availability                      | lessonId                                          | LockerRemainDTO (e.g. {"maleAvailable":10, "femaleAvailable":5})               | (KISPG 결제 페이지용) 특정 강습의 성별 사용 가능 라커 수 조회.                                                     |
-  | POST   | **/api/v1/swimming/enroll**                      | { lessonId: Long }                                | **EnrollInitiationResponseDto** ({enrollId, paymentPageUrl, paymentExpiresAt}) | **핵심 변경.** 좌석 Lock 시도. 성공 시 `enroll` 생성 (UNPAID, 5분 expire_dt), KISPG 결제 페이지 이동 정보 반환.    |
-  | GET    | **/api/v1/payment/details/{enrollId}**           | -                                                 | **PaymentPageDetailsDto**                                                      | **신규 (KISPG 연동).** 결제 페이지에서 호출. 결제 필요 CMS 내부 정보 반환.                                         |
-  | GET    | **/api/v1/payment/kispg-init-params/{enrollId}** | -                                                 | **KISPGInitParamsDto** (가칭)                                                  | **신규 (KISPG 연동).** KISPG 결제창 호출에 필요한 파라미터 반환. (상세: `kispg-payment-integration.md`)            |
-  | POST   | **/api/v1/payment/confirm/{enrollId}**           | `{ pgToken: String, wantsLocker: Boolean }`       | 200 OK (상태: PAYMENT_SUCCESSFUL/PROCESSING) / Error                           | **신규 (KISPG 연동).** KISPG `returnUrl`에서 호출. UX 및 `wantsLocker` 최종 반영. 주 결제처리는 Webhook.           |
-  | POST   | **/api/v1/kispg/payment-notification**           | (KISPG Webhook 명세 따름)                         | "OK" / Error                                                                   | **신규 (KISPG Webhook).** KISPG가 결제 결과 비동기 통지. 주 결제 처리 로직. (상세: `kispg-payment-integration.md`) |
-  | GET    | /mypage/enroll                                   | status?                                           | List<EnrollDTO> (payStatus에 `PAYMENT_TIMEOUT` 추가, KISPG 연동)               | (마이페이지, user.md API 경로 사용) 내 신청 내역 조회.                                                             |
-  | PATCH  | /mypage/enroll/{id}/cancel                       | reason                                            | 200 (KISPG 환불 연동)                                                          | (마이페이지, user.md API 경로 사용) 신청 취소.                                                                     |
-  | GET    | /mypage/renewal                                  | –                                                 | List<RenewalDTO>                                                               | (마이페이지, user.md API 경로 사용) 재등록 대상 조회.                                                              |
-  | POST   | /mypage/renewal                                  | lessonId, carryLocker                             | EnrollInitiationResponseDto (또는 유사, KISPG 결제 페이지로 이동)              | (마이페이지, user.md API 경로 사용) 재등록 신청. 성공 시 KISPG 결제 페이지 이동 정보 반환.                         |
+  | Method | URL                                              | Req Body/QS                                       | Res Body                                                                       | 비고                                                                                                                                                                                    |
+  | ------ | ------------------------------------------------ | ------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | GET    | /api/v1/swimming/lessons                         | status, year, month, startDate, endDate, pageable | Page<LessonDTO>                                                                | 수업 목록 조회.                                                                                                                                                                         |
+  | GET    | /public/locker/availability                      | lessonId                                          | LockerRemainDTO (e.g. {"maleAvailable":10, "femaleAvailable":5})               | (KISPG 결제 페이지용) 특정 강습의 성별 사용 가능 라커 수 조회.                                                                                                                          |
+  | POST   | **/api/v1/swimming/enroll**                      | { lessonId: Long }                                | **EnrollInitiationResponseDto** ({enrollId, paymentPageUrl, paymentExpiresAt}) | **핵심 변경.** 좌석 Lock 시도. 성공 시 `enroll` 생성 (UNPAID, 5분 expire_dt), KISPG 결제 페이지 이동 정보 반환.                                                                         |
+  | GET    | **/api/v1/payment/details/{enrollId}**           | -                                                 | **PaymentPageDetailsDto**                                                      | **신규 (KISPG 연동).** 결제 페이지에서 호출. 결제 필요 CMS 내부 정보 반환.                                                                                                              |
+  | GET    | **/api/v1/payment/kispg-init-params/{enrollId}** | -                                                 | **KISPGInitParamsDto** (가칭)                                                  | **신규 (KISPG 연동).** KISPG 결제창 호출에 필요한 파라미터 반환. (상세: `kispg-payment-integration.md`)                                                                                 |
+  | POST   | **/api/v1/payment/confirm/{enrollId}**           | `{ pgToken: String, wantsLocker: Boolean }`       | 200 OK (상태: PAYMENT_SUCCESSFUL/PROCESSING) / Error                           | **신규 (KISPG 연동).** KISPG `returnUrl`에서 호출. UX 및 `wantsLocker` 최종 반영. 주 결제처리는 Webhook. 사물함 자원 할당 및 `Enroll.payStatus` 변경 등 핵심 로직은 Webhook에서만 처리. |
+  | POST   | **/api/v1/kispg/payment-notification**           | (KISPG Webhook 명세 따름)                         | "OK" / Error                                                                   | **신규 (KISPG Webhook).** KISPG가 결제 결과 비동기 통지. 주 결제 처리 로직. (상세: `kispg-payment-integration.md`)                                                                      |
+  | GET    | /mypage/enroll                                   | status?                                           | List<EnrollDTO> (payStatus에 `PAYMENT_TIMEOUT` 추가, KISPG 연동)               | (마이페이지, user.md API 경로 사용) 내 신청 내역 조회.                                                                                                                                  |
+  | PATCH  | /mypage/enroll/{id}/cancel                       | reason                                            | 200 (KISPG 환불 연동)                                                          | (마이페이지, user.md API 경로 사용) 신청 취소.                                                                                                                                          |
+  | GET    | /mypage/renewal                                  | –                                                 | List<RenewalDTO>                                                               | (마이페이지, user.md API 경로 사용) 재등록 대상 조회.                                                                                                                                   |
+  | POST   | /mypage/renewal                                  | lessonId, carryLocker                             | EnrollInitiationResponseDto (또는 유사, KISPG 결제 페이지로 이동)              | (마이페이지, user.md API 경로 사용) 재등록 신청. 성공 시 KISPG 결제 페이지 이동 정보 반환.                                                                                              |
 
   ***
 

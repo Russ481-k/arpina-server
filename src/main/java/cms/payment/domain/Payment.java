@@ -44,6 +44,22 @@ public class Payment {
     @Column(name = "merchant_uid", length = 255) // From CheckoutDto, often used with PG
     private String merchantUid;
 
+    // KISPG specific fields (as per kispg-payment-integration.md and Webhook implementation)
+    @Column(name = "tid", length = 100, unique = true) // KISPG Transaction ID, should be unique if it's a primary external ref
+    private String tid;
+
+    @Column(name = "paid_amt") // Actual amount confirmed by KISPG
+    private Integer paidAmt;
+
+    @Column(name = "pay_method", length = 50) // e.g., CARD, VBANK
+    private String payMethod;
+
+    @Column(name = "pg_result_code", length = 20)
+    private String pgResultCode;
+
+    @Column(name = "pg_result_msg", length = 255)
+    private String pgResultMsg;
+
     // Timestamps
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

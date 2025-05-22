@@ -128,34 +128,32 @@
 - **컨트롤러:** `PaymentController`
 - **서비스:** `PaymentService`
 - **요청 본문:** `{ "pgToken": String, "wantsLocker": Boolean }` (`pgToken`은 KISPG가 `returnUrl`로 전달하는 `tid` 또는 관련 식별자)
-- **목적:** KISPG 결제창에서 사용자가 돌아온 후 호출됨. **주 목적은 사용자 경험(UX)을 관리하고, 사용자의 최종 사물함 선택(`wantsLocker`)을 기록하는 것입니다. 실제 결제 승인 및 핵심 상태 변경은 KISPG Webhook (`POST /api/v1/kispg/payment-notification`)을 통해 비동기적으로 처리되는 것을 전제로 합니다.**
-- **트랜잭션 메소드 (필요한 경우에 한해).**
-- **로직:**
+- **목적:** KISPG 결제창에서 사용자가 돌아온 후 호출됨. **주 목적은 사용자 경험(UX)을 관리하고, 사용자의 최종 사물함 사용 희망 여부 (`wantsLocker`)를 `Enroll` 테이블에 기록하는 것입니다. 실제 결제 승인 (`Enroll.payStatus`를 `PAID`로 변경), 사물함 자원 할당 (`locker_inventory` 업데이트 및 `Enroll.lockerAllocated` 설정), `Payment` 레코드 생성/업데이트 등 핵심 상태 변경은 KISPG Webhook (`POST /api/v1/kispg/payment-notification`)을 통해 비동기적으로, 그리고 배타적으로 처리되는 것을 전제로 합니다.**
+- **트랜잭션 메소드 (주로 `Enroll.usesLocker` 업데이트를 위함).**
+- **로직 (주의: 이 API는 `Enroll.usesLocker` 외의 핵심적인 `Enroll` 상태나 `Payment` 레코드, `LockerInventory`를 직접 수정하지 않습니다):**
 
   1.  `enrollId` 유효성 검사 (기본적인 조회 및 사용자 소유권 확인).
       - `enrollId`로 `Enroll` 조회. 없으면 404.
       - 사용자 소유권 확인 (403).
   2.  `Enroll` 정보에서 현재 `payStatus` 및 `expireDt` 확인.
       - **CASE 1: `payStatus == "PAID"` (웹훅이 이미 처리):**
-        - `enroll.setUsesLocker(request.getWantsLocker())` (만약 이전에 설정되지 않았거나 변경된 경우).
-        - `enroll` 저장 (필요시).
+        - `enroll.setUsesLocker(request.getWantsLocker())` (만약 이전에 설정되지 않았거나 사용자의 최종 선택이 변경된 경우). `Enroll` 저장.
         - `ResponseEntity.ok().body("PAYMENT_SUCCESSFUL")` (또는 결제 완료 상태 DTO) 반환.
       - **CASE 2: `payStatus == "UNPAID"` AND `expireDt` 유효:**
         - 웹훅 처리가 지연되고 있을 수 있음.
-        - `enroll.setUsesLocker(request.getWantsLocker())` (임시 또는 최종 기록 - 웹훅이 덮어쓸 수 있음).
-        - `enroll` 저장 (필요시).
+        - `enroll.setUsesLocker(request.getWantsLocker())` (사용자의 최종 선택을 기록 - 웹훅은 이 값을 참조하여 사물함 할당 여부 결정). `Enroll` 저장.
         - `ResponseEntity.ok().body("PAYMENT_PROCESSING")` (프론트엔드는 폴링 또는 웹소켓으로 최종 상태 확인 필요) 반환.
-        - **주의: 이 엔드포인트는 직접 PG 검증을 수행하지 않습니다.** `pgToken`은 로깅 또는 참조용으로만 사용될 수 있습니다.
+        - **주의: 이 엔드포인트는 직접 PG 검증을 수행하지 않으며, `Enroll.payStatus`를 `PAID`로 변경하거나 `LockerInventory`를 직접 업데이트하지 않습니다.** `pgToken`은 로깅 또는 참조용으로만 사용될 수 있습니다.
       - **CASE 3: `payStatus == "PAYMENT_TIMEOUT"` OR `expireDt` 만료:**
         - `BusinessRuleException(ErrorCode.ENROLLMENT_PAYMENT_EXPIRED)` (400) 발생.
       - **CASE 4: 기타 상태 (`CANCELED_UNPAID` 등):**
         - `BusinessRuleException(ErrorCode.INVALID_ENROLLMENT_STATE_FOR_PAYMENT)` (409) 발생.
   3.  **정원/사물함 최종 확인 관련 로직:**
-      - KISPG Webhook 핸들러(`POST /api/v1/kispg/payment-notification`)가 정원/사물함 최종 확인 및 `Enroll` 상태를 `PAID`로 변경하는 주 책임자입니다.
-      - 이 `confirm` 엔드포인트는 웹훅 처리 이후에 호출될 수도 있고, 거의 동시에 호출될 수도 있습니다. 따라서 `wantsLocker` 정보만 주로 업데이트하고, 최종 자원 할당은 웹훅의 트랜잭션 내에서 이루어지도록 합니다.
-      - 만약 웹훅 이전에 이 API가 호출되고 `wantsLocker`가 설정되면, 웹훅 처리 시 해당 선택을 존중합니다.
+      - KISPG Webhook 핸들러(`POST /api/v1/kispg/payment-notification`)가 정원/사물함 최종 확인 및 `Enroll` 상태를 `PAID`로 변경, `Payment` 레코드 생성, `LockerInventory` 업데이트의 주 책임자입니다.
+      - 이 `confirm` 엔드포인트는 웹훅 처리 이후에 호출될 수도 있고, 거의 동시에 호출될 수도 있습니다. 따라서 `Enroll.usesLocker` 정보만 주로 업데이트하고, 최종 자원 할당(좌석, 사물함 등) 및 관련 상태 변경은 웹훅의 트랜잭션 내에서 이루어지도록 합니다.
+      - 만약 웹훅 이전에 이 API가 호출되고 `Enroll.usesLocker`가 설정되면, 웹훅 처리 시 해당 선택(`enroll.isUsesLocker()`)을 존중하여 사물함 할당 여부를 결정합니다.
 
-  (기존의 PG 검증, Payment 레코드 생성, Enroll 상태 PAID로 직접 변경 등의 로직은 KISPG Webhook 핸들러로 이전되었으므로 여기서는 제거됨)
+  (기존의 PG 검증, Payment 레코드 생성, Enroll 상태 PAID로 직접 변경, 사물함 직접 할당 등의 로직은 KISPG Webhook 핸들러로 이전되었으므로 여기서는 제거됨)
 
 ## 4. `payment-timeout-sweep` 배치 작업
 

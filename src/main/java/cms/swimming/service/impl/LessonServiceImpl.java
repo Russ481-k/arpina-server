@@ -14,7 +14,6 @@ import org.springframework.transaction.annotation.Transactional;
 import javax.persistence.EntityNotFoundException;
 import java.time.LocalDate;
 import java.util.List;
-import java.util.stream.Collectors;
 import javax.persistence.criteria.Predicate;
 import java.util.ArrayList;
 import org.springframework.data.jpa.domain.Specification;

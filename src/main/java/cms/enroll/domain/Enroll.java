@@ -72,6 +72,13 @@ public class Enroll {
     @ColumnDefault("0")
     private boolean usesLocker;
 
+    @Column(name = "locker_allocated", nullable = false, columnDefinition = "TINYINT(1) DEFAULT 0")
+    @ColumnDefault("0")
+    private boolean lockerAllocated;
+
+    @Column(name = "locker_pg_token", length = 100)
+    private String lockerPgToken;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     @ColumnDefault("CURRENT_TIMESTAMP")
     private LocalDateTime createdAt;

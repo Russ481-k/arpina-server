@@ -3,7 +3,6 @@ package cms.swimming.controller;
 import cms.common.dto.ApiResponseSchema;
 import cms.swimming.dto.*;
 import cms.swimming.service.LessonService;
-import cms.swimming.service.LockerService;
 import cms.enroll.service.EnrollmentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -21,7 +20,6 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import javax.validation.Valid;
-import java.util.List;
 
 @RestController
 @RequestMapping("/admin/swimming")
@@ -32,7 +30,6 @@ import java.util.List;
 public class SwimmingAdminController {
 
     private final LessonService lessonService;
-    private final LockerService lockerService;
     private final EnrollmentService enrollmentService;
 
     // 1. 강습 관리 API
@@ -62,35 +59,6 @@ public class SwimmingAdminController {
             @Parameter(description = "조회할 강습 ID") @PathVariable Long lessonId) {
         LessonDto lesson = lessonService.getLessonById(lessonId);
         return ResponseEntity.ok(ApiResponseSchema.success(lesson, "강습 상세 조회 성공"));
-    }
-
-    // 2. 라커 관리 API
-    @Operation(summary = "모든 사물함 조회", description = "모든 사물함 목록을 조회합니다.")
-    @GetMapping("/lockers")
-    @PreAuthorize("hasAnyRole('PROGRAM_ADMIN', 'SUPER_ADMIN')")
-    public ResponseEntity<ApiResponseSchema<List<LockerDto>>> getAllLockers() {
-        List<LockerDto> lockers = lockerService.getAllLockers();
-        return ResponseEntity.ok(ApiResponseSchema.success(lockers, "사물함 목록 조회 성공"));
-    }
-
-    @Operation(summary = "특정 구역의 사물함 조회", description = "특정 구역의 사물함 목록을 조회합니다.")
-    @GetMapping("/lockers/zone/{zone}")
-    @PreAuthorize("hasAnyRole('PROGRAM_ADMIN', 'SUPER_ADMIN')")
-    public ResponseEntity<ApiResponseSchema<List<LockerDto>>> getLockersByZone(
-            @Parameter(description = "사물함 구역") @PathVariable String zone,
-            @Parameter(description = "활성화 상태 필터링") @RequestParam(required = false, defaultValue = "true") Boolean isActive) {
-        List<LockerDto> lockers = lockerService.getLockersByZone(zone, isActive);
-        return ResponseEntity.ok(ApiResponseSchema.success(lockers, "사물함 목록 조회 성공"));
-    }
-
-    @Operation(summary = "성별별 사물함 조회", description = "성별에 따른 사물함 목록을 조회합니다.")
-    @GetMapping("/lockers/gender/{gender}")
-    @PreAuthorize("hasAnyRole('PROGRAM_ADMIN', 'SUPER_ADMIN')")
-    public ResponseEntity<ApiResponseSchema<List<LockerDto>>> getLockersByGender(
-            @Parameter(description = "성별 (M, F)") @PathVariable String gender,
-            @Parameter(description = "활성화 상태 필터링") @RequestParam(required = false, defaultValue = "true") Boolean isActive) {
-        List<LockerDto> lockers = lockerService.getLockersByGenderAndActive(gender, isActive);
-        return ResponseEntity.ok(ApiResponseSchema.success(lockers, "사물함 목록 조회 성공"));
     }
 
     // 3. 신청 관리 API

@@ -22,8 +22,6 @@ public class LessonDto {
     private LocalDate endDate;
     
     private Integer capacity;
-    private Integer maleLockerCap;
-    private Integer femaleLockerCap;
     private Integer price;
     private String status; // OPEN, CLOSED, FINISHED
 
@@ -34,8 +32,6 @@ public class LessonDto {
                 .startDate(startDate)
                 .endDate(endDate)
                 .capacity(capacity)
-                .maleLockerCap(maleLockerCap)
-                .femaleLockerCap(femaleLockerCap)
                 .price(price)
                 .status(Lesson.LessonStatus.valueOf(status))
                 .build();
@@ -49,8 +45,6 @@ public class LessonDto {
                 .startDate(lesson.getStartDate())
                 .endDate(lesson.getEndDate())
                 .capacity(lesson.getCapacity())
-                .maleLockerCap(lesson.getMaleLockerCap())
-                .femaleLockerCap(lesson.getFemaleLockerCap())
                 .price(lesson.getPrice())
                 .status(lesson.getStatus().name())
                 .build();

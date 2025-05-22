@@ -39,7 +39,7 @@ import java.util.Map;
 public class SwimmingUserController {
 
     private final LessonService lessonService;
-    private final LockerService lockerService; // This is now cms.locker.service.LockerService
+    // private final LockerService lockerService; // lockerService 주입 삭제 (만약 다른 곳에서 사용하지 않는다면)
     private final EnrollmentService enrollmentService;
 
     // 1. 수업 조회 API
@@ -63,18 +63,19 @@ public class SwimmingUserController {
         return ResponseEntity.ok(ApiResponseSchema.success(lesson, "수업 상세 조회 성공"));
     }
 
-    // 2. 사물함 조회 API
-    @Operation(summary = "사용 가능한 사물함 개수 조회", description = "성별에 따라 사용 가능한 사물함의 개수를 조회합니다.")
-    @GetMapping("/lockers/available-count")
-    public ResponseEntity<ApiResponseSchema<Map<String, Object>>> getAvailableLockerCount(
-            @Parameter(description = "성별 (MALE/FEMALE)") @RequestParam String gender) {
-        int count = lockerService.getAvailableLockerCount(gender.toUpperCase());
-        Map<String, Object> responseData = Map.of(
-            "gender", gender.toUpperCase(),
-            "availableCount", count
-        );
-        return ResponseEntity.ok(ApiResponseSchema.success(responseData, "사용 가능한 사물함 개수 조회 성공"));
-    }
+    // 2. 사물함 조회 API (삭제됨)
+    // @Operation(summary = "사용 가능한 사물함 개수 조회", description = "성별에 따라 사용 가능한 사물함의 개수를 조회합니다.")
+    // @GetMapping("/lockers/available-count")
+    // public ResponseEntity<ApiResponseSchema<Map<String, Object>>> getAvailableLockerCount(
+    //         @Parameter(description = "성별 (MALE/FEMALE)") @RequestParam String gender) {
+    //     // 이 로직은 LockerController.getLockerAvailabilityStatus 로 대체됨
+    //     // int count = lockerService.getAvailableLockerCount(gender.toUpperCase()); 
+    //     // Map<String, Object> responseData = Map.of(
+    //     // "gender", gender.toUpperCase(),
+    //     // "availableCount", count
+    //     // );
+    //     // return ResponseEntity.ok(ApiResponseSchema.success(responseData, "사용 가능한 사물함 개수 조회 성공"));
+    // }
 
     // 3. 신청 및 취소 API
     @Operation(summary = "수업 신청", description = "수업을 신청합니다. 결제는 마이페이지에서 진행됩니다.")
