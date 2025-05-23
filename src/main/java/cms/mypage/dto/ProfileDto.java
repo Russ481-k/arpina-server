@@ -12,4 +12,5 @@ public class ProfileDto {
   private String address;
   private String email;
   private String carNo;
+  private String gender;
 } 

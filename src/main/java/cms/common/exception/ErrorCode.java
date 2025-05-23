@@ -45,6 +45,7 @@ public enum ErrorCode {
     LESSON_LOCKER_CAPACITY_EXCEEDED_FOR_GENDER("E015", "해당 성별의 강습 사물함 정원이 초과되었습니다."),
     LOCKER_INVENTORY_NOT_FOUND("E016", "사물함 재고 정보를 찾을 수 없습니다."),
     PAYMENT_PAGE_SLOT_UNAVAILABLE("E017", "현재 해당 강습의 결제 페이지에 접근할 수 있는 인원이 가득 찼습니다. 잠시 후 다시 시도해주세요."),
+    LESSON_CANNOT_BE_DELETED("E018", "해당 강습에 신청 내역이 존재하여 삭제할 수 없습니다."),
 
     // --- 결제 (Payment) 관련 오류 코드 (P001 ~ P099) ---
     PAYMENT_INFO_NOT_FOUND("P001", "결제 정보를 찾을 수 없습니다."),

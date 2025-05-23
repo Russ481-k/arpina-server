@@ -7,82 +7,79 @@ _(Spring Boot REST API + React Admin SPA 기준)_
 
 | 항목      | 내용                                                                                                     |
 | --------- | -------------------------------------------------------------------------------------------------------- |
-| 범위      | **운영자**가 강습·사물함·신청·결제(환불)·통계를 실시간으로 관리하는 백오피스                             |
+| 범위      | **운영자**가 강습·사물함·신청·결제(환불)·통계를 실시간으로 관리하는 CMS(콘텐츠 관리 시스템) 백오피스     |
 | 달성 지표 | ① 5 분 내 취소·환불 처리 ② 실시간 잔여 좌석 Sync ③ 월 결제 정산 100 % 일치 ④ 모든 관리 작업 3 click 이내 |
 
 ---
 
 ## 1. 역할(Role) 정의
 
-| ROLE              | 설명             | 접근 화면                  |
-| ----------------- | ---------------- | -------------------------- |
-| **SUPER_ADMIN**   | 전체 설정·권한   | Dashboard + 모든 메뉴      |
-| **PROGRAM_ADMIN** | 강습·사물함 CRUD | Lesson, Locker             |
-| **FINANCE_ADMIN** | 결제·환불 승인   | Payment, Cancel Review     |
-| **CS_AGENT**      | 신청 현황 모니터 | Enroll List, Cancel Review |
+| ROLE             | 설명                                                                         |
+| ---------------- | ---------------------------------------------------------------------------- |
+| **SYSTEM_ADMIN** | 전체 시스템 설정, 모든 CMS 기능 접근, 다른 관리자 계정 관리 (최고 관리자).   |
+| **ADMIN**        | 강습, 사물함 재고, 신청/결제 현황, 취소/환불 처리 등 CMS 전반의 운영 관리자. |
 
 ---
 
-## 2. 백오피스 화면 구조
+## 2. 백오피스 화면 구조 (CMS 기준)
 
-| ID        | 메뉴          | 주요 UI                                  | 설명                                                                                                                                                                                                                             |
-| --------- | ------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **AD-01** | Dashboard     | KPI Card(신청·좌석·매출) 잔여 라커 Donut | 실시간 운영 지표 (매출에는 `PAID` 건만, 좌석에는 `PAID` + 유효 `UNPAID`(결제 페이지 접근 슬롯 점유 중) 건 고려). **잔여 라커는 현재 유효한(종료되지 않은 강습에 배정된, 재수강으로 이전된 사물함 포함) 사물함을 제외하고 계산.** |
-| **AD-02** | Lesson 관리   | DataGrid + 복제 버튼                     | 강습명·기간·정원·가격 CRUD. **다음 달 강습은 일반적으로 매월 22일경 생성 또는 복제 기능을 통해 준비됩니다.**                                                                                                                     |
-| **AD-03** | Locker 관리   | 성별 총 라커 수, 현재 사용량 관리        | 전체 라커 재고(`locker_inventory`) 관리 (예: 남/여 총량 수정)                                                                                                                                                                    |
-| **AD-04** | Enroll 현황   | Table(Status Badge) + Search             | `APPLIED` (내부 `payStatus`: `PAID`, `PARTIALLY_REFUNDED`, `UNPAID` (결제만료 전, 결제 페이지 접근 슬롯 점유 중), `PAYMENT_TIMEOUT`), `CANCELED` 리스트. 사물함 사용 여부 표시. `remain_days` 표시.                              |
-| **AD-05** | Cancel Review | Drawer: 출석·환불 % 슬라이더             | 개강 後 취소 승인/반려. **환불액 자동계산 (`paid_amt`, `remain_days` 기반) 및 KISPG 부분취소 연동.**                                                                                                                             |
-| **AD-06** | Payment 관리  | 결제·환불 탭, KISPG TID, 엑셀 DL         | 결제 승인·부분/전액 환불. **`tid`, `paid_amt`, `refunded_amt` 등 KISPG 관련 정보 표시.** KISPG Webhook (`payment-notification`)으로 자동 처리. 수동 개입은 예외적.                                                               |
-| **AD-07** | 통계·리포트   | Bar & Line Chart + XLS Export            | 월별 매출·이용자·라커 사용률 (KISPG `paid_amt` 기준)                                                                                                                                                                             |
-| **AD-08** | 시스템 설정   | 권한 매핑, Cron 로그                     | 배치(`payment-timeout-sweep`, KISPG `cancel-retry`, `pg-reconcile`)·Webhook (`kispg/payment-notification`) 모니터                                                                                                                |
+| ID              | 메뉴           | 주요 UI                                  | 설명                                                                                                                                                                              |
+| --------------- | -------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CMS-DASH**    | Dashboard      | KPI Card(신청·좌석·매출) 잔여 라커 Donut | 실시간 운영 지표. (기존 AD-01 내용과 유사)                                                                                                                                        |
+| **CMS-LESSON**  | 강습 관리      | DataGrid + 생성/수정/복제 버튼           | 강습 정보(명칭, 강사, 기간, 시간, 정원, 가격, 상태 등) CRUD. **강습 스케줄(기간, 시간) 조정 기능 포함.** 상태(OPEN, CLOSED, ONGOING, COMPLETED) 관리.                             |
+| **CMS-LOCKER**  | 사물함 관리    | 성별 총 라커 수, 현재 사용량 표시/수정   | `locker_inventory` 기반. **성별 전체 라커 수량 수정, 현재 사용 중인 라커 수 조회.** (개별 라커 배정은 자동 로직 따름)                                                             |
+| **CMS-ENROLL**  | 신청자 관리    | Table(Status Badge) + Search/Filter      | 강습별/사용자별 신청 내역 조회. **신청자 정보(연락처, 성별 등) 및 결제 상태(`PAID`, `UNPAID`, `PAYMENT_TIMEOUT` 등) 확인.** 특정 신청 건 상세 조회 및 관리(예: 상태 변경은 주의). |
+| **CMS-CANCEL**  | 취소/환불 관리 | Drawer: 환불 정보 표시/입력              | 사용자의 취소 요청 목록 검토 및 승인/반려. **승인 시, 시스템은 환불액(일할+위약금) 자동 계산 후 KISPG 연동.**                                                                     |
+| **CMS-PAYMENT** | 결제 정보 관리 | 결제·환불 탭, KISPG TID, 엑셀 DL         | 모든 결제 및 환불 내역 상세 조회. **KISPG TID, 결제 수단, 결과 코드 등 확인.** 예외 건 수동 처리 지원.                                                                            |
+| **CMS-STATS**   | 통계·리포트    | Bar & Line Chart + XLS Export            | 월별 매출·이용자·라커 사용률 등. (기존 AD-07 내용과 유사)                                                                                                                         |
+| **CMS-SYSTEM**  | 시스템 설정    | 권한 매핑, Cron 로그                     | **(SYSTEM_ADMIN 전용)** 배치 작업 모니터링, Webhook 로그 조회, 관리자 계정/권한 관리. (기존 AD-08 내용과 유사)                                                                    |
 
 ---
 
-## 3. API 상세
+## 3. API 상세 (CMS 기준)
 
 ### 3-1. 공통
 
 | 요소     | 값                                                        |
 | -------- | --------------------------------------------------------- |
-| Base URL | `/api/v1/admin`                                           |
+| Base URL | `/api/v1/cms`                                             |
 | 인증     | JWT + ROLE 체크                                           |
 | 응답     | `status` int · `data` · `message`                         |
 | 에러코드 | 400 Validation · 403 NoAuth · 404 NotFound · 409 Conflict |
 
 ### 3-2. 엔드포인트
 
-| 그룹                  | Method | URL                                         | Req Body/QS               | Resp                         | 권한                                 | 비고                                                                                                                          |
-| --------------------- | ------ | ------------------------------------------- | ------------------------- | ---------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| **Lesson**            | GET    | /swimming/lessons                           | pageable                  | Page<LessonDto>              | PROGRAM_ADMIN, SUPER_ADMIN           | 모든 강습 목록 조회 (상태 필터 시: OPEN, CLOSED, ONGOING, COMPLETED)                                                          |
-|                       | GET    | /swimming/lessons/status/{status}           | pageable                  | Page<LessonDto>              | PROGRAM_ADMIN, SUPER_ADMIN, CS_AGENT | 특정 상태(OPEN, CLOSED, ONGOING, COMPLETED) 강습 목록 조회                                                                    |
-|                       | GET    | /swimming/lessons/{lessonId}                | -                         | LessonDto                    | PROGRAM_ADMIN, SUPER_ADMIN, CS_AGENT | 강습 상세 조회                                                                                                                |
-|                       | POST   | /swimming/lesson                            | LessonDto                 | Created                      | PROGRAM_ADMIN, SUPER_ADMIN           | 새 강습 생성 (DTO에서 `male_locker_cap`, `female_locker_cap` **제거됨**)                                                      |
-|                       | PUT    | /swimming/lesson/{id}                       | LessonDto                 | Updated                      | PROGRAM_ADMIN, SUPER_ADMIN           | 강습 수정 (DTO에서 `male_locker_cap`, `female_locker_cap` **제거됨**)                                                         |
-|                       | POST   | /swimming/lesson/{id}/clone                 | `{month}`                 | New LessonId                 | PROGRAM_ADMIN, SUPER_ADMIN           | 강습 복제 (경로 확인 필요)                                                                                                    |
-| **Locker Inventory**  | GET    | /swimming/lockers/inventory                 | -                         | List<LockerInventoryDto>     | PROGRAM_ADMIN, SUPER_ADMIN           | 전체 성별 라커 재고 현황 조회                                                                                                 |
-|                       | PUT    | /swimming/lockers/inventory/{gender}        | LockerInventoryUpdateDto  | Updated                      | PROGRAM_ADMIN, SUPER_ADMIN           | 특정 성별 라커 총 수량 수정                                                                                                   |
-| _(Old Locker System)_ | GET    | /swimming/lockers                           | zone,gender               | List<LockerDto>              | PROGRAM_ADMIN, SUPER_ADMIN           | (Deprecated?) 개별 라커 목록 조회. 현재 시스템은 재고 기반.                                                                   |
-|                       | POST   | /swimming/locker                            | LockerDto                 | Created                      | PROGRAM_ADMIN, SUPER_ADMIN           | (Deprecated?) 개별 라커 생성.                                                                                                 |
-|                       | PUT    | /swimming/locker/{id}                       | LockerDto                 | Updated                      | PROGRAM_ADMIN, SUPER_ADMIN           | (Deprecated?) 개별 라커 수정.                                                                                                 |
-| **Enroll**            | GET    | /swimming/enrolls                           | status,lessonId, pageable | Page<EnrollAdminResponseDto> | CS_AGENT, SUPER_ADMIN                | 신청 내역 조회 (DTO에 `usesLocker`, `payStatus`(`PAYMENT_TIMEOUT` 포함) 필드 포함). `status`는 `payStatus` 기준 필터링 가능.  |
-| **Cancel**            | GET    | /swimming/enrolls/cancel-requests           | status=PENDING, pageable  | Page<CancelRequestDto>       | CS_AGENT, SUPER_ADMIN                | 취소 요청 목록. **DTO에 `paid_amt`, `calculated_refund_amt`, KISPG `tid` 포함.**                                              |
-|                       | POST   | /swimming/enrolls/{enrollId}/approve-cancel | `{ adminComment: "..." }` | 200                          | FINANCE_ADMIN, SUPER_ADMIN           | 취소 요청 승인. **서버에서 잔여일수/환불액 자동 계산 후 KISPG 부분취소 API 호출. `payment.refunded_amt` 업데이트.**           |
-|                       | POST   | /swimming/enrolls/{enrollId}/deny-cancel    | `{comment}`               | 200                          | CS_AGENT, SUPER_ADMIN                | 취소 요청 거부                                                                                                                |
-| **Payment**           | GET    | /payment                                    | period,status,pg_tid      | List<PaymentAdminDto>        | FINANCE_ADMIN                        | (경로 /swimming/payment 등 확인 필요). **`PaymentAdminDto`에 KISPG `tid`, `paid_amt`, `refunded_amt`, `refund_dt` 포함.**     |
-|                       | POST   | /payment/{paymentId}/manual-refund          | `{ amount, reason, tid }` | 200                          | FINANCE_ADMIN, SUPER_ADMIN           | **(주의) KISPG와 별개로 DB만 환불 처리 또는 KISPG 수동 처리 후 DB 반영. 비상시 또는 KISPG 어드민에서 이미 처리된 건 기록용.** |
-| **Stats**             | GET    | /stats/summary                              | month                     | SummaryDto                   | FINANCE_ADMIN                        | (경로 /swimming/stats 등 확인 필요, KISPG `paid_amt` 기준 집계)                                                               |
-| **System**            | GET    | /system/cron-log                            | jobName                   | List                         | SUPER_ADMIN                          | (경로 /swimming/system 등 확인 필요). `payment-timeout-sweep`, KISPG `cancel-retry`, `pg-reconcile` 로그 조회.                |
-|                       | GET    | /system/webhook-log/kispg                   | date, tid                 | List                         | SUPER_ADMIN                          | KISPG `payment-notification` Webhook 수신 로그 조회.                                                                          |
+| 그룹                | Method | URL                                    | Req Body/QS                                     | Resp                             | 권한                | 비고                                                                                      |
+| ------------------- | ------ | -------------------------------------- | ----------------------------------------------- | -------------------------------- | ------------------- | ----------------------------------------------------------------------------------------- |
+| **Lesson**          | GET    | /lessons                               | status, year, month, pageable                   | Page<LessonDto>                  | ADMIN, SYSTEM_ADMIN | 강습 목록 조회. 스케줄 정보 포함.                                                         |
+|                     | GET    | /lessons/{lessonId}                    | -                                               | LessonDto                        | ADMIN, SYSTEM_ADMIN | 특정 강습 상세 조회.                                                                      |
+|                     | POST   | /lessons                               | LessonDto                                       | LessonDto (Created)              | ADMIN, SYSTEM_ADMIN | 새 강습 생성. 스케줄(기간, 시간) 포함.                                                    |
+|                     | PUT    | /lessons/{lessonId}                    | LessonDto                                       | LessonDto (Updated)              | ADMIN, SYSTEM_ADMIN | 강습 정보 및 스케줄 수정.                                                                 |
+|                     | DELETE | /lessons/{lessonId}                    | -                                               | 204 No Content                   | ADMIN, SYSTEM_ADMIN | 강습 삭제 (조건부).                                                                       |
+|                     | POST   | /lessons/{lessonId}/clone              | `{ newStartDate: "YYYY-MM-DD" }`                | LessonDto (Cloned)               | ADMIN, SYSTEM_ADMIN | 강습 복제.                                                                                |
+| **LockerInventory** | GET    | /lockers/inventory                     | -                                               | List<LockerInventoryDto>         | ADMIN, SYSTEM_ADMIN | 성별 전체 라커 재고 현황 (총량, 사용량, 가용량) 조회.                                     |
+|                     | PUT    | /lockers/inventory/{gender}            | `{ totalQuantity: number }`                     | LockerInventoryDto (Updated)     | ADMIN, SYSTEM_ADMIN | 특정 성별 라커의 **총 수량(total_quantity)** 수정. 사용량(used_quantity)은 시스템이 관리. |
+| **Enrollment**      | GET    | /enrollments                           | lessonId, userId, payStatus, pageable           | Page<EnrollAdminResponseDto>     | ADMIN, SYSTEM_ADMIN | 신청자 목록 조회. 결제 정보 연동.                                                         |
+|                     | GET    | /enrollments/{enrollId}                | -                                               | EnrollAdminResponseDto           | ADMIN, SYSTEM_ADMIN | 특정 신청자 상세 조회.                                                                    |
+| **Cancel/Refund**   | GET    | /enrollments/cancel-requests           | status=REQ, pageable                            | Page<CancelRequestAdminDto>      | ADMIN, SYSTEM_ADMIN | 취소 요청 목록 조회.                                                                      |
+|                     | POST   | /enrollments/{enrollId}/approve-cancel | `{ adminComment: "..." }`                       | EnrollAdminResponseDto (Updated) | ADMIN, SYSTEM_ADMIN | 취소 요청 승인 및 환불 처리 (PG 연동).                                                    |
+|                     | POST   | /enrollments/{enrollId}/deny-cancel    | `{ adminComment: "..." }`                       | EnrollAdminResponseDto (Updated) | ADMIN, SYSTEM_ADMIN | 취소 요청 거부.                                                                           |
+| **Payment**         | GET    | /payments                              | enrollId, userId, tid, period, status, pageable | Page<PaymentAdminDto>            | ADMIN, SYSTEM_ADMIN | 결제 및 환불 내역 조회.                                                                   |
+|                     | POST   | /payments/{paymentId}/manual-refund    | `{ amount, reason, adminNote: "..." }`          | PaymentAdminDto (Updated)        | ADMIN, SYSTEM_ADMIN | 수동 환불 처리 (DB만 처리 또는 PG사 수동 처리 후 기록).                                   |
+| **System**          | GET    | /system/logs/cron                      | jobName, pageable                               | Page<CronLogDto>                 | SYSTEM_ADMIN        | 배치 작업 로그 조회.                                                                      |
+|                     | GET    | /system/logs/webhook/kispg             | date, tid, pageable                             | Page<WebhookLogDto>              | SYSTEM_ADMIN        | KISPG Webhook 수신 로그 조회.                                                             |
 
 ---
 
 ## 4. 주요 DTO (발췌)
 
 ```json
-// LessonDto (기존과 유사, maleLockerCap, femaleLockerCap 등 포함)
+// LessonDto (관리자용 Lesson 생성/수정/조회 시 사용)
 {
   "lessonId": 320,
-  "title": "초급반",
+"title": "초급반 (오전)",
+"instructorName": "김철수 강사",
+"lessonTime": "09:00-09:50 (월수금)", // 상세 스케줄 정보 (텍스트 또는 별도 객체 구조화 가능)
   "startDate": "2025-07-01",
   "endDate": "2025-07-30",
   "capacity": 20,
@@ -90,90 +87,55 @@ _(Spring Boot REST API + React Admin SPA 기준)_
   "status": "OPEN"   // OPEN | CLOSED | ONGOING | COMPLETED
 }
 
-// EnrollAdminResponseDto (swim-user.md의 EnrollResponseDto와 유사하나 관리자 정보 추가 가능)
+// LockerInventoryDto (관리자용 조회 및 수정 응답)
 {
-  "enrollId": 9999,
-  "userId": "uuid-user-123",
-  "userName": "홍길동",
-  "status": "APPLIED", // APPLIED, CANCELED 등 Enroll의 주 상태
-  "payStatus": "PAID", // UNPAID, PAID, PARTIALLY_REFUNDED, PAYMENT_TIMEOUT, CANCELED_UNPAID
-  "usesLocker": true,
-  "userGender": "FEMALE",
-  "createdAt": "2025-05-16T09:10:00",
-  "expireDt": "2025-05-16T09:15:00", // 결제 만료 시각
-  "lessonTitle": "초급반",
-  "lessonId": 101,
-  "payment_tid": "kistest00m...", // (추가) KISPG TID
-  "paid_amt": 70000, // (추가) KISPG 초기 결제액
-  "refunded_amt": 0, // (추가) KISPG 누적 환불액
-  "remain_days_at_cancel": null // (추가) 취소 시점 계산된 잔여일수
+"gender": "MALE",
+"totalQuantity": 100,
+"usedQuantity": 60, // 시스템 계산
+"availableQuantity": 40 // total - used
 }
 
-// CancelRequestDto (관리자용)
-{
-  "requestId": 123,
-  "enrollId": 9999,
-  "userId": "uuid-user-123",
-  "userName": "홍길동",
-  "lessonTitle": "초급반",
-  "paid_amt": 70000, // KISPG 초기 결제 금액
-  "calculated_refund_amt": 35000, // 시스템 계산 환불 예상액 (KISPG 기준)
-  "requested_at": "2025-06-10T14:00:00",
-  "reason": "이사로 인해 수강 불가",
-  "kispg_tid": "kistest00m..." // (추가) KISPG TID 참조용
-}
-
-// PaymentAdminDto (관리자용)
-{
-  "paymentId": 1,
-  "enrollId": 9999,
-  "tid": "kistest00m...",
-  "paid_amt": 70000,
-  "refunded_amt": 35000,
-  "status": "PARTIALLY_REFUNDED",
-  "paid_at": "2025-05-16T09:12:00",
-  "last_refund_dt": "2025-06-10T15:00:00",
-  "pgProvider": "KISPG"
-}
-
+// EnrollAdminResponseDto (기존 내용 유지 또는 확장)
+// PaymentAdminDto (기존 내용 유지 또는 확장)
+// CancelRequestAdminDto (기존 내용 유지 또는 확장)
 ```
 
 ---
 
 ## 5. DB 추가·변경 필드
 
-(참고: `lesson` 테이블의 전체 DDL은 `swim-user.md` 또는 프로젝트 DDL 파일을 기준으로 하며, `registration_end_date` 컬럼을 포함하지 않습니다. `locker_inventory` 테이블이 추가되었습니다. `enroll` 테이블에 `pay_status`에 `PAYMENT_TIMEOUT`이 추가되고, `expire_dt`의 의미가 변경됩니다.)
+(기존 내용 대부분 유지. `lesson` 테이블에 `instructor_name`, `lesson_time` 등 필드 추가 고려)
 
-| 테이블               | 필드                                             | 설명                                                                             |
-| -------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------- |
-| **lesson**           | status VARCHAR(20)                               | 관리자 수동 마감. 상태값: OPEN, CLOSED, ONGOING, COMPLETED                       |
-|                      | `male_locker_cap` INT, `female_locker_cap` INT   | **[제거됨]** 강습별 성별 라커 최대 할당 수 (글로벌 `locker_inventory`로 대체)    |
-| **payment**          | `tid` VARCHAR(30)                                | **KISPG 거래번호**                                                               |
-|                      | `paid_amt` INT                                   | **KISPG 초기 승인 총액**                                                         |
-|                      | `refunded_amt` INT DEFAULT 0                     | **KISPG 누적 환불액**                                                            |
-|                      | `refund_dt` DATETIME                             | **KISPG 마지막 환불 시각**                                                       |
-|                      | refund_amount INT, refund_dt DATETIME            | 부분/전액 환불 기록 (KISPG 연동)                                                 |
-| **enroll**           | `uses_locker` BOOLEAN                            | 사물함 사용 신청 여부 (결제 시 확정)                                             |
-|                      | `pay_status` VARCHAR(20)                         | `UNPAID`, `PAID`, `PARTIALLY_REFUNDED`, `CANCELED_UNPAID`, **`PAYMENT_TIMEOUT`** |
-|                      | `expire_dt` DATETIME                             | 결제 페이지 접근 및 시도 만료 시간 (신청 시점 + 5분)                             |
-|                      | `remain_days` INT                                | **취소 시 계산된 잔여일수 (감사용)**                                             |
-| **locker_inventory** | `gender` (PK), `total_quantity`, `used_quantity` | 전체 사물함 재고 관리 (이 DDL은 swim-user.md 참조)                               |
+| 테이블               | 필드                                             | 설명                                                                                                |
+| -------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| **lesson**           | `instructor_name` VARCHAR(50)                    | (추가 고려) 강사명                                                                                  |
+|                      | `lesson_time` VARCHAR(100)                       | (추가 고려) 수업 시간 설명 (예: "09:00-09:50 (월수금)")                                             |
+|                      | status VARCHAR(20)                               | 관리자 수동 마감. 상태값: OPEN, CLOSED, ONGOING, COMPLETED                                          |
+|                      | `male_locker_cap` INT, `female_locker_cap` INT   | **[제거됨]** 강습별 성별 라커 최대 할당 수 (글로벌 `locker_inventory`로 대체)                       |
+| **payment**          | `tid` VARCHAR(30)                                | **KISPG 거래번호**                                                                                  |
+|                      | `paid_amt` INT                                   | **KISPG 초기 승인 총액**                                                                            |
+|                      | `refunded_amt` INT DEFAULT 0                     | **KISPG 누적 환불액**                                                                               |
+|                      | `refund_dt` DATETIME                             | **KISPG 마지막 환불 시각**                                                                          |
+| **enroll**           | `uses_locker` BOOLEAN                            | 사물함 사용 신청 여부 (결제 시 확정)                                                                |
+|                      | `pay_status` VARCHAR(20)                         | `UNPAID`, `PAID`, `PARTIALLY_REFUNDED`, `CANCELED_UNPAID`, **`PAYMENT_TIMEOUT`**                    |
+|                      | `expire_dt` DATETIME                             | 결제 페이지 접근 및 시도 만료 시간 (신청 시점 + 5분)                                                |
+|                      | `remain_days` INT                                | **취소 시 계산된 잔여일수 (감사용)** (새 환불 정책에 따라 사용 재검토 또는 "days_used"로 변경 고려) |
+| **locker_inventory** | `gender` (PK), `total_quantity`, `used_quantity` | 전체 사물함 재고 관리 (이 DDL은 swim-user.md 참조)                                                  |
 
 ---
 
-## 6. 비즈니스 룰 (Admin)
+## 6. 비즈니스 룰 (CMS Admin)
 
-| 구분               | 내용                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **강습 마감**      | (lesson.capacity - (PAID 수강생 + 만료 전 UNPAID 수강생(결제 페이지 접근 슬롯 점유 중))) <= 0 또는 관리자가 `CLOSED` → 프론트 '마감' 표시.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| **부분 환불**      | `approve-cancel` 호출 시, 서버는 **잔여일수/환불액 자동 계산 (`max(0, EndDate – Today + 1)` 등) 후 KISPG 부분 취소 API (`partCanFlg=1`, `canAmt=환불액`) 호출.** `payment.refunded_amt` 누적, `enroll.pay_status` 등 업데이트. KISPG `tid` 필수.                                                                                                                                                                                                                                                                                                                                                                                        |
-| **취소 승인**      | 개강 후 취소 요청 `PENDING` → 승인 시 `enroll.status=CANCELED`, `enroll.pay_status`는 환불 상태로 변경 (예: `PARTIALLY_REFUNDED`, `CANCELED`). **위 "부분 환불" 로직과 연동.**                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| **라커 재고 관리** | 관리자는 `locker_inventory`에서 성별 전체 라커 수를 설정. 사용자가 강습 신청 후 결제 페이지에서 `uses_locker`를 선택하고 KISPG Webhook을 통해 결제가 최종 확인되면, 해당 성별의 글로벌 `locker_inventory.used_quantity`가 업데이트됩니다. `PAYMENT_TIMEOUT`된 신청건의 라커 예약 시도는 자동으로 반영되지 않거나, 해당 `used_quantity`가 롤백됩니다. **`PAYMENT_TIMEOUT` 처리 시 해당 신청 건이 점유하던 결제 페이지 접근 슬롯은 해제됩니다. 강습이 종료되면(`lesson.end_date` 경과) 해당 강습에 배정되었던 사물함(재수강으로 이전되지 않은 경우)은 배치 작업을 통해 자동으로 회수되어 `locker_inventory.used_quantity`가 감소합니다.** |
-
-**재수강 시 사물함 처리:** 사용자가 재수강(`renewal_flag=true`)하고 사물함 유지를 원하여 결제가 완료된 경우, 시스템은 이전 강습의 사물함 할당 상태를 확인합니다. 만약 이전 강습에서 사물함을 사용 중이었다면, `locker_inventory.used_quantity`를 증가시키지 않고 새 강습으로 사물함 사용을 이전합니다 (이전 강습의 `enroll.lockerAllocated`는 `false`로 변경). 이전 강습에서 사물함을 사용하지 않았거나 재수강 시 사물함을 원치 않으면 일반적인 증감 로직을 따릅니다. |
-| **`PAYMENT_TIMEOUT` 처리** | 관리자는 `PAYMENT_TIMEOUT` 상태의 신청 목록을 조회하고, 필요한 경우 후속 조치(예: 사용자에게 알림)를 할 수 있다. 이 상태의 신청은 KISPG 결제 시도 실패 또는 만료로 간주. **이 상태로 변경 시 해당 신청 건이 점유하던 결제 페이지 접근 슬롯은 해제됩니다.** |
-| **KISPG 연동 보안** | KISPG 취소 API 호출 시 `encData` (SHA-256 해시: `mid+ediDate+canAmt+merchantKey`) 사용. KISPG Webhook (`payment-notification`) 수신 시 IP 화이트리스트 (`1.233.179.201`) 및 해시 검증. `merchantKey` 서버 보안 저장. |
-| **트랜잭션 관리** | KISPG 부분취소는 `payment` 행에 `SELECT ... FOR UPDATE` 잠금 후 KISPG API 호출 및 DB 업데이트를 단일 트랜잭션으로 처리하여 경합 방지. 실패 시 롤백 및 알림. KISPG Webhook 처리 시에도 정원/라커 확인 및 DB 업데이트는 트랜잭션으로 관리. **결제 페이지 접근 슬롯 할당/해제 로직도 트랜잭션 내에서 일관되게 처리됩니다.** |
+| 구분                       | 내용                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **강습(Lesson) 관리**      | **ADMIN**은 강습의 모든 정보(명칭, 강사, 기간, 시간, 정원, 가격 등)를 생성(Create), 조회(Read), 수정(Update), 삭제(Delete)할 수 있다. 강습 스케줄(시작일, 종료일, 수업시간 설명) 변경이 가능하다. 강습 상태(`OPEN`, `CLOSED`, `ONGOING`, `COMPLETED`)를 수동으로 변경할 수 있다. 특정 강습을 기준으로 다음 기간의 강습을 복제(Clone)하여 쉽게 생성할 수 있다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| **라커(Locker) 재고 관리** | **ADMIN**은 성별(`MALE`/`FEMALE`) 전체 사물함의 총 수량(`total_quantity`)을 `locker_inventory` 테이블에서 직접 수정할 수 있다. 현재 사용 중인 사물함 수(`used_quantity`)는 시스템에 의해 자동으로 계산되며, 관리자는 이 값을 조회하여 잔여 사물함 수를 파악한다. (개별 라커 배정/회수는 사용자 결제/취소 및 배치 작업 로직에 따름)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| **신청자(Enroll) 관리**    | **ADMIN**은 특정 강습의 신청자 목록 또는 전체 신청 내역을 다양한 조건(사용자, 결제 상태 등)으로 검색하고 조회할 수 있다. 신청자 상세 정보(개인 정보, 신청 상태, 결제 정보, 사물함 사용 여부 등)를 확인할 수 있다. (관리자가 직접 신청 상태를 변경하는 것은 KISPG 연동 및 데이터 정합성을 위해 주의해야 하며, 주로 조회 및 확인 목적으로 사용)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| **취소/환불 처리**         | 사용자가 취소 요청한 건에 대해 **ADMIN**이 검토 후 승인 또는 반려한다. 승인 시, 시스템은 문서에 정의된 환불 정책(일일 사용료 차감 및 위약금 적용)에 따라 자동으로 환불액을 계산하고, 해당 금액으로 KISPG에 부분 취소를 요청한다. 처리 결과에 따라 `Enroll` 및 `Payment` 테이블의 상태가 업데이트된다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **결제(Payment) 관리**     | **ADMIN**은 시스템 내 모든 결제 및 환불 거래 내역을 상세히 조회하고 KISPG 거래 ID 등으로 검색할 수 있다. PG사 시스템 장애 또는 특이 케이스 발생 시, 수동으로 결제 정보를 기록하거나 환불 처리 후 DB 상태를 맞추는 기능을 예외적으로 사용할 수 있다. (이때 `manual-refund` API 사용)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| **강습 마감 (기존 유지)**  | (lesson.capacity - (PAID 수강생 + 만료 전 UNPAID 수강생(결제 페이지 접근 슬롯 점유 중))) <= 0 또는 관리자가 `CLOSED` → 프론트 '마감' 표시.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| **부분 환불 (기존 유지)**  | `approve-cancel` 호출 시, 서버는 다음 규칙에 따라 환불액을 자동 계산 후 KISPG 부분 취소 API (`partCanFlg=1`, `canAmt=환불액`) 호출. `payment.refunded_amt` 누적, `enroll.pay_status` 등 업데이트. KISPG `tid` 필수.<br/>**환불액 계산 (강습 시작 후):**<br/>1. **사용일수 계산**: `사용일수 = 취소요청일자 - 강습시작일자 + 1` (취소 요청일 당일까지 사용으로 간주).<br/>2. **강습료 사용분 차감**: `강습료 사용액 = 사용일수 * 3,500원`.<br/>3. **사물함 사용분 차감** (사물함 사용 시): `사물함 사용액 = 사용일수 * 170원`.<br/>4. **위약금 계산**: <br/> - `강습료 위약금 = (결제된 강습료) * 10%`.<br/> - `사물함 위약금 = (결제된 사물함 이용료) * 10%` (사물함 사용 시).<br/>5. **최종 환불액**: `(결제된 강습료 - 강습료 사용액 - 강습료 위약금) + (결제된 사물함 이용료 - 사물함 사용액 - 사물함 위약금)`. 단, 각 항목 (강습료, 사물함료) 환불액이 0보다 작을 경우 0으로 처리. <br/> _강습 시작 전 취소 시에는 별도 규정(예: 전액 환불 또는 소액 취소 수수료)이 적용될 수 있음 (현재는 전액 환불 기준)._ |
+| **기타 기존 룰 유지**      | 라커 재고 관리, 재수강 시 사물함 처리, `PAYMENT_TIMEOUT` 처리, KISPG 연동 보안, 트랜잭션 관리 등 기존 정의된 관리자 관련 비즈니스 룰은 계속 유효함.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 ---
 
@@ -194,36 +156,32 @@ Grafana Dashboard → 신청·매출·라커 KPI 실시간 파이프. (KPI에는
 
 ## 8. 테스트 케이스 (Admin)
 
-| ID    | 시나리오                                                     | 예상 결과                                                                                                                                                                                      |
-| ----- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AD-01 | 강습 정원=0 시 자동 `status=CLOSED` (유효 신청자 고려)       | Lesson 목록 '마감' (유효 신청자는 PAID 및 만료 전 UNPAID(결제 페이지 접근 슬롯 점유 중) 건 포함)                                                                                               |
-| AD-02 | 사물함 `is_active=0` 설정 (만약 개별 라커 관리 시나리오라면) | 결제 페이지 라커 드롭다운에 미표시 또는 비활성화                                                                                                                                               |
-| AD-03 | 부분 환불 70 % 승인                                          | `payment.refunded_amt` = `paid_amt`×0.7 (KISPG API 성공 후). `enroll.pay_status` 변경. KISPG `tid` 사용.                                                                                       |
-| AD-04 | 취소 반려                                                    | enroll.status 그대로, 회원에게 메시지                                                                                                                                                          |
-| AD-05 | Enroll 현황에서 `PAYMENT_TIMEOUT` 상태 조회                  | KISPG 결제 시간 초과된 신청 목록 확인 가능.                                                                                                                                                    |
-| AD-06 | `payment-timeout-sweep` 배치 실행 후                         | 만료된 `UNPAID` 신청이 `PAYMENT_TIMEOUT`으로 변경되고, 해당 신청이 KISPG 결제 페이지에서 사용하려던 라커가 회수되며, **점유했던 결제 페이지 접근 슬롯이 해제됨.**                              |
-| AD-07 | KISPG 부분 취소 API 호출 실패 시 (네트워크 오류 등)          | DB 롤백, 관리자 알림. `cancel-retry` 배치가 재시도.                                                                                                                                            |
-| AD-08 | `pg-reconcile` 배치 실행 시 KISPG 내역과 DB 불일치 발견      | 관리자 알림 및 수동 확인 필요.                                                                                                                                                                 |
-| AD-09 | `lesson-completion-locker-release-sweep` 배치 실행 후        | 종료된 강습에 배정되었던 사물함들이 `locker_inventory`에서 회수되고, `Enroll` 레코드의 `lockerAllocated`가 `false`로 업데이트됨. 대시보드의 잔여 라커 수에 반영됨.                             |
-| AD-10 | 기존 회원 A가 재수강 신청(사물함 유지) 및 결제 완료 후.      | 관리자 Enroll 현황에서 새로운 강습 신청 건에 `lockerAllocated=true` 확인. `locker_inventory`의 `used_quantity`는 이전과 동일하게 유지됨. 이전 강습 신청 건은 `lockerAllocated=false`로 변경됨. |
-| AD-11 | 기존 회원 B가 재수강 신청(사물함 신규 사용) 및 결제 완료 후. | 관리자 Enroll 현황에서 새로운 강습 신청 건에 `lockerAllocated=true` 확인. `locker_inventory`의 `used_quantity`가 1 증가함.                                                                     |
+| ID            | 시나리오                                                         | 예상 결과                                                                                             |
+| ------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| **CMS-L-01**  | ADMIN이 새 강습 생성 (모든 필드 정상 입력)                       | 강습 정상 생성, 목록에 표시, 상태 OPEN.                                                               |
+| **CMS-L-02**  | ADMIN이 기존 강습의 스케줄(기간, 시간), 정원, 가격, 상태 등 수정 | 정보 정상 변경, 강습 상세 및 목록에 반영.                                                             |
+| **CMS-L-03**  | ADMIN이 특정 강습 복제 (다음 달 시작일 지정)                     | 새 강습이 지정된 시작일로 복제되어 생성.                                                              |
+| **CMS-LO-01** | ADMIN이 남성 라커 총 수량을 100에서 120으로 수정.                | `locker_inventory`의 남성 `total_quantity`가 120으로 변경. 사용량/가용량은 이에 따라 재계산되어 표시. |
+| **CMS-E-01**  | ADMIN이 특정 강습의 신청자 목록 조회 (결제완료 필터)             | 해당 강습의 결제 완료된 신청자 목록 및 상세 정보(결제내역 포함) 표시.                                 |
+| **CMS-CR-01** | ADMIN이 취소 요청건 승인 (강습 시작 후, 환불 발생 케이스)        | 시스템이 환불액 자동 계산, KISPG 연동(가상), `Enroll` 및 `Payment` 상태 정상 업데이트.                |
+| **CMS-P-01**  | ADMIN이 특정 TID로 결제 내역 검색                                | 해당 TID의 결제 상세 정보 표시.                                                                       |
 
 ---
 
 ## 9. 배포 체크리스트
 
-1. `PROGRAM_ADMIN`·`FINANCE_ADMIN` 역할 초기 계정 발급
-2. KISPG 결제 Webhook URL (`/api/v1/kispg/payment-notification`) → 방화벽 허용·Slack 알림 연결. **KISPG Webhook IP (`1.233.179.201`) 화이트리스트 등록.**
-3. Cron Log 테이블 ROLLOVER 정책(30 일) 적용. `payment-timeout-sweep`, **KISPG `cancel-retry`, `pg-reconcile`** 배치 등록 및 모니터링.
-4. Grafana Dashboard ID & 데이터소스 연결 테스트 (KISPG 결제 상태별 통계 정확성 확인). **KISPG 부분취소 실패율 및 Webhook 오류 알람 설정.**
-5. **KISPG 연동용 `merchantKey` 등 설정 정보 안전하게 배포.**
+1.  **SYSTEM_ADMIN**, **ADMIN** 역할 초기 계정 발급 및 권한 확인.
+2.  KISPG 결제 Webhook URL (`/api/v1/kispg/payment-notification`) → 방화벽 허용·Slack 알림 연결. **KISPG Webhook IP (`1.233.179.201`) 화이트리스트 등록.**
+3.  Cron Log 테이블 ROLLOVER 정책(30 일) 적용. 모든 배치 (`payment-timeout-sweep`, KISPG `cancel-retry`, `pg-reconcile`, `lesson-completion-locker-release-sweep`) 등록 및 모니터링.
+4.  Grafana Dashboard ID & 데이터소스 연결 테스트 (KISPG 결제 상태별 통계 정확성 확인). **KISPG 부분취소 실패율 및 Webhook 오류 알람 설정.**
+5.  **KISPG 연동용 `merchantKey` 등 설정 정보 안전하게 배포.**
 
 ---
 
 ### ✅ 운영자 혜택 (React Admin SPA 기반)
 
 - **대시보드 한눈에**: 잔여 좌석·라커·매출 실시간 파악 (결제 타임아웃 건 자동 반영) - React 컴포넌트 기반 대시보드 위젯 활용.
-- **드래그 + 인라인 편집**: 강습·라커 관리 2배 빠름 - React Admin의 `Datagrid`, `EditButton`, `TextInput` 등 활용.
-- **부분 환불 자동화**: PG API 연동으로 회계 오차 0 % - 관리자 화면 내에서 API 호출 및 결과 피드백 (예: React `useState`로 로딩/성공/실패 상태 관리). **취소 승인 시 환불액 자동 계산 및 표시 (수정 불가).**
+- **직관적 관리**: 강습, 신청자, 결제 정보 등을 통합된 CMS 내에서 편리하게 관리.
+- **부분 환불 자동화**: PG API 연동으로 회계 오차 최소화 - 관리자 화면 내에서 API 호출 및 결과 피드백. **취소 승인 시 환불액 자동 계산 및 표시 (수정 불가).**
 
 ---

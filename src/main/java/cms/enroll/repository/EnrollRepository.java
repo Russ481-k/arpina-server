@@ -5,6 +5,7 @@ import cms.user.domain.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -15,7 +16,7 @@ import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface EnrollRepository extends JpaRepository<Enroll, Long> {
+public interface EnrollRepository extends JpaRepository<Enroll, Long>, JpaSpecificationExecutor<Enroll> {
     List<Enroll> findByUserOrderByCreatedAtDesc(User user);
     List<Enroll> findByUserAndStatusOrderByCreatedAtDesc(User user, String status);
 
@@ -87,4 +88,8 @@ public interface EnrollRepository extends JpaRepository<Enroll, Long> {
            "WHERE e.lesson.endDate < :date " +
            "AND e.lockerAllocated = true")
     List<Enroll> findByLesson_EndDateBeforeAndLockerAllocatedIsTrue(@Param("date") LocalDate date);
+
+    // For checking if a lesson can be deleted
+    @Query("SELECT COUNT(e) FROM Enroll e WHERE e.lesson.lessonId = :lessonId AND e.status <> 'CANCELED' AND e.payStatus NOT IN ('REFUNDED', 'PARTIALLY_REFUNDED', 'CANCELED_UNPAID')")
+    long countActiveEnrollmentsForLessonDeletion(@Param("lessonId") Long lessonId);
 } 

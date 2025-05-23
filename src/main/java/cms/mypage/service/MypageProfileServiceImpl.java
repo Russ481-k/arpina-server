@@ -39,6 +39,7 @@ public class MypageProfileServiceImpl implements MypageProfileService {
         profileDto.setAddress(freshUser.getAddress());
         profileDto.setEmail(freshUser.getEmail());
         profileDto.setCarNo(freshUser.getCarNo());
+        profileDto.setGender(freshUser.getGender());
         return profileDto;
     }
 

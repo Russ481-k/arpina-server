@@ -39,6 +39,12 @@ public class Lesson {
     @Column(name = "price", nullable = false)
     private Integer price;
 
+    @Column(name = "instructor_name", length = 50)
+    private String instructorName;
+
+    @Column(name = "lesson_time", length = 100)
+    private String lessonTime;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     private LessonStatus status;
@@ -84,7 +90,9 @@ public class Lesson {
             Integer capacity, 
             Integer price,
             LessonStatus status,
-            LocalDate registrationEndDate) {
+            LocalDate registrationEndDate,
+            String instructorName,
+            String lessonTime) {
         this.title = title;
         this.startDate = startDate;
         this.endDate = endDate;
@@ -92,5 +100,7 @@ public class Lesson {
         this.price = price;
         this.status = status;
         this.registrationEndDate = registrationEndDate;
+        this.instructorName = instructorName;
+        this.lessonTime = lessonTime;
     }
 } 

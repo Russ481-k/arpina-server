@@ -76,7 +76,8 @@
   "phone": "010-9143-6650",
   "address": "부산광역시 ...",
   "email": "user@arpina.kr",
-  "carNo": "12모 3456"
+  "carNo": "12모 3456",
+  "gender": "MALE"
 }
 ```
 
@@ -283,6 +284,9 @@ FOREIGN KEY (`enroll_id`) REFERENCES `enroll` (`enroll_id`)
 - **결제 흐름:** 사용자가 강습을 신청하면(`POST /api/v1/swimming/enroll` 또는 마이페이지에서 `POST /renewal`), 시스템은 **결제 페이지 접근 슬롯이 확보된 경우에 한해 (상세 로직: `Docs/cms/lesson-enrollment-capacity.md` 참조)** `EnrollInitiationResponseDto`를 반환합니다. 이 DTO에는 KISPG 결제 페이지로 리디렉션할 `paymentPageUrl`과 5분 결제 만료 시간(`paymentExpiresAt`)이 포함됩니다. 사용자는 이 URL로 이동하여 결제를 진행합니다. 결제 페이지는 KISPG 연동에 필요한 파라미터를 백엔드(`GET /api/v1/payment/kispg-init-params/{enrollId}`)로부터 받아 KISPG 결제창을 호출합니다. KISPG는 결제 결과를 백엔드의 Webhook URL (`POST /api/v1/kispg/payment-notification`)로 비동기적으로 통지하며, 이때 백엔드는 결제 정보를 검증하고 `Enroll.payStatus`를 `PAID`로 변경하며, 필요한 경우 사물함 배정(`Enroll.usesLocker`가 true일 시 `locker_inventory` 업데이트 및 `Enroll.lockerAllocated=true` 설정) 및 `Payment` 테이블 레코드를 생성/업데이트합니다. 사용자가 KISPG 결제 후 돌아오는 `returnUrl`에서는 프론트엔드가 백엔드의 `POST /api/v1/payment/confirm/{enrollId}`를 호출하여 사용자 경험을 관리하고 사용자의 최종 사물함 사용 희망 여부(`wantsLocker` 파라미터)를 `Enroll.usesLocker` 필드에 기록합니다.
 - **취소 및 환불 (KISPG 연동):**
   - 사용자가 마이페이지에서 `PATCH /enroll/{id}/cancel`을 통해 취소 요청 시, 또는 관리자가 취소를 승인할 경우, 백엔드는 KISPG의 환불 API를 호출하여 처리합니다.
+  - **강습 시작 후 환불 시 환불액 계산:**
+    1.  **사용일수 차감**: 강습료 (1일 3,500원), 사물함 이용료 (1일 170원, 해당 시).
+    2.  **위약금 차감**: 결제된 강습료의 10%, 결제된 사물함 이용료의 10% (해당 시).
   - 전액 또는 부분 환불이 가능하며, KISPG의 `tid`를 사용하여 해당 거래를 특정합니다.
   - 환불 결과(성공/실패)에 따라 `Payment` 테이블의 `refunded_amt`, `refund_dt`, `status` 등이 업데이트되고, `Enroll` 테이블의 `pay_status`도 변경됩니다 (예: `PARTIALLY_REFUNDED`, `CANCELED`).
   - KISPG 환불 API 호출 시 필요한 보안 파라미터(`cancelEncData` 등)는 백엔드에서 안전하게 생성 및 관리됩니다.

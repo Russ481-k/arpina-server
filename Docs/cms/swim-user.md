@@ -194,7 +194,7 @@ _성별 잔여 사물함 수는 `locker_inventory` 테이블의 해당 성별 `t
 | **사물함 재고(글로벌)**      | 사물함은 관리자가 `locker_inventory` 테이블에 설정한 성별 글로벌 총량 내에서 사용 가능. **KISPG 결제 페이지 진입 및 최종 결제 시** 사용자의 성별에 해당하는 글로벌 라커 잔여분을 `locker_inventory` 테이블을 통해 확인합니다. 잔여 수량은 현재 진행 중이거나 예정된 강습에 배정된 사물함(재수강으로 이전된 사물함 포함)을 제외하고 계산됩니다. 잔여 수량이 없으면 사물함 선택 불가. **강습이 종료된 신청 건에 할당되었던 사물함(재수강으로 이전되지 않은 경우)은 배치 작업을 통해 `locker_inventory.used_quantity`에서 제외(회수)됩니다.**                                                                           |
 | **결제 페이지 접근 제한**    | `/api/v1/swimming/enroll` 호출 시, 강습의 **결제 페이지 접근 슬롯 (정원 - PAID 건수 - 만료 전 UNPAID 건수)** 이 0보다 큰 경우에만 결제 페이지 접근 관련 정보(`EnrollInitiationResponseDto`) 반환. 그렇지 않으면 `409 LEC001 PAYMENT_PAGE_SLOT_UNAVAILABLE` 오류 반환.                                                                                                                                                                                                                                                                                                                                                |
 | **재등록 우선권**            | **재수강(기존 회원) 신청 기간: 매월 18일 00:00 ~ 22일 23:59.** 이 기간에 `/api/v1/mypage/renewal` API를 통해 다음 달 강습을 신청할 수 있는 우선권 부여. **신규 회원 신청 기간: 매월 25일 00:00 ~ 말일 23:59.** (또는 강습 시작 전까지). 재수강 기간 외 `/api/v1/mypage/renewal` API 호출 시 403 에러.                                                                                                                                                                                                                                                                                                                |
-| **취소/환불**                | 레슨 시작 전 취소 → KISPG 전액 취소 연동. 이후 관리자 검토(KISPG 부분 환불 연동)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| **취소/환불**                | 레슨 시작 전 취소 → KISPG 전액 취소 연동. <br/>**강습 시작 후 환불 정책 (관리자 검토 후 처리):**<br/>1. **사용일수 기준 차감**: 강습료는 1일 3,500원, 사물함은 1일 170원 기준으로 사용일수만큼 차감.<br/>2. **위약금**: 결제된 강습료의 10%, 결제된 사물함 이용료의 10%를 각각 위약금으로 부과.<br/>3. 최종 환불액은 위 항목들을 계산하여 결정. 사용자는 마이페이지에서 환불 처리 상태 및 최종 환불액 확인 가능.                                                                                                                                                                                                     |
 | **월별 중복 제한**           | 동일 사용자는 같은 달에 하나의 강습만 신청 가능 (오류코드 4004: 월별 중복 신청)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 ---
@@ -213,8 +213,11 @@ _성별 잔여 사물함 수는 `locker_inventory` 테이블의 해당 성별 `t
 ## 8. 예외 처리 플로우
 
 1.  **동시 클릭 (`/enroll`)** → DB `SELECT … FOR UPDATE` + UNIQUE 인덱스(`lesson_id`,`user_id` ON `enroll` table WHERE `pay_status != 'PAYMENT_TIMEOUT' or CANCELED_UNPAID`)
+
     - 정원 초과 시 결제 페이지 접근 불가 응답.
+
     - **결제 페이지 접근 슬롯 부족 시 `409 LEC001 PAYMENT_PAGE_SLOT_UNAVAILABLE` 응답.**
+
 2.  **KISPG 결제 실패 (결제 페이지)** → `payment.status=FAIL`, `enroll` 그대로 UNPAID (5분 내 재시도 가능).
 3.  **결제 페이지 타임아웃** → 프론트엔드 자동 리디렉션 (e.g. 강습 목록) + "5분 시간 초과" 토스트. `enroll.pay_status`는 배치 또는 다음 접근 시 `PAYMENT_TIMEOUT` 처리.
 4.  **Webhook 지연**(KISPG > 5 초) → 프론트 Poll `/api/v1/swimming/enrolls/{id}` (마이페이지에서) 5 회(2 s 간격) 후 로딩 모달 종료 (결제 페이지에서는 즉시 결과 피드백 가정)
@@ -250,12 +253,12 @@ _성별 잔여 사물함 수는 `locker_inventory` 테이블의 해당 성별 `t
   - **5분 카운트다운 타이머**: React `useState` 및 `useEffect`를 사용하여 명확하게 표시. 만료 시 Next.js `useRouter`를 사용하여 자동 리디렉션 및 `react-toastify` 같은 라이브러리로 토스트 "5분의 시간이 경과되어 결제 이전 창으로 이동합니다." 표시.
 - **라커 선택 UI**: `PaymentPageDetailsDto.userGender` 및 `PaymentPageDetailsDto.lockerOptions`의 `lockerAvailableForUserGender`, `availableCountForUserGender` 값을 사용하여 사용자 성별에 따른 사물함 사용 가능 여부 및 잔여 개수 표시. 선택 시 React `useState`로 즉시 총 결제 금액 업데이트. 만약 `availableCountForUserGender`가 0 이하면 사물함 선택 옵션 비활성화.
   - KISPG 연동: KISPG 제공 방식(SDK 또는 form POST)으로 결제창 호출. KISPG `returnUrl` 처리 시 `POST /api/v1/payment/confirm/{enrollId}` 호출.
-- **마이페이지 신청 내역 (`components/EnrollCard.jsx` 또는 유사)**:
-  - `UNPAID` (결제 시도 전/실패 후 5분 이내, `enroll.paymentPageUrl` 사용 가능 시, KISPG 연동) → Yellow `<Link href={enroll.paymentPageUrl}><a>결제 페이지로 이동</a></Link>` (만약 `enroll.expire_dt`가 유효하고, 사용자가 결제 페이지에서 이탈한 경우 다시 진입 허용. 단, 이 경우 남은 시간만 카운트) 또는 "결제 진행 중" (만료 전).
-  - `PAID` (KISPG 결제 완료) → Green "결제완료" + 영수증 링크 (필요시 KISPG 제공 링크 또는 자체 생성)
-  - `CANCELED_*` → Red "취소됨"
-  - `PAYMENT_TIMEOUT` → Gray "시간 초과"
-- **Accessibility**: 강습 카드 ALT 텍스트 "{요일·시간대} 초급반 잔여 {n}석"
+  - **마이페이지 신청 내역 (`components/EnrollCard.jsx` 또는 유사)**:
+    - `UNPAID` (결제 시도 전/실패 후 5분 이내, `enroll.paymentPageUrl` 사용 가능 시, KISPG 연동) → Yellow `<Link href={enroll.paymentPageUrl}><a>결제 페이지로 이동</a></Link>` (만약 `enroll.expire_dt`가 유효하고, 사용자가 결제 페이지에서 이탈한 경우 다시 진입 허용. 단, 이 경우 남은 시간만 카운트) 또는 "결제 진행 중" (만료 전).
+    - `PAID` (KISPG 결제 완료) → Green "결제완료" + 영수증 링크 (필요시 KISPG 제공 링크 또는 자체 생성)
+    - `CANCELED_*` → Red "취소됨"
+    - `PAYMENT_TIMEOUT` → Gray "시간 초과"
+  - **Accessibility**: 강습 카드 ALT 텍스트 "{요일·시간대} 초급반 잔여 {n}석"
 
 ---
 

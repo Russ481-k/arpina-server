@@ -21,9 +21,14 @@ public class LessonDto {
     @JsonFormat(pattern = "yyyy-MM-dd")
     private LocalDate endDate;
     
+    @JsonFormat(pattern = "yyyy-MM-dd")
+    private LocalDate registrationEndDate;
+    
     private Integer capacity;
     private Integer price;
     private String status; // OPEN, CLOSED, FINISHED
+    private String instructorName;
+    private String lessonTime;
 
     // 도메인 객체로 변환하는 메소드
     public Lesson toEntity() {
@@ -44,9 +49,12 @@ public class LessonDto {
                 .title(lesson.getTitle())
                 .startDate(lesson.getStartDate())
                 .endDate(lesson.getEndDate())
+                .registrationEndDate(lesson.getRegistrationEndDate())
                 .capacity(lesson.getCapacity())
                 .price(lesson.getPrice())
                 .status(lesson.getStatus().name())
+                .instructorName(lesson.getInstructorName())
+                .lessonTime(lesson.getLessonTime())
                 .build();
     }
 } 

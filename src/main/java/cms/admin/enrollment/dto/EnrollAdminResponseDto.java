@@ -1,0 +1,43 @@
+package cms.admin.enrollment.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import java.time.LocalDateTime;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class EnrollAdminResponseDto {
+    private Long enrollId;
+    private String userId; // User UUID
+    private String userName;
+    private String userPhone;
+    private String status; // Enroll status (APPLIED, CANCELED)
+    private String payStatus; // Payment status (UNPAID, PAID, PARTIALLY_REFUNDED, PAYMENT_TIMEOUT)
+    private boolean usesLocker;
+    private boolean lockerAllocated;
+    private String userGender;
+    private LocalDateTime createdAt;
+    private LocalDateTime expireDt;
+    private Long lessonId;
+    private String lessonTitle;
+    private PaymentInfoForEnrollAdmin payment; // Nested Payment Info
+    private String cancelStatus; // NONE, REQ, APPROVED, DENIED
+    private String cancelReason;
+    // private Integer remain_days_at_cancel; // 의미 재검토 필요, 일단 제외
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class PaymentInfoForEnrollAdmin {
+        private String tid;
+        private Integer paidAmt;
+        private Integer refundedAmt;
+        private String payMethod;
+        private LocalDateTime paidAt;
+    }
+} 

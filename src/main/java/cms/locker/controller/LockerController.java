@@ -13,7 +13,7 @@ import javax.validation.constraints.Pattern;
 
 @Tag(name = "Locker API", description = "사물함 관련 API")
 @RestController
-@RequestMapping("/api/v1/lockers")
+@RequestMapping("/lockers")
 @RequiredArgsConstructor
 public class LockerController {
 

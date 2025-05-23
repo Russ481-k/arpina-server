@@ -60,6 +60,12 @@ public class Payment {
     @Column(name = "pg_result_msg", length = 255)
     private String pgResultMsg;
 
+    @Column(name = "refunded_amt", columnDefinition = "INT DEFAULT 0")
+    private Integer refundedAmt = 0;
+
+    @Column(name = "refund_dt")
+    private LocalDateTime refundDt;
+
     // Timestamps
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

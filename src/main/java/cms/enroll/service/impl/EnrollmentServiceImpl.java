@@ -54,6 +54,9 @@ import cms.common.exception.BusinessRuleException;
 import cms.common.exception.ErrorCode;
 import cms.common.exception.ResourceNotFoundException;
 import org.springframework.http.HttpStatus; // HttpStatus 추가
+import org.springframework.beans.factory.annotation.Value; // Added for defaultLockerFee
+import java.time.temporal.ChronoUnit; // Added for calculating daysBetween
+// import cms.pg.KispgService; // 가상 KISPG 서비스 인터페이스 - 실제 구현 시 주석 해제
 
 @Service("enrollmentServiceImpl")
 @Transactional
@@ -65,19 +68,29 @@ public class EnrollmentServiceImpl implements EnrollmentService {
     private final LockerService lockerService;
     private final UserRepository userRepository;
     private final LessonRepository lessonRepository;
+    // private final KispgService kispgService; // KISPG 서비스 주입 (실제 구현 시 필요)
+
+    @Value("${app.default-locker-fee:5000}") // Default to 5000 if not set in properties
+    private int defaultLockerFee;
+
+    private static final BigDecimal LESSON_DAILY_RATE = new BigDecimal("3500");
+    private static final BigDecimal LOCKER_DAILY_RATE = new BigDecimal("170");
+    private static final BigDecimal PENALTY_RATE = new BigDecimal("0.10");
 
     public EnrollmentServiceImpl(EnrollRepository enrollRepository,
                                  PaymentRepository paymentRepository,
                                  @Qualifier("swimmingLessonServiceImpl") LessonService lessonService,
                                  @Qualifier("lockerServiceImpl") LockerService lockerService,
                                  UserRepository userRepository,
-                                 LessonRepository lessonRepository) {
+                                 LessonRepository lessonRepository
+                                 /*, KispgService kispgService */) { // 주입
         this.enrollRepository = enrollRepository;
         this.paymentRepository = paymentRepository;
         this.lessonService = lessonService;
         this.lockerService = lockerService;
         this.userRepository = userRepository;
         this.lessonRepository = lessonRepository;
+        // this.kispgService = kispgService;
     }
 
     @Override
@@ -246,7 +259,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
 
         CheckoutDto checkoutDto = new CheckoutDto();
         // merchantUid는 실제 PG 연동 시 더 견고한 방식으로 생성해야 함.
-        checkoutDto.setMerchantUid("enroll_" + enroll.getEnrollId() + "_" + System.currentTimeMillis()); 
+        checkoutDto.setMerchantUid("enroll_" + enroll.getEnrollId() + "_" + System.currentTimeMillis());
         checkoutDto.setAmount(BigDecimal.valueOf(lesson.getPrice())); // 사물함 요금은 PG 결제 페이지에서 최종 결정 후 confirm에서 처리
         checkoutDto.setLessonTitle(lesson.getTitle());
         checkoutDto.setUserName(user.getName());
@@ -259,7 +272,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
     public void processPayment(User user, Long enrollId, String pgToken) {
         Enroll enroll = enrollRepository.findById(enrollId)
                 .orElseThrow(() -> new ResourceNotFoundException("수강 신청 정보를 찾을 수 없습니다 (ID: " + enrollId + ")", ErrorCode.ENROLLMENT_NOT_FOUND));
-
+        
         if (user == null || !enroll.getUser().getUuid().equals(user.getUuid())) {
             throw new BusinessRuleException(ErrorCode.ACCESS_DENIED);
         }
@@ -277,7 +290,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
     public void requestEnrollmentCancellation(User user, Long enrollId, String reason) {
         Enroll enroll = enrollRepository.findById(enrollId)
             .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found with ID: " + enrollId, ErrorCode.ENROLLMENT_NOT_FOUND));
-
+        
         if (!enroll.getUser().getUuid().equals(user.getUuid())) {
             throw new BusinessRuleException(ErrorCode.ACCESS_DENIED, "You do not have permission to cancel this enrollment.");
         }
@@ -303,7 +316,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 lockerService.decrementUsedQuantity(userGender.toUpperCase());
             }
         }
-        enrollRepository.save(enroll);
+            enrollRepository.save(enroll);
     }
 
     @Override
@@ -407,23 +420,113 @@ public class EnrollmentServiceImpl implements EnrollmentService {
     public void approveEnrollmentCancellationAdmin(Long enrollId, Integer refundPct) {
         Enroll enroll = enrollRepository.findById(enrollId)
             .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found with ID: " + enrollId, ErrorCode.ENROLLMENT_NOT_FOUND));
+
+        if (!"PAID".equalsIgnoreCase(enroll.getPayStatus()) && !"REFUND_REQUESTED".equalsIgnoreCase(enroll.getPayStatus())) {
+            throw new BusinessRuleException(ErrorCode.ENROLLMENT_CANCELLATION_NOT_ALLOWED, 
+                "강습 시작 후 취소 승인은 결제 완료(PAID) 또는 환불 요청(REFUND_REQUESTED) 상태에서만 가능합니다. 현재 상태: " + enroll.getPayStatus());
+        }
         
+        Lesson lesson = enroll.getLesson();
+        User user = enroll.getUser();
+        Payment payment = paymentRepository.findByEnroll_EnrollId(enrollId)
+            .orElseThrow(() -> new ResourceNotFoundException("Payment record not found for enrollment ID: " + enrollId, ErrorCode.PAYMENT_INFO_NOT_FOUND));
+
         boolean lockerWasActuallyAllocated = enroll.isLockerAllocated();
-        // ... (PG 환불 로직 연동 등) ...
-        
-        enroll.setPayStatus("REFUNDED"); 
-        enroll.setCancelStatus(CancelStatusType.APPROVED);
-        enroll.setUsesLocker(false); 
-        enroll.setLockerAllocated(false);
-        enroll.setLockerPgToken(null);
-        
-        if (lockerWasActuallyAllocated) {
-            User lockerUser = enroll.getUser(); 
-            if (lockerUser != null && lockerUser.getGender() != null && !lockerUser.getGender().trim().isEmpty()) {
-                lockerService.decrementUsedQuantity(lockerUser.getGender().toUpperCase());
+        int totalPaidAmount = payment.getPaidAmt() != null ? payment.getPaidAmt() : 0;
+        int originalLessonFee = lesson.getPrice() != null ? lesson.getPrice() : 0;
+        int originalLockerFee = 0;
+
+        if (enroll.isUsesLocker() || lockerWasActuallyAllocated) { 
+            if (totalPaidAmount > originalLessonFee) {
+                originalLockerFee = totalPaidAmount - originalLessonFee;
+            } else {
+                originalLockerFee = 0; 
             }
         }
+        
+        BigDecimal finalRefundAmountBigDecimal = BigDecimal.ZERO;
+        LocalDate today = LocalDate.now();
+        LocalDate lessonStartDate = lesson.getStartDate();
+
+        if (lessonStartDate == null) {
+            throw new BusinessRuleException(ErrorCode.LESSON_NOT_FOUND, "강습 시작일 정보가 없습니다.");
+        }
+
+        if (today.isBefore(lessonStartDate)) {
+            // 강습 시작 전: PG사 수수료 정책 확정 후 반영 필요. 현재는 결제 금액 전액 환불 가정.
+            // 예: BigDecimal pgFee = calculatePgFee(totalPaidAmount); // PG 수수료 계산 로직
+            // finalRefundAmountBigDecimal = BigDecimal.valueOf(totalPaidAmount).subtract(pgFee);
+            finalRefundAmountBigDecimal = BigDecimal.valueOf(totalPaidAmount); 
+        } else { 
+            long daysUsed = ChronoUnit.DAYS.between(lessonStartDate, today) + 1;
+            if (daysUsed < 0) daysUsed = 0; 
+
+            BigDecimal lessonPaidBigDecimal = BigDecimal.valueOf(originalLessonFee);
+            BigDecimal lessonUsageDeduction = LESSON_DAILY_RATE.multiply(BigDecimal.valueOf(daysUsed));
+            BigDecimal lessonPenalty = lessonPaidBigDecimal.multiply(PENALTY_RATE);
+            BigDecimal lessonRefundable = lessonPaidBigDecimal.subtract(lessonUsageDeduction).subtract(lessonPenalty);
+            if (lessonRefundable.compareTo(BigDecimal.ZERO) < 0) {
+                lessonRefundable = BigDecimal.ZERO;
+            }
+            finalRefundAmountBigDecimal = finalRefundAmountBigDecimal.add(lessonRefundable);
+
+            if ((enroll.isUsesLocker() || lockerWasActuallyAllocated) && originalLockerFee > 0) {
+                BigDecimal lockerPaidBigDecimal = BigDecimal.valueOf(originalLockerFee);
+                BigDecimal lockerUsageDeduction = LOCKER_DAILY_RATE.multiply(BigDecimal.valueOf(daysUsed));
+                BigDecimal lockerPenalty = lockerPaidBigDecimal.multiply(PENALTY_RATE);
+                BigDecimal lockerRefundable = lockerPaidBigDecimal.subtract(lockerUsageDeduction).subtract(lockerPenalty);
+                if (lockerRefundable.compareTo(BigDecimal.ZERO) < 0) {
+                    lockerRefundable = BigDecimal.ZERO;
+                }
+                finalRefundAmountBigDecimal = finalRefundAmountBigDecimal.add(lockerRefundable);
+            }
+        }
+
+        int finalRefundAmount = finalRefundAmountBigDecimal.intValue();
+        if (finalRefundAmount > totalPaidAmount) {
+            finalRefundAmount = totalPaidAmount;
+        }
+        if (finalRefundAmount < 0) {
+            finalRefundAmount = 0;
+        }
+
+        if (finalRefundAmount > 0) {
+            String kispgTid = payment.getTid();
+            if (kispgTid == null || kispgTid.trim().isEmpty()) {
+                throw new BusinessRuleException(ErrorCode.PAYMENT_INFO_NOT_FOUND, "KISPG 거래 ID(tid)가 없어 환불을 진행할 수 없습니다.");
+            }
+            // boolean pgRefundSuccess = kispgService.requestRefund(kispgTid, finalRefundAmount, "관리자 승인 취소"); // 실제 KISPG 서비스 구현 시 주석 해제
+            // if (!pgRefundSuccess) {
+            //     throw new BusinessRuleException(ErrorCode.PAYMENT_REFUND_FAILED, "KISPG 환불 처리 중 오류가 발생했습니다.");
+            // }
+        } 
+
+        payment.setRefundedAmt((payment.getRefundedAmt() == null ? 0 : payment.getRefundedAmt()) + finalRefundAmount);
+        payment.setRefundDt(LocalDateTime.now());
+        
+        if (payment.getRefundedAmt() >= totalPaidAmount) {
+            payment.setStatus("CANCELED"); 
+            enroll.setPayStatus("REFUNDED");
+        } else if (payment.getRefundedAmt() > 0) { 
+            payment.setStatus("PARTIAL_REFUNDED");
+            enroll.setPayStatus("PARTIALLY_REFUNDED");
+        } 
+
+        enroll.setCancelStatus(CancelStatusType.APPROVED);
+        enroll.setUsesLocker(false); 
+        enroll.setLockerAllocated(false); 
+        enroll.setLockerPgToken(null);
+        enroll.setRefundAmount(finalRefundAmount); 
+        enroll.setUpdatedBy("ADMIN"); 
+
+        if (lockerWasActuallyAllocated) {
+            if (user != null && user.getGender() != null && !user.getGender().trim().isEmpty()) {
+                lockerService.decrementUsedQuantity(user.getGender().toUpperCase());
+            }
+        }
+        
         enrollRepository.save(enroll);
+        paymentRepository.save(payment);
     }
 
     @Override
@@ -441,6 +544,85 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         enroll.setUpdatedBy("ADMIN");
         enroll.setUpdatedAt(LocalDateTime.now());
         enrollRepository.save(enroll);
+    }
+
+    @Override
+    @Transactional // 이 메소드는 DB 상태를 변경하지 않지만, 연관된 엔티티들을 읽어야 하므로 트랜잭션 컨텍스트가 필요할 수 있습니다.
+    public BigDecimal calculateDisplayRefundAmount(Long enrollId) {
+        Enroll enroll = enrollRepository.findById(enrollId)
+            .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found with ID: " + enrollId, ErrorCode.ENROLLMENT_NOT_FOUND));
+        
+        // 환불 요청 상태가 아니거나 이미 처리된 건에 대해서도 예상액은 보여줄 수 있어야 함.
+        // 단, PAID 또는 REFUND_REQUESTED 상태가 아니면 실제 환불 대상이 아닐 수 있음을 인지.
+
+        Lesson lesson = enroll.getLesson();
+        if (lesson == null) {
+             throw new ResourceNotFoundException("Lesson not found for enrollment ID: " + enrollId, ErrorCode.LESSON_NOT_FOUND);
+        }
+        Payment payment = paymentRepository.findByEnroll_EnrollId(enrollId)
+            .orElseThrow(() -> new ResourceNotFoundException("Payment record not found for enrollment ID: " + enrollId, ErrorCode.PAYMENT_INFO_NOT_FOUND));
+
+        int totalPaidAmount = payment.getPaidAmt() != null ? payment.getPaidAmt() : 0;
+        int originalLessonFee = lesson.getPrice() != null ? lesson.getPrice() : 0;
+        int originalLockerFee = 0;
+
+        if (enroll.isUsesLocker() || enroll.isLockerAllocated()) { 
+            if (totalPaidAmount > originalLessonFee) {
+                originalLockerFee = totalPaidAmount - originalLessonFee;
+            } else {
+                originalLockerFee = 0; 
+            }
+        }
+        
+        BigDecimal finalRefundAmountBigDecimal = BigDecimal.ZERO;
+        LocalDate today = LocalDate.now(); // 예상액 계산은 현재 시점 기준
+        LocalDate lessonStartDate = lesson.getStartDate();
+
+        if (lessonStartDate == null) {
+            // 이 경우는 lesson 데이터 문제로, 로깅하거나 예외를 던질 수 있습니다.
+            // 여기서는 0원 환불로 처리하거나, 예외를 던지는 것이 나을 수 있습니다.
+            // approve 로직에서는 예외를 던지므로 일관성을 위해 여기서도 던지거나, 특정 값을 반환합니다.
+            // 여기서는 계산 불가로 보고 0을 반환하거나, 혹은 BusinessRuleException을 던질 수 있습니다.
+            // 다만, 단순 조회용이므로, 에러보다는 계산 불가(0)로 표시하는 것이 나을 수 있습니다.
+            return BigDecimal.ZERO; 
+        }
+
+        if (today.isBefore(lessonStartDate)) {
+            // 강습 시작 전: PG사 수수료 정책 확정 후 반영 필요. 현재는 결제 금액 전액 환불 가정.
+            finalRefundAmountBigDecimal = BigDecimal.valueOf(totalPaidAmount);
+        } else { 
+            long daysUsed = ChronoUnit.DAYS.between(lessonStartDate, today) + 1;
+            if (daysUsed < 0) daysUsed = 0; 
+
+            BigDecimal lessonPaidBigDecimal = BigDecimal.valueOf(originalLessonFee);
+            BigDecimal lessonUsageDeduction = LESSON_DAILY_RATE.multiply(BigDecimal.valueOf(daysUsed));
+            BigDecimal lessonPenalty = lessonPaidBigDecimal.multiply(PENALTY_RATE);
+            BigDecimal lessonRefundable = lessonPaidBigDecimal.subtract(lessonUsageDeduction).subtract(lessonPenalty);
+            if (lessonRefundable.compareTo(BigDecimal.ZERO) < 0) {
+                lessonRefundable = BigDecimal.ZERO;
+            }
+            finalRefundAmountBigDecimal = finalRefundAmountBigDecimal.add(lessonRefundable);
+
+            if ((enroll.isUsesLocker() || enroll.isLockerAllocated()) && originalLockerFee > 0) {
+                BigDecimal lockerPaidBigDecimal = BigDecimal.valueOf(originalLockerFee);
+                BigDecimal lockerUsageDeduction = LOCKER_DAILY_RATE.multiply(BigDecimal.valueOf(daysUsed));
+                BigDecimal lockerPenalty = lockerPaidBigDecimal.multiply(PENALTY_RATE);
+                BigDecimal lockerRefundable = lockerPaidBigDecimal.subtract(lockerUsageDeduction).subtract(lockerPenalty);
+                if (lockerRefundable.compareTo(BigDecimal.ZERO) < 0) {
+                    lockerRefundable = BigDecimal.ZERO;
+                }
+                finalRefundAmountBigDecimal = finalRefundAmountBigDecimal.add(lockerRefundable);
+            }
+        }
+
+        int finalRefundAmount = finalRefundAmountBigDecimal.intValue();
+        if (finalRefundAmount > totalPaidAmount) {
+            finalRefundAmount = totalPaidAmount;
+        }
+        if (finalRefundAmount < 0) {
+            finalRefundAmount = 0;
+        }
+        return BigDecimal.valueOf(finalRefundAmount);
     }
 
     private EnrollResponseDto convertToSwimmingEnrollResponseDto(Enroll enroll) {
@@ -470,13 +652,51 @@ public class EnrollmentServiceImpl implements EnrollmentService {
 
         EnrollDto.LessonDetails lessonDetails = null;
         if (lesson != null) {
+            // Format period as "YYYY-MM-DD ~ YYYY-MM-DD"
+            String period = null;
+            if (lesson.getStartDate() != null && lesson.getEndDate() != null) {
+                period = lesson.getStartDate().toString() + " ~ " + lesson.getEndDate().toString();
+            }
+
             lessonDetails = EnrollDto.LessonDetails.builder()
                     .title(lesson.getTitle())
+                    .period(period)
+                    .time(lesson.getLessonTime()) // e.g., "(월,화,수,목,금) 오전 07:00 ~ 07:50"
                     .price(BigDecimal.valueOf(lesson.getPrice()))
                     .build();
         }
 
+        // Calculate renewal window: 18th-22nd of each month
         EnrollDto.RenewalWindow renewalWindow = null;
+        if (lesson != null && lesson.getEndDate() != null) {
+            // For a lesson ending in month X, renewal window is 18th-22nd of month X
+            LocalDate lessonEndDate = lesson.getEndDate();
+            int year = lessonEndDate.getYear();
+            int month = lessonEndDate.getMonthValue();
+            
+            LocalDate renewalStart = LocalDate.of(year, month, 18);
+            LocalDate renewalEnd = LocalDate.of(year, month, 22);
+            LocalDate now = LocalDate.now();
+            
+            boolean isRenewalOpen = !now.isBefore(renewalStart) && !now.isAfter(renewalEnd);
+            
+            renewalWindow = EnrollDto.RenewalWindow.builder()
+                    .isOpen(isRenewalOpen)
+                    .open(renewalStart.atStartOfDay().atOffset(ZoneOffset.UTC))
+                    .close(renewalEnd.atTime(23, 59, 59).atOffset(ZoneOffset.UTC))
+                    .build();
+        }
+
+        // Calculate canAttemptPayment: UNPAID status and not expired
+        boolean canAttemptPayment = "UNPAID".equals(enroll.getPayStatus()) && 
+                                    enroll.getExpireDt() != null && 
+                                    enroll.getExpireDt().isAfter(LocalDateTime.now());
+
+        // Set paymentPageUrl if payment can be attempted
+        String paymentPageUrl = null;
+        if (canAttemptPayment) {
+            paymentPageUrl = "/payment/process?enroll_id=" + enroll.getEnrollId();
+        }
 
         return EnrollDto.builder()
             .enrollId(enroll.getEnrollId())
@@ -489,6 +709,8 @@ public class EnrollmentServiceImpl implements EnrollmentService {
             .isRenewal(enroll.isRenewalFlag())
             .cancelStatus(enroll.getCancelStatus() != null ? enroll.getCancelStatus().name() : null)
             .cancelReason(enroll.getCancelReason())
+            .canAttemptPayment(canAttemptPayment)
+            .paymentPageUrl(paymentPageUrl)
             .build();
     }
 } 

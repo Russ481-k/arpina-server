@@ -7,6 +7,7 @@ import cms.user.domain.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import cms.swimming.dto.EnrollResponseDto;
+import java.math.BigDecimal;
 
 public interface EnrollmentService {
 
@@ -107,5 +108,7 @@ public interface EnrollmentService {
      * @param comment 거부 사유
      */
     void denyEnrollmentCancellationAdmin(Long enrollId, String comment);
+
+    BigDecimal calculateDisplayRefundAmount(Long enrollId);
 
 } 

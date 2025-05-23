@@ -25,6 +25,9 @@ public class EnrollDto {
   private boolean isRenewal;
   private String cancelStatus;
   private String cancelReason;
+  // Added fields per swim-user.md documentation
+  private boolean canAttemptPayment; // Whether user can attempt payment for this enrollment
+  private String paymentPageUrl; // URL to KISPG payment page (if canAttemptPayment is true)
 
   @Getter
   @Setter
