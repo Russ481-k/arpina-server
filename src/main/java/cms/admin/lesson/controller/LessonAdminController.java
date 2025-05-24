@@ -10,6 +10,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -33,7 +34,7 @@ public class LessonAdminController {
             @Parameter(description = "강습 상태 (OPEN, CLOSED, ONGOING, COMPLETED)") @RequestParam(required = false) String status,
             @Parameter(description = "연도 (YYYY)") @RequestParam(required = false) Integer year,
             @Parameter(description = "월 (1-12)") @RequestParam(required = false) Integer month,
-            @PageableDefault(size = 10, sort = "startDate,desc") Pageable pageable) {
+            @PageableDefault(size = 10, sort = "startDate", direction = Sort.Direction.DESC) Pageable pageable) {
         Page<LessonDto> lessons = lessonAdminService.getAllLessons(status, year, month, pageable);
         return ResponseEntity.ok(ApiResponseSchema.success(lessons, "강습 목록 조회 성공"));
     }
