@@ -24,6 +24,7 @@ import cms.mypage.dto.CheckoutDto;
 // cms.mypage.dto.EnrollDto is used for Mypage responses
 import cms.mypage.dto.EnrollDto; 
 import cms.mypage.dto.RenewalRequestDto;
+import cms.mypage.dto.EnrollInitiationResponseDto;
 // cms.swimming.dto.EnrollRequestDto and EnrollResponseDto are used for initial enrollment
 import cms.swimming.dto.EnrollRequestDto;
 import cms.swimming.dto.EnrollResponseDto;
@@ -36,6 +37,7 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.util.StringUtils;
 
 import javax.persistence.EntityNotFoundException;
@@ -56,7 +58,14 @@ import cms.common.exception.ResourceNotFoundException;
 import org.springframework.http.HttpStatus; // HttpStatus 추가
 import org.springframework.beans.factory.annotation.Value; // Added for defaultLockerFee
 import java.time.temporal.ChronoUnit; // Added for calculating daysBetween
-// import cms.pg.KispgService; // 가상 KISPG 서비스 인터페이스 - 실제 구현 시 주석 해제
+import org.springframework.retry.annotation.Backoff;
+import org.springframework.retry.annotation.Retryable;
+import org.springframework.dao.DeadlockLoserDataAccessException;
+import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.orm.jpa.JpaOptimisticLockingFailureException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import cms.websocket.handler.LessonCapacityWebSocketHandler;
 
 @Service("enrollmentServiceImpl")
 @Transactional
@@ -68,11 +77,19 @@ public class EnrollmentServiceImpl implements EnrollmentService {
     private final LockerService lockerService;
     private final UserRepository userRepository;
     private final LessonRepository lessonRepository;
+    private final LessonCapacityWebSocketHandler webSocketHandler;
     // private final KispgService kispgService; // KISPG 서비스 주입 (실제 구현 시 필요)
 
     @Value("${app.default-locker-fee:5000}") // Default to 5000 if not set in properties
     private int defaultLockerFee;
 
+    @Value("${app.enrollment.retry-attempts:3}")
+    private int retryAttempts;
+
+    @Value("${app.enrollment.retry-delay:1000}")
+    private long retryDelay;
+
+    private static final Logger logger = LoggerFactory.getLogger(EnrollmentServiceImpl.class);
     private static final BigDecimal LESSON_DAILY_RATE = new BigDecimal("3500");
     private static final BigDecimal LOCKER_DAILY_RATE = new BigDecimal("170");
     private static final BigDecimal PENALTY_RATE = new BigDecimal("0.10");
@@ -82,7 +99,8 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                                  @Qualifier("swimmingLessonServiceImpl") LessonService lessonService,
                                  @Qualifier("lockerServiceImpl") LockerService lockerService,
                                  UserRepository userRepository,
-                                 LessonRepository lessonRepository
+                                 LessonRepository lessonRepository,
+                                 LessonCapacityWebSocketHandler webSocketHandler
                                  /*, KispgService kispgService */) { // 주입
         this.enrollRepository = enrollRepository;
         this.paymentRepository = paymentRepository;
@@ -90,6 +108,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         this.lockerService = lockerService;
         this.userRepository = userRepository;
         this.lessonRepository = lessonRepository;
+        this.webSocketHandler = webSocketHandler;
         // this.kispgService = kispgService;
     }
 
@@ -142,25 +161,72 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         return convertToMypageEnrollDto(enroll);
     }
 
+    /**
+     * *** 동시성 제어 및 재시도 로직이 적용된 신규 수강 신청 ***
+     * 
+     * @Retryable: 교착상태 및 잠금 실패 시 자동 재시도
+     * - DeadlockLoserDataAccessException: 교착상태 감지 시 재시도
+     * - CannotAcquireLockException: 잠금 획득 실패 시 재시도  
+     * - JpaOptimisticLockingFailureException: 낙관적 잠금 실패 시 재시도
+     */
     @Override
-    @Transactional
+    @Transactional(isolation = Isolation.SERIALIZABLE)
+    @Retryable(
+        value = {
+            DeadlockLoserDataAccessException.class,
+            CannotAcquireLockException.class, 
+            JpaOptimisticLockingFailureException.class
+        },
+        maxAttempts = 3,
+        backoff = @Backoff(delay = 1000, multiplier = 1.5)
+    )
     public EnrollResponseDto createInitialEnrollment(User user, EnrollRequestDto initialEnrollRequest, String ipAddress) {
-        Lesson lesson = lessonRepository.findById(initialEnrollRequest.getLessonId())
+        logger.info("[Enrollment] Starting enrollment process for user: {}, lesson: {}", 
+                   user.getUuid(), initialEnrollRequest.getLessonId());
+        
+        long startTime = System.currentTimeMillis();
+        try {
+            return createInitialEnrollmentInternal(user, initialEnrollRequest, ipAddress);
+        } catch (DeadlockLoserDataAccessException e) {
+            logger.warn("[Enrollment] Deadlock detected for user: {}, lesson: {}, retrying...", 
+                       user.getUuid(), initialEnrollRequest.getLessonId());
+            throw e; // 재시도를 위해 예외 재발생
+        } catch (CannotAcquireLockException e) {
+            logger.warn("[Enrollment] Lock acquisition failed for user: {}, lesson: {}, retrying...", 
+                       user.getUuid(), initialEnrollRequest.getLessonId());
+            throw e; // 재시도를 위해 예외 재발생
+        } finally {
+            long endTime = System.currentTimeMillis();
+            logger.info("[Enrollment] Enrollment process completed in {} ms for user: {}", 
+                       (endTime - startTime), user.getUuid());
+        }
+    }
+
+    /**
+     * 실제 신청 로직 (내부 메소드)
+     */
+    private EnrollResponseDto createInitialEnrollmentInternal(User user, EnrollRequestDto initialEnrollRequest, String ipAddress) {
+        // *** 비관적 잠금으로 동시성 문제 해결 ***
+        // 동시에 여러 사용자가 같은 강좌에 신청하는 것을 방지
+        Lesson lesson = lessonRepository.findByIdWithLock(initialEnrollRequest.getLessonId())
                 .orElseThrow(() -> new EntityNotFoundException("강습을 찾을 수 없습니다. ID: " + initialEnrollRequest.getLessonId()));
 
         if (lesson.getStatus() != Lesson.LessonStatus.OPEN) {
             throw new BusinessRuleException(ErrorCode.LESSON_NOT_OPEN_FOR_ENROLLMENT, "신청 가능한 강습이 아닙니다. 현재 상태: " + lesson.getStatus());
         }
 
-        // Lesson Enrollment Capacity Check
+        // *** 잠금 상태에서 정원 체크 (동시성 안전) ***
         long paidEnrollments = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
         long unpaidExpiringEnrollments = enrollRepository.countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(lesson.getLessonId(), "APPLIED", "UNPAID", LocalDateTime.now());
         long availableSlots = lesson.getCapacity() - paidEnrollments - unpaidExpiringEnrollments;
 
         if (availableSlots <= 0) {
-            throw new BusinessRuleException(ErrorCode.PAYMENT_PAGE_SLOT_UNAVAILABLE);
+            // 잠금 해제 후 예외 발생 (다른 사용자들이 대기 중)
+            throw new BusinessRuleException(ErrorCode.PAYMENT_PAGE_SLOT_UNAVAILABLE, 
+                "정원이 마감되었습니다. 현재 정원: " + lesson.getCapacity() + ", 결제완료: " + paidEnrollments + ", 결제대기: " + unpaidExpiringEnrollments);
         }
 
+        // *** 기존 신청 체크 (중복 방지) ***
         Optional<Enroll> existingEnrollOpt = enrollRepository.findByUserUuidAndLessonLessonIdAndStatus(
                 user.getUuid(), initialEnrollRequest.getLessonId(), "APPLIED");
         if (existingEnrollOpt.isPresent()) {
@@ -169,15 +235,17 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 throw new BusinessRuleException(ErrorCode.DUPLICATE_ENROLLMENT_ATTEMPT, "이미 해당 강습에 대해 결제 완료된 신청 내역이 존재합니다.");
             }
             if ("UNPAID".equals(exEnroll.getPayStatus()) && exEnroll.getExpireDt().isAfter(LocalDateTime.now())) {
-                 throw new BusinessRuleException(ErrorCode.DUPLICATE_ENROLLMENT_ATTEMPT, "이미 신청한 강습의 결제가능 시간이 남아있습니다. 마이페이지에서 결제를 진행해주세요. 만료시간: " + exEnroll.getExpireDt());
+                 throw new BusinessRuleException(ErrorCode.DUPLICATE_ENROLLMENT_ATTEMPT, "이미 신청한 강습의 결제가능 시간이 남아있습니다. 재수강 버튼을 통해 결제를 진행해주세요. 만료시간: " + exEnroll.getExpireDt());
             }
         }
 
+        // *** 월별 신청 제한 체크 ***
         long monthlyEnrollments = enrollRepository.countUserEnrollmentsInMonth(user.getUuid(), lesson.getStartDate());
         if (monthlyEnrollments > 0) {
             throw new BusinessRuleException(ErrorCode.MONTHLY_ENROLLMENT_LIMIT_EXCEEDED, "같은 달에 이미 다른 강습을 신청하셨습니다. 한 달에 한 개의 강습만 신청 가능합니다.");
         }
 
+        // *** 잠금 상태에서 Enroll 생성 (원자적 연산) ***
         Enroll enroll = Enroll.builder()
                 .user(user)
                 .lesson(lesson)
@@ -193,15 +261,30 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 .build();
         Enroll savedEnroll = enrollRepository.save(enroll);
 
-        // Update lesson status if capacity is met (this logic might remain similar)
-        long potentiallyPaidEnrollments = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID") +
-                                          enrollRepository.countByLessonLessonIdAndStatusAndPayStatus(lesson.getLessonId(), "APPLIED", "UNPAID");
-        if (potentiallyPaidEnrollments >= lesson.getCapacity() && lesson.getStatus() == Lesson.LessonStatus.OPEN) {
+        // *** 정원 달성 시 강좌 상태 변경 ***
+        // 재계산하여 정확한 수량 확인
+        long finalPaidCount = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
+        long finalUnpaidCount = enrollRepository.countByLessonLessonIdAndStatusAndPayStatus(lesson.getLessonId(), "APPLIED", "UNPAID");
+        if ((finalPaidCount + finalUnpaidCount) >= lesson.getCapacity() && lesson.getStatus() == Lesson.LessonStatus.OPEN) {
             lesson.updateStatus(Lesson.LessonStatus.CLOSED);
             lessonRepository.save(lesson);
         }
 
-        // Modify EnrollResponseDto to reflect changes
+        // *** 실시간 정원 정보 업데이트 브로드캐스트 ***
+        try {
+            webSocketHandler.broadcastLessonCapacityUpdate(
+                lesson.getLessonId(),
+                lesson.getCapacity(),
+                (int) finalPaidCount,
+                (int) finalUnpaidCount
+            );
+            logger.debug("[WebSocket] Broadcasted capacity update for lesson {}", lesson.getLessonId());
+        } catch (Exception e) {
+            logger.warn("[WebSocket] Failed to broadcast capacity update for lesson {}: {}", 
+                       lesson.getLessonId(), e.getMessage());
+        }
+
+        // *** 응답 반환 ***
         return EnrollResponseDto.builder()
             .enrollId(savedEnroll.getEnrollId())
             .userId(user.getUuid())
@@ -298,235 +381,231 @@ public class EnrollmentServiceImpl implements EnrollmentService {
              throw new BusinessRuleException(ErrorCode.ALREADY_CANCELLED_ENROLLMENT, "This enrollment is already in a cancellation process or has been cancelled/denied.");
         }
 
-        boolean lockerWasActuallyAllocated = enroll.isLockerAllocated();
+        Lesson lesson = enroll.getLesson();
+        if (lesson == null) {
+            throw new ResourceNotFoundException("Lesson not found for enrollment ID: " + enrollId, ErrorCode.LESSON_NOT_FOUND);
+        }
         
-        // ... (PG 환불 로직 연동 TODO) ...
+        LocalDate today = LocalDate.now();
+        enroll.setCancelRequestedAt(LocalDateTime.now()); // 취소 요청 시각 기록
 
-        enroll.setStatus("CANCELED"); 
-        enroll.setPayStatus("REFUND_REQUESTED"); 
-        enroll.setCancelStatus(Enroll.CancelStatusType.REQ); 
-        enroll.setCancelReason(reason);
-        enroll.setUsesLocker(false); // User no longer intends to use a locker
-        enroll.setLockerAllocated(false); // Locker is no longer allocated (or was never)
-        enroll.setLockerPgToken(null); // Clear PG token associated with locker
+        if (today.isBefore(lesson.getStartDate())) {
+            // 수강 시작일 전: 위약금 없이 전액 환불 요청
+            logger.info("수강 시작일 전 취소 요청 (enrollId: {}). 전액 환불 처리 시도.", enrollId);
+            enroll.setOriginalPayStatusBeforeCancel(enroll.getPayStatus()); // 현재 결제 상태 저장
+            enroll.setStatus("CANCELED"); 
+            enroll.setPayStatus("REFUND_REQUESTED"); // PG사와 연동하여 실제 환불 처리 필요
+            enroll.setCancelStatus(Enroll.CancelStatusType.REQ); // 관리자 승인 없이 바로 REQ (또는 자동 APPROVED)
+            enroll.setCancelReason(reason);
+            enroll.setRefundAmount(enroll.getLesson().getPrice()); // 단순 예시, 실제로는 Payment 테이블 금액 참조
+                                                                // 사물함 금액도 고려해야 함
 
-        if (lockerWasActuallyAllocated) {
-            String userGender = enroll.getUser().getGender();
-            if (userGender != null && !userGender.trim().isEmpty()) {
-                lockerService.decrementUsedQuantity(userGender.toUpperCase());
+            // KISPG 전액 환불 로직 호출 (실제 구현 필요)
+            // Payment payment = paymentRepository.findByEnroll_EnrollId(enrollId).orElse(null);
+            // if (payment != null && payment.getTid() != null) {
+            //     boolean refundSuccess = kispgService.requestFullRefund(payment.getTid(), "사용자 강습 시작 전 취소");
+            //     if (refundSuccess) {
+            //         enroll.setPayStatus("REFUNDED");
+            //         enroll.setCancelStatus(Enroll.CancelStatusType.APPROVED); // 자동 승인 간주
+            //         payment.setStatus("CANCELED"); // 또는 REFUNDED
+            //         payment.setRefundedAmt(payment.getPaidAmt());
+            //         payment.setRefundDt(LocalDateTime.now());
+            //         paymentRepository.save(payment);
+            //     } else {
+            //          logger.error("KISPG 전액 환불 실패 (enrollId: {}, tid: {})", enrollId, payment.getTid());
+            //          enroll.setCancelStatus(Enroll.CancelStatusType.PENDING); // 실패 시 관리자 확인 필요
+            //     }
+            // } else {
+            //      logger.warn("결제 정보 또는 TID가 없어 PG 환불 불가 (enrollId: {})", enrollId);
+            //      enroll.setCancelStatus(Enroll.CancelStatusType.PENDING); // PG 연동 불가 시 관리자 확인
+            // }
+
+            if (enroll.isLockerAllocated()) {
+                String userGender = enroll.getUser().getGender();
+                if (userGender != null && !userGender.trim().isEmpty()) {
+                    lockerService.decrementUsedQuantity(userGender.toUpperCase());
+                    enroll.setLockerAllocated(false);
+                }
             }
-        }
-            enrollRepository.save(enroll);
-    }
+            enroll.setUsesLocker(false);
+            enroll.setLockerPgToken(null);
 
-    @Override
-    @Transactional
-    public EnrollDto processRenewal(User user, RenewalRequestDto renewalRequestDto) {
-        if (user == null || user.getUuid() == null) {
-             throw new BusinessRuleException(ErrorCode.AUTHENTICATION_FAILED, HttpStatus.UNAUTHORIZED);
-        }
-        Lesson lesson = lessonRepository.findById(renewalRequestDto.getLessonId())
-            .orElseThrow(() -> new ResourceNotFoundException("재수강 대상 강좌를 찾을 수 없습니다 (ID: " + renewalRequestDto.getLessonId() + ")", ErrorCode.LESSON_NOT_FOUND));
-        
-        // TODO: Add other renewal eligibility checks here
-
-        // boolean useLockerForRenewal = false; // This variable is not strictly needed now
-        // The decision to use a locker is passed to the payment confirmation step.
-        // The enroll.usesLocker field will reflect the user's *intent* from the renewal request.
-
-        // if (renewalRequestDto.isWantsLocker()) {
-        //     if (user.getGender() == null || user.getGender().trim().isEmpty()) {
-        //         throw new BusinessRuleException(ErrorCode.USER_GENDER_REQUIRED_FOR_LOCKER);
-        //     }
-        //     // DO NOT call lockerService.incrementUsedQuantity or assignLocker here.
-        //     // This will be handled by PaymentServiceImpl.confirmPayment after successful payment.
-        //     // The original code had: if (!lockerService.assignLocker(user.getGender())) { ... }
-        //     // This was incorrect for the new flow.
-        //     useLockerForRenewal = true; 
-        // }
-
-        Enroll.EnrollBuilder newEnrollBuilder = Enroll.builder()
-            .user(user)
-            .lesson(lesson)
-            // Set expireDt to 5 minutes for consistency, assuming immediate payment redirection
-            .status("APPLIED").payStatus("UNPAID").expireDt(LocalDateTime.now().plusMinutes(5))
-            .renewalFlag(true).cancelStatus(CancelStatusType.NONE)
-            // Set usesLocker based on user's choice in renewal request.
-            // Actual inventory update happens in PaymentServiceImpl.confirmPayment.
-            .usesLocker(renewalRequestDto.isWantsLocker()) 
-            .createdBy(user.getName()) 
-            .updatedBy(user.getName()) 
-            .createdIp("UNKNOWN_IP_RENEWAL") 
-            .updatedIp("UNKNOWN_IP_RENEWAL");
-
-        Enroll newEnroll = newEnrollBuilder.build();
-        try {
-            enrollRepository.save(newEnroll);
-            // If renewal involved a locker preference, it's now set on 'newEnroll'.
-            // If the save fails, and if we *had* provisionally incremented a locker count here,
-            // we would decrement it. But since we don't increment here, the rollback is simpler.
-            return convertToMypageEnrollDto(newEnroll);
-        } catch (Exception e) {
-            // logger.error("Error saving renewed enrollment for user {}: {}", user.getUuid(), e.getMessage(), e);
-            // No direct locker inventory to roll back here as it wasn't incremented yet.
-            // The original code had: lockerService.releaseLocker(user.getGender()); - this should be decrementUsedQuantity
-            // However, if useLockerForRenewal was true AND we had called increment, we would call decrement here.
-            // Since we are not calling increment anymore, the direct rollback of quantity is not needed here.
-            // If renewalRequestDto.isWantsLocker() was true, it just means the *intent* was recorded.
-            // If this save fails, the intent isn't persisted, and no inventory was touched.
-            throw new BusinessRuleException("재수강 신청 처리 중 데이터 저장에 실패했습니다.", ErrorCode.INTERNAL_SERVER_ERROR, e);
-        }
-    }
-
-    // Admin methods implementation
-    @Override
-    @Transactional(readOnly = true)
-    public Page<EnrollResponseDto> getAllEnrollmentsAdmin(Pageable pageable) {
-        Page<Enroll> enrollPage = enrollRepository.findAll(pageable);
-        return enrollPage.map(this::convertToSwimmingEnrollResponseDto);
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public Page<EnrollResponseDto> getAllEnrollmentsByStatusAdmin(String status, Pageable pageable) {
-        // Assuming status can be either Enroll.status or Enroll.payStatus
-        // This might need more sophisticated logic if "status" can refer to different fields
-        // For now, we'll assume it refers to Enroll.status primarily, then Enroll.payStatus if not found.
-        // Or, better, the controller should specify which field status refers to.
-        // For this implementation, let's assume 'status' refers to the main Enroll.status field.
-        // If it can be 'PAID' or 'UNPAID', then it must refer to 'payStatus'.
-        
-        Page<Enroll> enrollPage;
-        if ("PAID".equalsIgnoreCase(status) || "UNPAID".equalsIgnoreCase(status) || "EXPIRED".equalsIgnoreCase(status) || "REFUNDED".equalsIgnoreCase(status)) {
-            enrollPage = enrollRepository.findByPayStatus(status.toUpperCase(), pageable);
         } else {
-            // Assuming status refers to the main status like APPLIED, CANCELED, COMPLETED
-            enrollPage = enrollRepository.findByStatus(status.toUpperCase(), pageable);
+            // 수강 시작일 후: 관리자 승인 필요한 취소 요청
+            logger.info("수강 시작일 후 취소 요청 (enrollId: {}). 관리자 승인 대기.", enrollId);
+            enroll.setOriginalPayStatusBeforeCancel(enroll.getPayStatus());
+            enroll.setStatus("CANCELED_REQ"); // 상태 변경 (예시)
+            enroll.setPayStatus("REFUND_REQUESTED"); // 환불 요청 상태로 변경
+            enroll.setCancelStatus(Enroll.CancelStatusType.REQ);
+            enroll.setCancelReason(reason);
+            // 환불액 계산 등은 관리자 승인 시점으로 이동
         }
-        return enrollPage.map(this::convertToSwimmingEnrollResponseDto);
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public Page<EnrollResponseDto> getAllEnrollmentsByLessonIdAdmin(Long lessonId, Pageable pageable) {
-        Lesson lesson = lessonRepository.findById(lessonId)
-                .orElseThrow(() -> new EntityNotFoundException("Lesson not found with ID: " + lessonId));
-        Page<Enroll> enrollPage = enrollRepository.findByLesson(lesson, pageable);
-        return enrollPage.map(this::convertToSwimmingEnrollResponseDto);
+        enrollRepository.save(enroll);
     }
 
     @Override
     @Transactional
-    public void approveEnrollmentCancellationAdmin(Long enrollId, Integer refundPct) {
+    public void approveEnrollmentCancellationAdmin(Long enrollId, Integer manualUsedDays) { // refundPct 파라미터 대신 manualUsedDays 사용
         Enroll enroll = enrollRepository.findById(enrollId)
             .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found with ID: " + enrollId, ErrorCode.ENROLLMENT_NOT_FOUND));
 
-        if (!"PAID".equalsIgnoreCase(enroll.getPayStatus()) && !"REFUND_REQUESTED".equalsIgnoreCase(enroll.getPayStatus())) {
-            throw new BusinessRuleException(ErrorCode.ENROLLMENT_CANCELLATION_NOT_ALLOWED, 
-                "강습 시작 후 취소 승인은 결제 완료(PAID) 또는 환불 요청(REFUND_REQUESTED) 상태에서만 가능합니다. 현재 상태: " + enroll.getPayStatus());
+        // 관리자만 이 로직을 호출한다고 가정, 또는 역할 검증 필요
+        // if (!"ADMIN_ROLE_CHECK") { throw new BusinessRuleException(ErrorCode.ACCESS_DENIED); }
+
+        if (enroll.getCancelStatus() != Enroll.CancelStatusType.REQ && enroll.getCancelStatus() != Enroll.CancelStatusType.PENDING) {
+             throw new BusinessRuleException(ErrorCode.ENROLLMENT_CANCELLATION_NOT_ALLOWED, 
+                "취소 요청 상태가 아니거나 이미 처리된 건입니다. 현재 상태: " + enroll.getCancelStatus());
         }
         
         Lesson lesson = enroll.getLesson();
-        User user = enroll.getUser();
         Payment payment = paymentRepository.findByEnroll_EnrollId(enrollId)
             .orElseThrow(() -> new ResourceNotFoundException("Payment record not found for enrollment ID: " + enrollId, ErrorCode.PAYMENT_INFO_NOT_FOUND));
 
-        boolean lockerWasActuallyAllocated = enroll.isLockerAllocated();
-        int totalPaidAmount = payment.getPaidAmt() != null ? payment.getPaidAmt() : 0;
-        int originalLessonFee = lesson.getPrice() != null ? lesson.getPrice() : 0;
-        int originalLockerFee = 0;
-
-        if (enroll.isUsesLocker() || lockerWasActuallyAllocated) { 
-            if (totalPaidAmount > originalLessonFee) {
-                originalLockerFee = totalPaidAmount - originalLessonFee;
+        // 결제 시 강습료와 사물함 요금을 Payment 엔티티에 분리 저장했다고 가정 (payment.getLessonAmount(), payment.getLockerAmount())
+        // 이것이 안되어 있다면, enroll.getLesson().getPrice() 와 payment.getPaidAmt()를 통해 역산 필요
+        int paidLessonAmount = Optional.ofNullable(payment.getLessonAmount()).orElse(lesson.getPrice()); // 예시
+        int paidLockerAmount = Optional.ofNullable(payment.getLockerAmount()).orElse(0); // 예시: payment에 lockerAmount 필드 없으면 0
+        if (payment.getLessonAmount() == null || payment.getLockerAmount() == null) {
+             // 실제로는 payment.getPaidAmt()와 lesson.getPrice(), 그리고 enroll.usesLocker()로 분리해야 함
+            if (enroll.isUsesLocker() && payment.getPaidAmt() != null && payment.getPaidAmt() > lesson.getPrice()) {
+                 paidLessonAmount = lesson.getPrice();
+                 paidLockerAmount = payment.getPaidAmt() - lesson.getPrice();
             } else {
-                originalLockerFee = 0; 
+                 paidLessonAmount = Optional.ofNullable(payment.getPaidAmt()).orElse(0);
+                 paidLockerAmount = 0;
             }
         }
+
+
+        boolean lockerWasUsed = enroll.isUsesLocker() || enroll.isLockerAllocated(); // 결제 시점의 usesLocker와 실제 할당 여부 모두 고려
         
-        BigDecimal finalRefundAmountBigDecimal = BigDecimal.ZERO;
-        LocalDate today = LocalDate.now();
+        BigDecimal finalRefundAmountBigDecimal;
+        LocalDate today = LocalDate.now(); // 관리자 승인일 기준
         LocalDate lessonStartDate = lesson.getStartDate();
 
         if (lessonStartDate == null) {
             throw new BusinessRuleException(ErrorCode.LESSON_NOT_FOUND, "강습 시작일 정보가 없습니다.");
         }
 
-        if (today.isBefore(lessonStartDate)) {
-            // 강습 시작 전: PG사 수수료 정책 확정 후 반영 필요. 현재는 결제 금액 전액 환불 가정.
-            // 예: BigDecimal pgFee = calculatePgFee(totalPaidAmount); // PG 수수료 계산 로직
-            // finalRefundAmountBigDecimal = BigDecimal.valueOf(totalPaidAmount).subtract(pgFee);
-            finalRefundAmountBigDecimal = BigDecimal.valueOf(totalPaidAmount); 
-        } else { 
-            long daysUsed = ChronoUnit.DAYS.between(lessonStartDate, today) + 1;
-            if (daysUsed < 0) daysUsed = 0; 
-
-            BigDecimal lessonPaidBigDecimal = BigDecimal.valueOf(originalLessonFee);
-            BigDecimal lessonUsageDeduction = LESSON_DAILY_RATE.multiply(BigDecimal.valueOf(daysUsed));
-            BigDecimal lessonPenalty = lessonPaidBigDecimal.multiply(PENALTY_RATE);
-            BigDecimal lessonRefundable = lessonPaidBigDecimal.subtract(lessonUsageDeduction).subtract(lessonPenalty);
-            if (lessonRefundable.compareTo(BigDecimal.ZERO) < 0) {
-                lessonRefundable = BigDecimal.ZERO;
-            }
-            finalRefundAmountBigDecimal = finalRefundAmountBigDecimal.add(lessonRefundable);
-
-            if ((enroll.isUsesLocker() || lockerWasActuallyAllocated) && originalLockerFee > 0) {
-                BigDecimal lockerPaidBigDecimal = BigDecimal.valueOf(originalLockerFee);
-                BigDecimal lockerUsageDeduction = LOCKER_DAILY_RATE.multiply(BigDecimal.valueOf(daysUsed));
-                BigDecimal lockerPenalty = lockerPaidBigDecimal.multiply(PENALTY_RATE);
-                BigDecimal lockerRefundable = lockerPaidBigDecimal.subtract(lockerUsageDeduction).subtract(lockerPenalty);
-                if (lockerRefundable.compareTo(BigDecimal.ZERO) < 0) {
-                    lockerRefundable = BigDecimal.ZERO;
-                }
-                finalRefundAmountBigDecimal = finalRefundAmountBigDecimal.add(lockerRefundable);
-            }
+        // 사용일수 계산: 관리자가 입력한 manualUsedDays 우선, 없으면 자동 계산
+        long daysUsed;
+        if (manualUsedDays != null && manualUsedDays >= 0) {
+            daysUsed = manualUsedDays;
+            enroll.setDaysUsedForRefund(manualUsedDays);
+        } else {
+            // 자동계산: 취소 요청일 또는 오늘까지 사용으로 간주 (정책에 따라 기준일 선택)
+            // 여기서는 관리자 승인일(today)까지 사용으로 간주
+            daysUsed = ChronoUnit.DAYS.between(lessonStartDate, today) + 1;
+            if (daysUsed < 0) daysUsed = 0; // 강습 시작 전인데 이 로직을 타는 경우 방지 (실제로는 request 단계에서 분기)
+            enroll.setDaysUsedForRefund((int)daysUsed);
+        }
+        
+        // 수강료 환불분 계산
+        BigDecimal lessonPaidDecimal = BigDecimal.valueOf(paidLessonAmount);
+        BigDecimal lessonUsageDeduction = LESSON_DAILY_RATE.multiply(BigDecimal.valueOf(daysUsed));
+        BigDecimal lessonPenalty = lessonPaidDecimal.multiply(PENALTY_RATE);
+        enroll.setPenaltyAmountLesson(lessonPenalty.intValue());
+        BigDecimal lessonRefundable = lessonPaidDecimal.subtract(lessonUsageDeduction).subtract(lessonPenalty);
+        if (lessonRefundable.compareTo(BigDecimal.ZERO) < 0) {
+            lessonRefundable = BigDecimal.ZERO;
         }
 
+        finalRefundAmountBigDecimal = lessonRefundable;
+
+        // 사물함료 환불분 계산 (사물함을 사용했고, 사물함 요금이 있었던 경우)
+        if (lockerWasUsed && paidLockerAmount > 0) {
+            BigDecimal lockerPaidDecimal = BigDecimal.valueOf(paidLockerAmount);
+            BigDecimal lockerUsageDeduction = LOCKER_DAILY_RATE.multiply(BigDecimal.valueOf(daysUsed));
+            BigDecimal lockerPenalty = lockerPaidDecimal.multiply(PENALTY_RATE);
+            enroll.setPenaltyAmountLocker(lockerPenalty.intValue());
+            BigDecimal lockerRefundable = lockerPaidDecimal.subtract(lockerUsageDeduction).subtract(lockerPenalty);
+            if (lockerRefundable.compareTo(BigDecimal.ZERO) < 0) {
+                lockerRefundable = BigDecimal.ZERO;
+            }
+            finalRefundAmountBigDecimal = finalRefundAmountBigDecimal.add(lockerRefundable);
+        } else {
+            enroll.setPenaltyAmountLocker(0);
+        }
+        
+        enroll.setCalculatedRefundAmount(finalRefundAmountBigDecimal.intValue()); // 관리자 수정 전 시스템 계산 환불액 (또는 최종 환불액으로 사용)
+
         int finalRefundAmount = finalRefundAmountBigDecimal.intValue();
+        int totalPaidAmount = payment.getPaidAmt() != null ? payment.getPaidAmt() : 0;
+
         if (finalRefundAmount > totalPaidAmount) {
             finalRefundAmount = totalPaidAmount;
         }
         if (finalRefundAmount < 0) {
             finalRefundAmount = 0;
         }
+        enroll.setRefundAmount(finalRefundAmount); // 최종 환불액 설정
 
+        // PG사 환불 연동
         if (finalRefundAmount > 0) {
             String kispgTid = payment.getTid();
             if (kispgTid == null || kispgTid.trim().isEmpty()) {
-                throw new BusinessRuleException(ErrorCode.PAYMENT_INFO_NOT_FOUND, "KISPG 거래 ID(tid)가 없어 환불을 진행할 수 없습니다.");
+                // TID 없으면 PG 환불 불가, 관리자에게 알리고 수동 처리 유도 또는 다른 정책
+                logger.error("KISPG TID가 없어 자동 환불 불가 (enrollId: {}). 관리자 확인 필요.", enrollId);
+                enroll.setCancelStatus(CancelStatusType.PENDING); // PG 환불 실패 시 PENDING으로 두고 관리자 개입 유도
+                enroll.setCancelReason((enroll.getCancelReason() == null ? "" : enroll.getCancelReason()) + " [시스템: PG TID 없음]");
+                // throw new BusinessRuleException(ErrorCode.PAYMENT_INFO_NOT_FOUND, "KISPG 거래 ID(tid)가 없어 환불을 진행할 수 없습니다.");
+            } else {
+                // boolean pgRefundSuccess = kispgService.requestPartialRefund(kispgTid, finalRefundAmount, "관리자 승인 취소");
+                // if (!pgRefundSuccess) {
+                //     logger.error("KISPG 부분 환불 실패 (enrollId: {}, tid: {}, amount: {})", enrollId, kispgTid, finalRefundAmount);
+                //     enroll.setCancelStatus(CancelStatusType.PENDING); // PG 환불 실패 시 PENDING
+                //     enroll.setCancelReason((enroll.getCancelReason() == null ? "" : enroll.getCancelReason()) + " [시스템: PG 환불 실패]");
+                //     // throw new BusinessRuleException(ErrorCode.PAYMENT_REFUND_FAILED, "KISPG 환불 처리 중 오류가 발생했습니다.");
+                // } else {
+                //     logger.info("KISPG 부분 환불 성공 (enrollId: {}, tid: {}, amount: {})", enrollId, kispgTid, finalRefundAmount);
+                //     payment.setRefundedAmt((payment.getRefundedAmt() == null ? 0 : payment.getRefundedAmt()) + finalRefundAmount);
+                //     payment.setRefundDt(LocalDateTime.now());
+                //     if (payment.getRefundedAmt() >= totalPaidAmount) {
+                //         payment.setStatus("CANCELED"); 
+                //         enroll.setPayStatus("REFUNDED");
+                //     } else if (payment.getRefundedAmt() > 0) { 
+                //         payment.setStatus("PARTIAL_REFUNDED");
+                //         enroll.setPayStatus("PARTIALLY_REFUNDED");
+                //     }
+                //     enroll.setCancelStatus(CancelStatusType.APPROVED);
+                // }
+                // --- 임시 KISPG 연동 성공 처리 ---
+                logger.info("KISPG 부분 환불 성공 (임시) (enrollId: {}, tid: {}, amount: {})", enrollId, kispgTid, finalRefundAmount);
+                payment.setRefundedAmt((payment.getRefundedAmt() == null ? 0 : payment.getRefundedAmt()) + finalRefundAmount);
+                payment.setRefundDt(LocalDateTime.now());
+                if (payment.getRefundedAmt() >= totalPaidAmount) {
+                    payment.setStatus("CANCELED"); 
+                    enroll.setPayStatus("REFUNDED");
+                } else if (payment.getRefundedAmt() > 0) { 
+                    payment.setStatus("PARTIAL_REFUNDED");
+                    enroll.setPayStatus("PARTIALLY_REFUNDED");
+                }
+                enroll.setCancelStatus(CancelStatusType.APPROVED);
+                // --- 임시 KISPG 연동 성공 처리 끝 ---
             }
-            // boolean pgRefundSuccess = kispgService.requestRefund(kispgTid, finalRefundAmount, "관리자 승인 취소"); // 실제 KISPG 서비스 구현 시 주석 해제
-            // if (!pgRefundSuccess) {
-            //     throw new BusinessRuleException(ErrorCode.PAYMENT_REFUND_FAILED, "KISPG 환불 처리 중 오류가 발생했습니다.");
-            // }
-        } 
-
-        payment.setRefundedAmt((payment.getRefundedAmt() == null ? 0 : payment.getRefundedAmt()) + finalRefundAmount);
-        payment.setRefundDt(LocalDateTime.now());
+        } else { // 환불 금액이 0원인 경우
+            enroll.setPayStatus("REFUNDED"); // 또는 CANCELED_NO_REFUND 등 상태 정의 필요
+            enroll.setCancelStatus(CancelStatusType.APPROVED);
+            payment.setStatus("CANCELED"); // 환불액이 0이어도 결제 자체는 취소된 것으로 볼 수 있음
+        }
         
-        if (payment.getRefundedAmt() >= totalPaidAmount) {
-            payment.setStatus("CANCELED"); 
-            enroll.setPayStatus("REFUNDED");
-        } else if (payment.getRefundedAmt() > 0) { 
-            payment.setStatus("PARTIAL_REFUNDED");
-            enroll.setPayStatus("PARTIALLY_REFUNDED");
-        } 
+        enroll.setCancelApprovedAt(LocalDateTime.now()); // 취소 처리(승인) 시각
+        enroll.setUpdatedBy("ADMIN"); // 또는 현재 로그인한 관리자 ID
 
-        enroll.setCancelStatus(CancelStatusType.APPROVED);
+        if (lockerWasUsed && enroll.isLockerAllocated()) { // 취소 승인 시점에 실제 할당되어 있었다면 회수
+             String userGender = enroll.getUser().getGender();
+            if (userGender != null && !userGender.trim().isEmpty()) {
+                lockerService.decrementUsedQuantity(userGender.toUpperCase());
+            }
+        }
         enroll.setUsesLocker(false); 
         enroll.setLockerAllocated(false); 
         enroll.setLockerPgToken(null);
-        enroll.setRefundAmount(finalRefundAmount); 
-        enroll.setUpdatedBy("ADMIN"); 
-
-        if (lockerWasActuallyAllocated) {
-            if (user != null && user.getGender() != null && !user.getGender().trim().isEmpty()) {
-                lockerService.decrementUsedQuantity(user.getGender().toUpperCase());
-            }
-        }
         
         enrollRepository.save(enroll);
-        paymentRepository.save(payment);
+        if (payment != null) { // payment가 null일 가능성은 적지만 방어 코드
+            paymentRepository.save(payment);
+        }
     }
 
     @Override
@@ -552,9 +631,6 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         Enroll enroll = enrollRepository.findById(enrollId)
             .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found with ID: " + enrollId, ErrorCode.ENROLLMENT_NOT_FOUND));
         
-        // 환불 요청 상태가 아니거나 이미 처리된 건에 대해서도 예상액은 보여줄 수 있어야 함.
-        // 단, PAID 또는 REFUND_REQUESTED 상태가 아니면 실제 환불 대상이 아닐 수 있음을 인지.
-
         Lesson lesson = enroll.getLesson();
         if (lesson == null) {
              throw new ResourceNotFoundException("Lesson not found for enrollment ID: " + enrollId, ErrorCode.LESSON_NOT_FOUND);
@@ -562,60 +638,65 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         Payment payment = paymentRepository.findByEnroll_EnrollId(enrollId)
             .orElseThrow(() -> new ResourceNotFoundException("Payment record not found for enrollment ID: " + enrollId, ErrorCode.PAYMENT_INFO_NOT_FOUND));
 
-        int totalPaidAmount = payment.getPaidAmt() != null ? payment.getPaidAmt() : 0;
-        int originalLessonFee = lesson.getPrice() != null ? lesson.getPrice() : 0;
-        int originalLockerFee = 0;
-
-        if (enroll.isUsesLocker() || enroll.isLockerAllocated()) { 
-            if (totalPaidAmount > originalLessonFee) {
-                originalLockerFee = totalPaidAmount - originalLessonFee;
+        // 결제 시 강습료와 사물함 요금 분리 (approve 메소드와 동일한 로직 사용)
+        int paidLessonAmount = Optional.ofNullable(payment.getLessonAmount()).orElse(lesson.getPrice());
+        int paidLockerAmount = 0;
+        if (payment.getLessonAmount() == null || payment.getLockerAmount() == null) {
+            if (enroll.isUsesLocker() && payment.getPaidAmt() != null && payment.getPaidAmt() > lesson.getPrice()) {
+                 paidLessonAmount = lesson.getPrice();
+                 paidLockerAmount = payment.getPaidAmt() - lesson.getPrice();
             } else {
-                originalLockerFee = 0; 
+                 paidLessonAmount = Optional.ofNullable(payment.getPaidAmt()).orElse(0);
+                 // paidLockerAmount는 0으로 유지
             }
+        } else {
+            paidLockerAmount = Optional.ofNullable(payment.getLockerAmount()).orElse(0);
         }
         
-        BigDecimal finalRefundAmountBigDecimal = BigDecimal.ZERO;
-        LocalDate today = LocalDate.now(); // 예상액 계산은 현재 시점 기준
+        boolean lockerWasUsed = enroll.isUsesLocker() || enroll.isLockerAllocated();
+        
+        BigDecimal finalRefundAmountBigDecimal;
+        LocalDate today = LocalDate.now(); // 항상 현재 시점 기준
         LocalDate lessonStartDate = lesson.getStartDate();
 
         if (lessonStartDate == null) {
-            // 이 경우는 lesson 데이터 문제로, 로깅하거나 예외를 던질 수 있습니다.
-            // 여기서는 0원 환불로 처리하거나, 예외를 던지는 것이 나을 수 있습니다.
-            // approve 로직에서는 예외를 던지므로 일관성을 위해 여기서도 던지거나, 특정 값을 반환합니다.
-            // 여기서는 계산 불가로 보고 0을 반환하거나, 혹은 BusinessRuleException을 던질 수 있습니다.
-            // 다만, 단순 조회용이므로, 에러보다는 계산 불가(0)로 표시하는 것이 나을 수 있습니다.
             return BigDecimal.ZERO; 
         }
 
+        // 수강 시작일 전이면 총 결제액 반환 (PG 수수료 등은 별도 정책)
         if (today.isBefore(lessonStartDate)) {
-            // 강습 시작 전: PG사 수수료 정책 확정 후 반영 필요. 현재는 결제 금액 전액 환불 가정.
-            finalRefundAmountBigDecimal = BigDecimal.valueOf(totalPaidAmount);
-        } else { 
-            long daysUsed = ChronoUnit.DAYS.between(lessonStartDate, today) + 1;
-            if (daysUsed < 0) daysUsed = 0; 
+            return BigDecimal.valueOf(Optional.ofNullable(payment.getPaidAmt()).orElse(0));
+        }
+        
+        // 수강 시작일 후: 사용일수 자동 계산 (approve와 동일하게 관리자 승인일 대신 현재일 사용)
+        long daysUsed = ChronoUnit.DAYS.between(lessonStartDate, today) + 1;
+        if (daysUsed < 0) daysUsed = 0; 
 
-            BigDecimal lessonPaidBigDecimal = BigDecimal.valueOf(originalLessonFee);
-            BigDecimal lessonUsageDeduction = LESSON_DAILY_RATE.multiply(BigDecimal.valueOf(daysUsed));
-            BigDecimal lessonPenalty = lessonPaidBigDecimal.multiply(PENALTY_RATE);
-            BigDecimal lessonRefundable = lessonPaidBigDecimal.subtract(lessonUsageDeduction).subtract(lessonPenalty);
-            if (lessonRefundable.compareTo(BigDecimal.ZERO) < 0) {
-                lessonRefundable = BigDecimal.ZERO;
-            }
-            finalRefundAmountBigDecimal = finalRefundAmountBigDecimal.add(lessonRefundable);
+        // 수강료 환불분 계산
+        BigDecimal lessonPaidDecimal = BigDecimal.valueOf(paidLessonAmount);
+        BigDecimal lessonUsageDeduction = LESSON_DAILY_RATE.multiply(BigDecimal.valueOf(daysUsed));
+        BigDecimal lessonPenalty = lessonPaidDecimal.multiply(PENALTY_RATE);
+        BigDecimal lessonRefundable = lessonPaidDecimal.subtract(lessonUsageDeduction).subtract(lessonPenalty);
+        if (lessonRefundable.compareTo(BigDecimal.ZERO) < 0) {
+            lessonRefundable = BigDecimal.ZERO;
+        }
+        finalRefundAmountBigDecimal = lessonRefundable;
 
-            if ((enroll.isUsesLocker() || enroll.isLockerAllocated()) && originalLockerFee > 0) {
-                BigDecimal lockerPaidBigDecimal = BigDecimal.valueOf(originalLockerFee);
-                BigDecimal lockerUsageDeduction = LOCKER_DAILY_RATE.multiply(BigDecimal.valueOf(daysUsed));
-                BigDecimal lockerPenalty = lockerPaidBigDecimal.multiply(PENALTY_RATE);
-                BigDecimal lockerRefundable = lockerPaidBigDecimal.subtract(lockerUsageDeduction).subtract(lockerPenalty);
-                if (lockerRefundable.compareTo(BigDecimal.ZERO) < 0) {
-                    lockerRefundable = BigDecimal.ZERO;
-                }
-                finalRefundAmountBigDecimal = finalRefundAmountBigDecimal.add(lockerRefundable);
+        // 사물함료 환불분 계산
+        if (lockerWasUsed && paidLockerAmount > 0) {
+            BigDecimal lockerPaidDecimal = BigDecimal.valueOf(paidLockerAmount);
+            BigDecimal lockerUsageDeduction = LOCKER_DAILY_RATE.multiply(BigDecimal.valueOf(daysUsed));
+            BigDecimal lockerPenalty = lockerPaidDecimal.multiply(PENALTY_RATE);
+            BigDecimal lockerRefundable = lockerPaidDecimal.subtract(lockerUsageDeduction).subtract(lockerPenalty);
+            if (lockerRefundable.compareTo(BigDecimal.ZERO) < 0) {
+                lockerRefundable = BigDecimal.ZERO;
             }
+            finalRefundAmountBigDecimal = finalRefundAmountBigDecimal.add(lockerRefundable);
         }
 
         int finalRefundAmount = finalRefundAmountBigDecimal.intValue();
+        int totalPaidAmount = payment.getPaidAmt() != null ? payment.getPaidAmt() : 0;
+
         if (finalRefundAmount > totalPaidAmount) {
             finalRefundAmount = totalPaidAmount;
         }
@@ -688,15 +769,12 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         }
 
         // Calculate canAttemptPayment: UNPAID status and not expired
-        boolean canAttemptPayment = "UNPAID".equals(enroll.getPayStatus()) && 
-                                    enroll.getExpireDt() != null && 
-                                    enroll.getExpireDt().isAfter(LocalDateTime.now());
-
+        // 마이페이지에서는 직접 결제 불가 - 재수강 버튼을 통해서만 결제 페이지 이동
+        boolean canAttemptPayment = false; // 항상 false로 설정
+        
         // Set paymentPageUrl if payment can be attempted
-        String paymentPageUrl = null;
-        if (canAttemptPayment) {
-            paymentPageUrl = "/payment/process?enroll_id=" + enroll.getEnrollId();
-        }
+        // 마이페이지에서는 결제 URL 제공하지 않음
+        String paymentPageUrl = null; // 항상 null로 설정
 
         return EnrollDto.builder()
             .enrollId(enroll.getEnrollId())
@@ -712,5 +790,89 @@ public class EnrollmentServiceImpl implements EnrollmentService {
             .canAttemptPayment(canAttemptPayment)
             .paymentPageUrl(paymentPageUrl)
             .build();
+    }
+
+    @Override
+    @Transactional(isolation = Isolation.SERIALIZABLE)
+    public EnrollInitiationResponseDto processRenewal(User user, RenewalRequestDto renewalRequestDto) {
+        if (user == null || user.getUuid() == null) {
+             throw new BusinessRuleException(ErrorCode.AUTHENTICATION_FAILED, HttpStatus.UNAUTHORIZED);
+        }
+        
+        Lesson lesson = lessonRepository.findByIdWithLock(renewalRequestDto.getLessonId())
+            .orElseThrow(() -> new ResourceNotFoundException("재수강 대상 강좌를 찾을 수 없습니다 (ID: " + renewalRequestDto.getLessonId() + ")", ErrorCode.LESSON_NOT_FOUND));
+        
+        if (lesson.getStatus() != Lesson.LessonStatus.OPEN) {
+            throw new BusinessRuleException(ErrorCode.LESSON_NOT_OPEN_FOR_ENROLLMENT, "재수강 가능한 강습이 아닙니다. 현재 상태: " + lesson.getStatus());
+        }
+
+        long paidEnrollments = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
+        long unpaidExpiringEnrollments = enrollRepository.countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(lesson.getLessonId(), "APPLIED", "UNPAID", LocalDateTime.now());
+        long availableSlots = lesson.getCapacity() - paidEnrollments - unpaidExpiringEnrollments;
+
+        if (availableSlots <= 0) {
+            throw new BusinessRuleException(ErrorCode.PAYMENT_PAGE_SLOT_UNAVAILABLE, 
+                "재수강 정원이 마감되었습니다. 현재 정원: " + lesson.getCapacity() + ", 결제완료: " + paidEnrollments + ", 결제대기: " + unpaidExpiringEnrollments);
+        }
+
+        Enroll.EnrollBuilder newEnrollBuilder = Enroll.builder()
+            .user(user)
+            .lesson(lesson)
+            .status("APPLIED").payStatus("UNPAID").expireDt(LocalDateTime.now().plusMinutes(5))
+            .renewalFlag(true).cancelStatus(CancelStatusType.NONE)
+            .usesLocker(renewalRequestDto.isWantsLocker()) 
+            .createdBy(user.getName()) 
+            .updatedBy(user.getName()) 
+            .createdIp("UNKNOWN_IP_RENEWAL") 
+            .updatedIp("UNKNOWN_IP_RENEWAL");
+
+        Enroll newEnroll = newEnrollBuilder.build();
+        try {
+            enrollRepository.save(newEnroll);
+            
+            long finalPaidCount = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
+            long finalUnpaidCount = enrollRepository.countByLessonLessonIdAndStatusAndPayStatus(lesson.getLessonId(), "APPLIED", "UNPAID");
+            if ((finalPaidCount + finalUnpaidCount) >= lesson.getCapacity() && lesson.getStatus() == Lesson.LessonStatus.OPEN) {
+                lesson.updateStatus(Lesson.LessonStatus.CLOSED);
+                lessonRepository.save(lesson);
+            }
+            
+            return EnrollInitiationResponseDto.builder()
+                    .enrollId(newEnroll.getEnrollId())
+                    .lessonId(lesson.getLessonId())
+                    .paymentPageUrl("/payment/process?enroll_id=" + newEnroll.getEnrollId())
+                    .paymentExpiresAt(newEnroll.getExpireDt().atOffset(ZoneOffset.UTC))
+                    .build();
+        } catch (Exception e) {
+            throw new BusinessRuleException("재수강 신청 처리 중 데이터 저장에 실패했습니다.", ErrorCode.INTERNAL_SERVER_ERROR, e);
+        }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<EnrollResponseDto> getAllEnrollmentsAdmin(Pageable pageable) {
+        Page<Enroll> enrollPage = enrollRepository.findAll(pageable);
+        return enrollPage.map(this::convertToSwimmingEnrollResponseDto);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<EnrollResponseDto> getAllEnrollmentsByStatusAdmin(String status, Pageable pageable) {
+        Page<Enroll> enrollPage;
+        if ("PAID".equalsIgnoreCase(status) || "UNPAID".equalsIgnoreCase(status) || "EXPIRED".equalsIgnoreCase(status) || "REFUNDED".equalsIgnoreCase(status) || "PAYMENT_TIMEOUT".equalsIgnoreCase(status) || "PARTIALLY_REFUNDED".equalsIgnoreCase(status)) {
+            enrollPage = enrollRepository.findByPayStatus(status.toUpperCase(), pageable);
+        } else {
+            enrollPage = enrollRepository.findByStatus(status.toUpperCase(), pageable);
+        }
+        return enrollPage.map(this::convertToSwimmingEnrollResponseDto);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<EnrollResponseDto> getAllEnrollmentsByLessonIdAdmin(Long lessonId, Pageable pageable) {
+        Lesson lesson = lessonRepository.findById(lessonId)
+                .orElseThrow(() -> new EntityNotFoundException("Lesson not found with ID: " + lessonId));
+        Page<Enroll> enrollPage = enrollRepository.findByLesson(lesson, pageable);
+        return enrollPage.map(this::convertToSwimmingEnrollResponseDto);
     }
 } 

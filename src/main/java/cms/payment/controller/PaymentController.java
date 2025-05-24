@@ -10,6 +10,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import cms.kispg.dto.KispgInitParamsDto;
+import cms.kispg.service.KispgPaymentService;
 
 // DTO for confirmPayment request body
 class ConfirmPaymentRequest {
@@ -29,6 +31,7 @@ class ConfirmPaymentRequest {
 public class PaymentController {
 
     private final PaymentService paymentService;
+    private final KispgPaymentService kispgPaymentService; // KispgPaymentService 주입
 
     @Operation(summary = "KISPG 결제 페이지 상세 정보 조회",
                description = "enrollId로 KISPG 결제 페이지에 필요한 CMS 내부 상세 정보(강습명, 금액, 라커 옵션, 사용자 성별, 결제 만료 시각 등)를 조회합니다.")
@@ -41,7 +44,15 @@ public class PaymentController {
         return ResponseEntity.ok(detailsDto);
     }
 
-    // TODO: /api/v1/payment/kispg-init-params/{enrollId} (GET) - KISPG 초기화 파라미터 조회 API 구현 필요
+    @Operation(summary = "KISPG 결제 초기화 파라미터 조회",
+               description = "enrollId로 KISPG 결제창 호출에 필요한 파라미터를 조회합니다. (해시 포함)")
+    @GetMapping("/kispg-init-params/{enrollId}")
+    public ResponseEntity<KispgInitParamsDto> getKispgInitParams(
+            @Parameter(description = "수강 신청 ID", required = true) @PathVariable Long enrollId,
+            @AuthenticationPrincipal User currentUser) {
+        KispgInitParamsDto initParamsDto = kispgPaymentService.generateInitParams(enrollId, currentUser);
+        return ResponseEntity.ok(initParamsDto);
+    }
     
     @Operation(summary = "KISPG 결제 후 최종 확인 및 사물함 선택 반영",
                description = "KISPG 결제 후 사용자가 돌아왔을 때 호출됩니다. 사용자의 최종 사물함 선택 여부를 반영하고, UX를 관리합니다. 실제 결제 확정은 Webhook을 통합니다.")

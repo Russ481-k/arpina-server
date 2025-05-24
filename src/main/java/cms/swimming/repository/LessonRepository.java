@@ -5,12 +5,15 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import javax.persistence.LockModeType;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface LessonRepository extends JpaRepository<Lesson, Long>, JpaSpecificationExecutor<Lesson> {
@@ -25,4 +28,12 @@ public interface LessonRepository extends JpaRepository<Lesson, Long>, JpaSpecif
     // 특정 수업의 현재 신청 인원 카운트 쿼리
     @Query("SELECT COUNT(e) FROM Enroll e WHERE e.lesson.lessonId = :lessonId AND e.status = 'APPLIED'")
     long countCurrentEnrollments(Long lessonId);
+
+    /**
+     * Enrollment capacity control을 위한 비관적 잠금
+     * 동시에 여러 사용자가 신청할 때 정원 초과를 방지
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT l FROM Lesson l WHERE l.lessonId = :lessonId")
+    Optional<Lesson> findByIdWithLock(@Param("lessonId") Long lessonId);
 } 

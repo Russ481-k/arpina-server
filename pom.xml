@@ -132,16 +132,6 @@
 		-->
 		<!-- spring boot dependency end -->
 		
-		<!-- Spring Session with Redis -->
-		<dependency>
-			<groupId>org.springframework.session</groupId>
-			<artifactId>spring-session-data-redis</artifactId>
-		</dependency>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-data-redis</artifactId>
-		</dependency>
-		
 		<!-- swagger -->
 		<dependency>
     		<groupId>org.springdoc</groupId>
@@ -159,19 +149,6 @@
 			<groupId>org.egovframe.rte</groupId>
 			<artifactId>org.egovframe.rte.ptl.mvc</artifactId>
 			<version>${org.egovframe.rte.version}</version>
-			<exclusions>
-				<!-- war 배포 시 해당 주석 제거
-				<exclusion>
-					<groupId>commons-logging</groupId>
-					<artifactId>commons-logging</artifactId>
-				</exclusion>
-				-->
-				<exclusion>
-					<groupId>org.apache.commons</groupId>
-					<artifactId>commons-lang3</artifactId>
-				</exclusion>
-			</exclusions>
-
 		</dependency>
 		<dependency>
 			<groupId>org.egovframe.rte</groupId>
@@ -187,12 +164,6 @@
 			<groupId>org.egovframe.rte</groupId>
 			<artifactId>org.egovframe.rte.fdl.property</artifactId>
 			<version>${org.egovframe.rte.version}</version>
-			<exclusions>
-				<exclusion>
-					<groupId>org.apache.commons</groupId>
-					<artifactId>commons-lang3</artifactId>
-				</exclusion>
-			</exclusions>
 		</dependency>
 		<dependency>
 			<groupId>org.egovframe.rte</groupId>
@@ -491,6 +462,31 @@
 			<artifactId>niceid</artifactId>
 			<version>1.2</version>
 		</dependency>
+
+		<!-- *** 성능 최적화 및 동시성 제어 의존성 *** -->
+		<!-- Spring Retry for enrollment concurrency handling -->
+		<dependency>
+			<groupId>org.springframework.retry</groupId>
+			<artifactId>spring-retry</artifactId>
+		</dependency>
+		
+		<!-- AOP for retry functionality -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-aop</artifactId>
+		</dependency>
+		
+		<!-- WebSocket for real-time capacity updates -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-websocket</artifactId>
+		</dependency>
+		
+		<!-- Performance monitoring -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-actuator</artifactId>
+		</dependency>
 	</dependencies>
 
 	<profiles>
@@ -509,6 +505,7 @@
 						<groupId>org.springframework.boot</groupId>
 						<artifactId>spring-boot-maven-plugin</artifactId>
 						<configuration>
+							<mainClass>cms.CmsApplication</mainClass>
 							<jvmArguments>-Dspring.profiles.active=dev</jvmArguments>
 						</configuration>
 					</plugin>
@@ -527,6 +524,7 @@
 						<groupId>org.springframework.boot</groupId>
 						<artifactId>spring-boot-maven-plugin</artifactId>
 						<configuration>
+							<mainClass>cms.CmsApplication</mainClass>
 							<jvmArguments>-Dspring.profiles.active=prod</jvmArguments>
 						</configuration>
 					</plugin>
@@ -596,6 +594,7 @@
             	<artifactId>spring-boot-maven-plugin</artifactId>
             	<configuration>
                 	<executable>true</executable>
+                	<mainClass>cms.CmsApplication</mainClass>
                 	<excludes>
 						<exclude>
 							<groupId>org.projectlombok</groupId>

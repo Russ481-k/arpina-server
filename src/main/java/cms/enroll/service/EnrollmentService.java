@@ -3,6 +3,7 @@ package cms.enroll.service;
 import cms.mypage.dto.EnrollDto;
 import cms.mypage.dto.CheckoutDto;
 import cms.mypage.dto.RenewalRequestDto;
+import cms.mypage.dto.EnrollInitiationResponseDto;
 import cms.user.domain.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -57,9 +58,9 @@ public interface EnrollmentService {
      * 수강 재등록(갱신)을 요청합니다. (Mypage)
      * @param user 현재 사용자
      * @param renewalRequestDto 재등록 요청 정보
-     * @return EnrollDto 생성된 재등록 정보 (UNPAID 상태)
+     * @return EnrollInitiationResponseDto 결제 페이지 이동 정보
      */
-    EnrollDto processRenewal(User user, RenewalRequestDto renewalRequestDto);
+    EnrollInitiationResponseDto processRenewal(User user, RenewalRequestDto renewalRequestDto);
 
     /**
      * 신규 수강 신청을 생성합니다. (수영장 페이지 등에서 호출)

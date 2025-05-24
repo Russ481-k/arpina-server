@@ -12,7 +12,16 @@ import java.time.LocalDateTime;
 import org.hibernate.annotations.ColumnDefault;
 
 @Entity
-@Table(name = "enroll")
+@Table(name = "enroll", 
+       indexes = {
+           @Index(name = "idx_user_lesson_status", columnList = "user_uuid, lesson_id, status"),
+           @Index(name = "idx_lesson_paystatus", columnList = "lesson_id, pay_status"),
+           @Index(name = "idx_expire_dt", columnList = "expire_dt")
+       },
+       uniqueConstraints = {
+           @UniqueConstraint(name = "uk_user_lesson_active", 
+                           columnNames = {"user_uuid", "lesson_id"}) // DDL에서 이미 존재하는 제약조건
+       })
 @Getter
 @Setter
 @Builder
@@ -22,6 +31,10 @@ public class Enroll {
 
     public static enum CancelStatusType {
         NONE, REQ, PENDING, APPROVED, DENIED
+    }
+
+    public static enum DiscountStatusType {
+        PENDING, APPROVED, DENIED
     }
 
     @Id
@@ -78,6 +91,40 @@ public class Enroll {
 
     @Column(name = "locker_pg_token", length = 100)
     private String lockerPgToken;
+
+    @Column(name = "remain_days")
+    private Integer remainDays;
+
+    @Column(name = "discount_type", length = 50)
+    private String discountType;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "discount_status", length = 20)
+    private DiscountStatusType discountStatus;
+
+    @Column(name = "discount_approved_at")
+    private LocalDateTime discountApprovedAt;
+
+    @Column(name = "discount_admin_comment", length = 255)
+    private String discountAdminComment;
+
+    @Column(name = "cancel_requested_at")
+    private LocalDateTime cancelRequestedAt;
+
+    @Column(name = "days_used_for_refund")
+    private Integer daysUsedForRefund;
+
+    @Column(name = "calculated_refund_amount")
+    private Integer calculatedRefundAmount;
+
+    @Column(name = "penalty_amount_lesson")
+    private Integer penaltyAmountLesson;
+
+    @Column(name = "penalty_amount_locker")
+    private Integer penaltyAmountLocker;
+
+    @Column(name = "admin_cancel_comment", length = 255)
+    private String adminCancelComment;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     @ColumnDefault("CURRENT_TIMESTAMP")

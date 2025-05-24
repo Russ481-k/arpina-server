@@ -23,4 +23,4 @@ public class PaymentPageDetailsDto {
         private int availableCountForUserGender;
         private BigDecimal lockerFee;
     }
-} 
+}

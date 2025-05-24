@@ -111,9 +111,12 @@
   3.  보안 컨텍스트에서 `User`를 가져와 `user.getGender()` 확인.
   4.  **사물함 사용 가능 여부 로직 (강습에 사물함이 있는 경우):**
       - `userGender = user.getGender().toUpperCase()`.
-      - `lessonLockerCapacityForGender = (userGender.equals("MALE") ? lesson.getMaleLockerCap() : lesson.getFemaleLockerCap())`.
-      - `usedLockersForGender = enrollRepository.countActiveLockersForLessonAndGender(lesson.getLessonId(), userGender, LocalDateTime.now())`. 이는 사물함을 사용하는 `PAID` 상태의 신청 건과 `usesLocker=true`인 `UNPAID` 상태(유효한 `expireDt` 내)의 신청 건을 카운트함 (단, `usesLocker`는 일반적으로 confirm 시점에 설정되므로, 이 DTO에서는 사용자가 이전에 시도했다가 포기한 경우 잠재적 사용을 반영할 수 있음). 더 안전한 카운트는 `PAID` 상태 및 현재 _다른_ 사용자의 유효한 결제창에 있는 건을 기반으로 함.
-      - `availableForGender = lessonLockerCapacityForGender > usedLockersForGender`.
+      - **[수정됨]** 전역 `LockerInventory`에서 사용 가능 수량 확인:
+        - `lockerInventory = lockerService.getInventoryByGender(userGender)`.
+        - `totalLockersForGender = lockerInventory.getTotalQuantity()`.
+        - `usedLockersForGender = lockerInventory.getUsedQuantity()`.
+        - `availableForGender = totalLockersForGender > usedLockersForGender`.
+      - (**참고**: 기존 `lesson.getMaleLockerCap()`, `lesson.getFemaleLockerCap()` 필드는 DDL 변경으로 제거됨. 현재는 전역 `locker_inventory` 테이블의 성별별 총량과 사용량으로 관리)
   5.  `PaymentPageDetailsDto` 구성:
       - `enrollId`, `lessonTitle`, `lessonPrice`.
       - `userGender`.

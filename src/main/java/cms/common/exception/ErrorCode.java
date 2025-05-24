@@ -46,6 +46,7 @@ public enum ErrorCode {
     LOCKER_INVENTORY_NOT_FOUND("E016", "사물함 재고 정보를 찾을 수 없습니다."),
     PAYMENT_PAGE_SLOT_UNAVAILABLE("E017", "현재 해당 강습의 결제 페이지에 접근할 수 있는 인원이 가득 찼습니다. 잠시 후 다시 시도해주세요."),
     LESSON_CANNOT_BE_DELETED("E018", "해당 강습에 신청 내역이 존재하여 삭제할 수 없습니다."),
+    LESSON_FULL("E019", "현재 해당 강습의 결제 페이지 접근 슬롯이 가득 찼습니다."),
 
     // --- 결제 (Payment) 관련 오류 코드 (P001 ~ P099) ---
     PAYMENT_INFO_NOT_FOUND("P001", "결제 정보를 찾을 수 없습니다."),
@@ -55,6 +56,9 @@ public enum ErrorCode {
     ALREADY_PAID_ENROLLMENT("P005", "이미 결제가 완료된 수강 신청입니다."),
     NOT_UNPAID_ENROLLMENT_STATUS("P006", "결제 대기 상태의 수강 신청이 아닙니다."),
     PAYMENT_CANCEL_NOT_ALLOWED("P007", "결제를 취소할 수 없는 상태입니다.");
+
+
+
 
     private final String code;
     private final String defaultMessage;

@@ -18,6 +18,10 @@ import org.springframework.web.bind.annotation.*;
 import javax.validation.Valid;
 import java.util.Map;
 
+import cms.admin.enrollment.dto.AdminCancelRequestDto;
+import cms.admin.enrollment.dto.DiscountStatusUpdateRequestDto;
+import cms.admin.enrollment.dto.ApproveCancelRequestDto;
+
 @Tag(name = "CMS - Enrollment Management", description = "수강 신청 및 취소 요청 관리 API (관리자용)")
 @RestController
 @RequestMapping("/api/v1/cms/enrollments")
@@ -27,14 +31,16 @@ public class EnrollmentAdminController {
 
     private final EnrollmentAdminService enrollmentAdminService;
 
-    @Operation(summary = "모든 신청 내역 조회", description = "필터(강습ID, 사용자ID, 결제상태) 및 페이징을 적용하여 신청 내역을 조회합니다.")
+    @Operation(summary = "모든 신청 내역 조회", description = "필터(연도, 월, 강습ID, 사용자ID, 결제상태) 및 페이징을 적용하여 신청 내역을 조회합니다.")
     @GetMapping
     public ResponseEntity<ApiResponseSchema<Page<EnrollAdminResponseDto>>> getAllEnrollments(
+            @Parameter(description = "조회 연도 (YYYY)") @RequestParam(required = false) Integer year,
+            @Parameter(description = "조회 월 (1-12)") @RequestParam(required = false) Integer month,
             @Parameter(description = "강습 ID") @RequestParam(required = false) Long lessonId,
             @Parameter(description = "사용자 UUID") @RequestParam(required = false) String userId,
             @Parameter(description = "결제 상태 (UNPAID, PAID, REFUNDED 등)") @RequestParam(required = false) String payStatus,
             @PageableDefault(size = 10, sort = "createdAt,desc") Pageable pageable) {
-        Page<EnrollAdminResponseDto> enrollments = enrollmentAdminService.getAllEnrollments(lessonId, userId, payStatus, pageable);
+        Page<EnrollAdminResponseDto> enrollments = enrollmentAdminService.getAllEnrollments(year, month, lessonId, userId, payStatus, pageable);
         return ResponseEntity.ok(ApiResponseSchema.success(enrollments, "신청 내역 조회 성공"));
     }
 
@@ -55,21 +61,41 @@ public class EnrollmentAdminController {
         return ResponseEntity.ok(ApiResponseSchema.success(cancelRequests, "취소 요청 목록 조회 성공"));
     }
 
-    @Operation(summary = "취소 요청 승인", description = "특정 신청의 취소 요청을 승인하고 환불 절차를 진행합니다.")
+    @Operation(summary = "관리자 직접 취소 처리", description = "관리자가 특정 신청 건을 직접 취소 처리합니다.")
+    @PutMapping("/{enrollId}/admin-cancel")
+    public ResponseEntity<ApiResponseSchema<EnrollAdminResponseDto>> adminCancelEnrollment(
+            @Parameter(description = "신청 ID") @PathVariable Long enrollId,
+            @RequestBody(required = false) AdminCancelRequestDto request) {
+        String adminComment = (request != null && request.getAdminComment() != null) ? request.getAdminComment() : "관리자에 의한 직접 취소";
+        EnrollAdminResponseDto enrollDto = enrollmentAdminService.adminCancelEnrollment(enrollId, adminComment);
+        return ResponseEntity.ok(ApiResponseSchema.success(enrollDto, "관리자 직접 취소 처리 성공"));
+    }
+
+    @Operation(summary = "신청 건 할인 상태 변경", description = "특정 신청 건의 할인 적용 상태 및 종류를 변경합니다.")
+    @PutMapping("/{enrollId}/discount-status")
+    public ResponseEntity<ApiResponseSchema<EnrollAdminResponseDto>> updateEnrollmentDiscountStatus(
+            @Parameter(description = "신청 ID") @PathVariable Long enrollId,
+            @Valid @RequestBody DiscountStatusUpdateRequestDto request) {
+        EnrollAdminResponseDto enrollDto = enrollmentAdminService.updateEnrollmentDiscountStatus(enrollId, request);
+        return ResponseEntity.ok(ApiResponseSchema.success(enrollDto, "신청 건 할인 상태 변경 성공"));
+    }
+
+    @Operation(summary = "취소 요청 승인 (실사용일수 입력 가능)", description = "특정 신청의 취소 요청을 승인하고 환불 절차를 진행합니다. 관리자가 실사용일수를 직접 입력하여 환불액을 조정할 수 있습니다.")
     @PostMapping("/{enrollId}/approve-cancel")
     public ResponseEntity<ApiResponseSchema<EnrollAdminResponseDto>> approveCancellation(
             @Parameter(description = "신청 ID") @PathVariable Long enrollId,
-            @RequestBody(required = false) Map<String, String> payload) {
-        String adminComment = (payload != null && payload.containsKey("adminComment")) ? payload.get("adminComment") : "";
-        EnrollAdminResponseDto enrollDto = enrollmentAdminService.approveCancellation(enrollId, adminComment);
-        return ResponseEntity.ok(ApiResponseSchema.success(enrollDto, "취소 요청 승인 처리 성공"));
+            @RequestBody(required = false) ApproveCancelRequestDto payload) {
+        String adminComment = (payload != null && payload.getAdminComment() != null) ? payload.getAdminComment() : "";
+        Integer manualUsedDays = (payload != null) ? payload.getManualUsedDays() : null;
+        EnrollAdminResponseDto enrollDto = enrollmentAdminService.approveCancellationWithManualDays(enrollId, adminComment, manualUsedDays);
+        return ResponseEntity.ok(ApiResponseSchema.success(enrollDto, "취소 요청 승인 처리 성공 (실사용일수 반영)"));
     }
 
     @Operation(summary = "취소 요청 거부", description = "특정 신청의 취소 요청을 거부합니다.")
     @PostMapping("/{enrollId}/deny-cancel")
     public ResponseEntity<ApiResponseSchema<EnrollAdminResponseDto>> denyCancellation(
             @Parameter(description = "신청 ID") @PathVariable Long enrollId,
-            @Valid @RequestBody Map<String, String> payload) { // 거부 시 코멘트는 필수일 수 있음
+            @Valid @RequestBody Map<String, String> payload) {
         String adminComment = payload.get("adminComment");
          if (adminComment == null || adminComment.trim().isEmpty()) {
             return ResponseEntity.badRequest().body(ApiResponseSchema.error("취소 요청 거부 시 관리자 코멘트는 필수입니다.", "MISSING_ADMIN_COMMENT"));

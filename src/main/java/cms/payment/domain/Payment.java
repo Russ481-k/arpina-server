@@ -60,6 +60,12 @@ public class Payment {
     @Column(name = "pg_result_msg", length = 255)
     private String pgResultMsg;
 
+    @Column(name = "lesson_amount") // 강습료 부분
+    private Integer lessonAmount;
+
+    @Column(name = "locker_amount") // 사물함 요금 부분
+    private Integer lockerAmount;
+
     @Column(name = "refunded_amt", columnDefinition = "INT DEFAULT 0")
     private Integer refundedAmt = 0;
 

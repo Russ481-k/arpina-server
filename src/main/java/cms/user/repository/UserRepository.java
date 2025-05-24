@@ -32,4 +32,6 @@ public interface UserRepository extends JpaRepository<User, String> {
     boolean existsByDi(String di);
 
     Optional<User> findByDi(String di);
+
+    Optional<User> findByUuid(String uuid);
 } 

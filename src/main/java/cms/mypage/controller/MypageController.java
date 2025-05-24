@@ -8,6 +8,7 @@ import cms.mypage.dto.PasswordChangeDto;
 import cms.mypage.dto.EnrollDto;
 import cms.mypage.dto.CheckoutDto;
 import cms.mypage.dto.CheckoutRequestDto;
+import cms.mypage.dto.EnrollInitiationResponseDto;
 import cms.enroll.service.EnrollmentService;
 import cms.mypage.service.MypagePaymentService;
 import cms.mypage.service.MypageProfileService;
@@ -165,12 +166,12 @@ public class MypageController {
 
     @Operation(summary = "Process enrollment renewal", description = "수강 재등록(갱신)을 요청합니다.")
     @PostMapping("/renewal")
-    public ResponseEntity<EnrollDto> processRenewal(
+    public ResponseEntity<EnrollInitiationResponseDto> processRenewal(
             @AuthenticationPrincipal User user,
             @Valid @RequestBody RenewalRequestDto renewalRequestDto) {
         if (user == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        EnrollDto enrollDto = enrollService.processRenewal(user, renewalRequestDto);
-        return ResponseEntity.status(HttpStatus.CREATED).body(enrollDto);
+        EnrollInitiationResponseDto response = enrollService.processRenewal(user, renewalRequestDto);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     @Operation(summary = "Get payment history", description = "사용자의 결제 내역을 조회합니다.")

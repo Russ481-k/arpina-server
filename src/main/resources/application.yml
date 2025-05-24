@@ -31,23 +31,45 @@ spring:
     url: ${SPRING_DATASOURCE_URL:jdbc:mariadb://172.30.1.11:3306/cms_new?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&useProxy=false}
     username: ${SPRING_DATASOURCE_USERNAME:handy}
     password: ${SPRING_DATASOURCE_PASSWORD:gosel@1224}
+    hikari:
+      maximum-pool-size: 70
+      minimum-idle: 10
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      leak-detection-threshold: 60000
+      cache-prep-stmts: true
+      prep-stmt-cache-size: 250
+      prep-stmt-cache-sql-limit: 2048
+      use-server-prep-stmts: true
+
   config:
     use-legacy-processing: true
     import: optional:file:.env
   jpa:
     hibernate:
-      ddl-auto: none
+      ddl-auto: validate
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MariaDB103Dialect
         format_sql: true
         jdbc:
           time_zone: UTC
+          batch_size: 50
+          order_inserts: true
+          order_updates: true
+          batch_versioned_data: true
         types:
           print:
             banner: false
         globally_quoted_identifiers: true
         globally_quoted_identifiers_skip_column_definitions: true
+        lock:
+          timeout: 30000
+        connection:
+          isolation: 2
+        query:
+          timeout: 30000
     database-platform: org.hibernate.dialect.MariaDB103Dialect
     show-sql: true
     database: mysql
@@ -80,14 +102,10 @@ spring:
       charset: UTF-8
       force: true
       enabled: true
-  redis:
-    host: localhost
-    port: 6379
   session:
-    store-type: redis
-    redis:
-      flush-mode: on_save
-      namespace: "spring:session"
+    timeout: 1800 # 30 minutes
+    cookie:
+      max-age: 1800
 server:
   servlet:
     context-path: /
@@ -196,6 +214,16 @@ app:
     base-url: ${GLOBALS_IP:http://localhost:${server.port:8080}}
   locker:
     fee: ${APP_LOCKER_FEE:5000}
+  enrollment:
+    lock-timeout: 30000
+    retry-attempts: 3
+    retry-delay: 1000
+    websocket:
+      enabled: true
+      heartbeat-interval: 30000
+  performance:
+    enable-metrics: true
+    slow-query-threshold: 1000
 
 nice:
   checkplus:
@@ -209,3 +237,21 @@ nice:
 kispg:
   merchantKey: ${KISPG_MERCHANT_KEY:YOUR_KISPG_MERCHANT_KEY_PLACEHOLDER} # IMPORTANT: Override in .env or profile-specific yml
   allowedWebhookIps: ${KISPG_ALLOWED_WEBHOOK_IPS:} # Comma-separated KISPG IPs, primarily for prod. Example: "1.2.3.4,5.6.7.8"
+
+# *** 성능 모니터링 설정 ***
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,info,env,configprops
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+    metrics:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true

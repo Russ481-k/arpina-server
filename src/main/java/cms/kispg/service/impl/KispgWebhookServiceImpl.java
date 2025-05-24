@@ -50,6 +50,8 @@ public class KispgWebhookServiceImpl implements KispgWebhookService {
     @Value("${spring.profiles.active:dev}")
     private String activeProfile;
 
+    @Value("${app.locker.fee:5000}") // 사물함 기본 요금 주입
+    private int defaultLockerFee;
 
     @javax.annotation.PostConstruct
     public void init() {
@@ -241,16 +243,56 @@ public class KispgWebhookServiceImpl implements KispgWebhookService {
 
             // Create or Update Payment record
             Payment payment = paymentRepository.findByEnroll_EnrollId(enrollId)
-                    .orElse(new Payment());
+                    .orElseGet(Payment::new); // 변경: orElseGet(Payment::new) 사용
             
             payment.setEnroll(enroll);
             payment.setTid(notification.getTid());
+            int paidAmtFromNotification = 0;
             try {
-                payment.setPaidAmt(Integer.parseInt(notification.getAmt()));
+                paidAmtFromNotification = Integer.parseInt(notification.getAmt());
+                payment.setPaidAmt(paidAmtFromNotification);
             } catch (NumberFormatException e) {
                 logger.error("[KISPG Webhook] Could not parse 'amt' to Integer: {}. Storing as 0.", notification.getAmt());
                 payment.setPaidAmt(0);
+                paidAmtFromNotification = 0; // Ensure it's 0 for further calculations
             }
+
+            // 강습료 및 사물함 요금 분리 저장
+            if (enroll.getLesson() != null) {
+                int lessonPrice = enroll.getLesson().getPrice();
+                if (enroll.isUsesLocker()) {
+                    // 사용자가 사물함을 사용하고, 총 결제액이 강습료 + 사물함 기본요금과 일치하는지 확인
+                    // 또는 총 결제액에서 강습료를 뺀 나머지를 사물함 요금으로 간주
+                    // 여기서는 더 간단한 접근: 총액에서 강습료를 빼고, 그 값이 사물함 요금과 유사하면 할당
+                    int calculatedLockerFee = paidAmtFromNotification - lessonPrice;
+                    if (calculatedLockerFee > 0 && calculatedLockerFee <= defaultLockerFee + 1000 && calculatedLockerFee >= defaultLockerFee - 1000) { // 약간의 오차 허용
+                        payment.setLessonAmount(lessonPrice);
+                        payment.setLockerAmount(calculatedLockerFee);
+                    } else if (paidAmtFromNotification == lessonPrice) { // 사물함 요금 없이 강습료만 결제된 경우
+                        payment.setLessonAmount(lessonPrice);
+                        payment.setLockerAmount(0);
+                    } else { // 금액이 예상과 다를 경우, 총액을 강습료에 넣고 사물함은 0으로 처리 (또는 로깅 강화)
+                        logger.warn("[KISPG Webhook] Paid amount {} does not align with lesson price {} and locker fee for enrollId: {}. Storing full amount as lessonAmount.", paidAmtFromNotification, lessonPrice, enrollId);
+                        payment.setLessonAmount(paidAmtFromNotification);
+                        payment.setLockerAmount(0);
+                    }
+                } else {
+                    // 사물함 미사용 시, 총 결제액이 강습료와 일치하는지 확인
+                    if (paidAmtFromNotification == lessonPrice) {
+                        payment.setLessonAmount(lessonPrice);
+                        payment.setLockerAmount(0);
+                    } else {
+                        logger.warn("[KISPG Webhook] Paid amount {} does not match lesson price {} (no locker) for enrollId: {}. Storing full amount as lessonAmount.", paidAmtFromNotification, lessonPrice, enrollId);
+                        payment.setLessonAmount(paidAmtFromNotification);
+                        payment.setLockerAmount(0);
+                    }
+                }
+            } else {
+                 logger.error("[KISPG Webhook] Lesson not found for enrollId: {} during payment amount splitting. Storing full amount as lessonAmount.", enrollId);
+                 payment.setLessonAmount(paidAmtFromNotification);
+                 payment.setLockerAmount(0);
+            }
+
             payment.setPgProvider("KISPG");
             payment.setStatus("PAID");
             payment.setPayMethod(notification.getPayMethod());
@@ -282,7 +324,7 @@ public class KispgWebhookServiceImpl implements KispgWebhookService {
 
             // Create/Update Payment record with failure details
              Payment payment = paymentRepository.findByEnroll_EnrollId(enrollId)
-                    .orElse(new Payment());
+                    .orElseGet(Payment::new);
             payment.setEnroll(enroll); // Link to enroll
             payment.setTid(notification.getTid()); // Store TID even for failures for reference
              try {
@@ -293,6 +335,8 @@ public class KispgWebhookServiceImpl implements KispgWebhookService {
             } catch (NumberFormatException e) {
                 logger.error("[KISPG Webhook] Could not parse 'amt' during failure processing: {}", notification.getAmt());
             }
+            payment.setLessonAmount(0); // 실패 시 강습료/사물함료 0
+            payment.setLockerAmount(0);
             payment.setPgProvider("KISPG");
             payment.setStatus("FAILED"); // Or map KISPG codes to more specific failure statuses
             payment.setPayMethod(notification.getPayMethod());
