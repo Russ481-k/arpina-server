@@ -12,7 +12,6 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class CancelRequestAdminDto {
     private Long enrollId; // Using enrollId as the primary identifier for the request
-    private String userId;
     private String userName;
     private String lessonTitle;
     private PaymentDetailsForCancel paymentInfo;

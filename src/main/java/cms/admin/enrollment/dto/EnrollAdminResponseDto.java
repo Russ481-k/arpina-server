@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class EnrollAdminResponseDto {
     private Long enrollId;
-    private String userId; // User UUID
+    private String userLoginId; // 사용자 로그인 ID (username)
     private String userName;
     private String userPhone;
     private String status; // Enroll status (APPLIED, CANCELED)

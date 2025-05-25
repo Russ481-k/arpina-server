@@ -63,7 +63,7 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
 
         return EnrollAdminResponseDto.builder()
                 .enrollId(enroll.getEnrollId())
-                .userId(enroll.getUser() != null ? enroll.getUser().getUuid() : null)
+                .userLoginId(enroll.getUser() != null ? enroll.getUser().getUsername() : null)
                 .userName(enroll.getUser() != null ? enroll.getUser().getName() : null)
                 .userPhone(enroll.getUser() != null ? enroll.getUser().getPhone() : null)
                 .status(enroll.getStatus())
@@ -127,7 +127,6 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
 
         return CancelRequestAdminDto.builder()
                 .enrollId(enroll.getEnrollId())
-                .userId(enroll.getUser() != null ? enroll.getUser().getUuid() : null)
                 .userName(enroll.getUser() != null ? enroll.getUser().getName() : null)
                 .lessonTitle(enroll.getLesson() != null ? enroll.getLesson().getTitle() : null)
                 .paymentInfo(paymentDetails) // Null일 수 있음
