@@ -12,7 +12,7 @@
 
 **일반 흐름:**
 
-1.  사용자가 `POST /api/v1/swimming/enroll`을 통해 강습 신청을 시작합니다.
+1.  사용자가 `POST /api/v1/enrolls`을 통해 강습 신청을 시작합니다.
 2.  정원 여유가 있는 경우 (**결제 페이지 접근 슬롯 가용 시** - 상세 로직은 `Docs/cms/lesson-enrollment-capacity.md` 참조), API는 `EnrollInitiationResponseDto` ( `enrollId`, `paymentPageUrl`, `paymentExpiresAt` 포함)를 반환합니다.
 3.  사용자는 결제 페이지 (`paymentPageUrl`)로 리디렉션됩니다.
 4.  결제 페이지는 `GET /api/v1/payment/details/{enrollId}`를 통해 상세 정보를 가져옵니다.
@@ -173,7 +173,7 @@
 
 ## 5. 동시성 및 잠금
 
-- **`POST /api/v1/swimming/enroll` (5분간 초기 슬롯 예약):**
+- **`POST /api/v1/enrolls` (5분간 초기 슬롯 예약):**
   - 이 엔드포인트는 `lesson.capacity`를 (`PAID` 수 + `expire_dt > NOW()`인 `UNPAID` 수)와 비교하여 확인해야 함.
   - 정원 확인 시 `Lesson` 레코드에 대한 `SELECT ... FOR UPDATE`는 여러 요청이 동시에 마지막 남은 슬롯을 "사용 가능"으로 보는 것을 방지할 수 있음.
   - `Enroll` 레코드 자체 생성은 사용자/강습별로 고유함 (이미 `PAID` 또는 활성 `UNPAID`가 아닌 경우).

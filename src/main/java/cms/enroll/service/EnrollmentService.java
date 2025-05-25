@@ -9,6 +9,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import cms.swimming.dto.EnrollResponseDto;
 import java.math.BigDecimal;
+import cms.admin.enrollment.dto.CalculatedRefundDetailsDto;
 
 public interface EnrollmentService {
 
@@ -99,9 +100,9 @@ public interface EnrollmentService {
     /**
      * 관리자용: 수강 신청 취소 요청을 승인합니다.
      * @param enrollId 신청 ID
-     * @param refundPct 환불 비율
+     * @param manualUsedDays 관리자가 직접 입력한 사용일수 (null이면 시스템 자동 계산)
      */
-    void approveEnrollmentCancellationAdmin(Long enrollId, Integer refundPct);
+    void approveEnrollmentCancellationAdmin(Long enrollId, Integer manualUsedDays);
 
     /**
      * 관리자용: 수강 신청 취소 요청을 거부합니다.
@@ -109,6 +110,14 @@ public interface EnrollmentService {
      * @param comment 거부 사유
      */
     void denyEnrollmentCancellationAdmin(Long enrollId, String comment);
+
+    /**
+     * 관리자용: 환불 예정 금액 및 상세 내역을 미리보기로 계산합니다. (DB 변경 없음)
+     * @param enrollId 신청 ID
+     * @param manualUsedDaysPreview 관리자가 입력해본 사용일수 (null이면 시스템 자동 계산)
+     * @return 계산된 환불 상세 내역 DTO
+     */
+    CalculatedRefundDetailsDto getRefundPreview(Long enrollId, Integer manualUsedDaysPreview);
 
     BigDecimal calculateDisplayRefundAmount(Long enrollId);
 

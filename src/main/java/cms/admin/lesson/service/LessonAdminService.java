@@ -12,4 +12,7 @@ public interface LessonAdminService {
     LessonDto updateLesson(Long lessonId, LessonDto lessonDto);
     void deleteLesson(Long lessonId);
     LessonDto cloneLesson(Long lessonId, CloneLessonRequestDto cloneLessonRequestDto);
+    Page<LessonDto> getAllLessonsAdmin(Pageable pageable);
+    Page<LessonDto> getLessonsByStatusAdmin(String status, Pageable pageable);
+    LessonDto getLessonByIdAdmin(Long lessonId);
 } 

@@ -46,7 +46,7 @@ public class JwtTokenProvider {
     public String createAccessToken(User user) {
         Claims claims = Jwts.claims().setSubject(user.getUsername());
         claims.put("userId", user.getUuid());
-        claims.put("role", "ROLE_" + user.getRole());
+        claims.put("role", "ROLE_" + user.getRole().name());
         claims.put(TOKEN_TYPE_CLAIM, TOKEN_TYPE_ACCESS);
 
         Date now = new Date();
@@ -91,19 +91,33 @@ public class JwtTokenProvider {
         logger.debug("Token claims parsed successfully");
         logger.debug("Subject: {}", claims.getSubject());
         logger.debug("User ID: {}", claims.get("userId"));
-        logger.debug("Role: {}", claims.get("role"));
-        logger.debug("Token type: {}", claims.get(TOKEN_TYPE_CLAIM));
-        logger.debug("Issued at: {}", claims.getIssuedAt());
-        logger.debug("Expiration: {}", claims.getExpiration());
-
+        
         String roleStr = claims.get("role", String.class);
+        logger.info("[JwtTokenProvider] Original role string from token: '{}'", roleStr);
+        
         Collection<? extends GrantedAuthority> authorities = Collections.singletonList(new SimpleGrantedAuthority(roleStr));
         logger.debug("Created authorities: {}", authorities);
+
+        String processedRoleStr = null;
+        if (roleStr != null && roleStr.startsWith("ROLE_")) {
+            processedRoleStr = roleStr.substring(5);
+        } else {
+            processedRoleStr = roleStr;
+        }
+        logger.info("[JwtTokenProvider] Processed role string for Enum.valueOf(): '{}'", processedRoleStr);
+        
+        UserRoleType userRoleTypeEnum;
+        try {
+            userRoleTypeEnum = UserRoleType.valueOf(processedRoleStr);
+        } catch (IllegalArgumentException e) {
+            logger.error("[JwtTokenProvider] Failed to convert processed role string '{}' to UserRoleType enum. Error: {}", processedRoleStr, e.getMessage());
+            throw e;
+        }
 
         UserDetails principal = User.builder()
                 .uuid(claims.get("userId", String.class))
                 .username(claims.getSubject())
-                .role(UserRoleType.valueOf(roleStr.replace("ROLE_", "")))
+                .role(userRoleTypeEnum)
                 .status("ACTIVE")
                 .password("")
                 .email("")

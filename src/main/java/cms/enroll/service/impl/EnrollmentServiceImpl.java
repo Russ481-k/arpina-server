@@ -7,7 +7,6 @@ import cms.enroll.service.EnrollmentService;
 
 // Domain entities
 import cms.swimming.domain.Lesson;
-import cms.swimming.domain.Locker;
 import cms.user.domain.User;
 
 // Repositories
@@ -48,7 +47,6 @@ import java.time.ZoneOffset; // Import for ZoneOffset
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
-import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -66,6 +64,7 @@ import org.springframework.orm.jpa.JpaOptimisticLockingFailureException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import cms.websocket.handler.LessonCapacityWebSocketHandler;
+import cms.admin.enrollment.dto.CalculatedRefundDetailsDto; // 새로 추가한 DTO
 
 @Service("enrollmentServiceImpl")
 @Transactional
@@ -115,7 +114,6 @@ public class EnrollmentServiceImpl implements EnrollmentService {
     @Override
     @Transactional(readOnly = true)
     public Page<EnrollDto> getEnrollments(User user, String payStatusFilter, Pageable pageable) {
-        // TODO: 이 부분도 User가 null일 경우를 대비하거나, Controller에서 @AuthenticationPrincipal User user가 null이 아님을 보장해야 함.
         // 현재는 user 객체가 null이 아니라고 가정하고 진행.
         List<Enroll> enrolls;
         if (StringUtils.hasText(payStatusFilter)) {
@@ -425,9 +423,9 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 if (userGender != null && !userGender.trim().isEmpty()) {
                     lockerService.decrementUsedQuantity(userGender.toUpperCase());
                     enroll.setLockerAllocated(false);
-                }
+                 }
             }
-            enroll.setUsesLocker(false);
+            enroll.setUsesLocker(false); 
             enroll.setLockerPgToken(null);
 
         } else {
@@ -440,143 +438,160 @@ public class EnrollmentServiceImpl implements EnrollmentService {
             enroll.setCancelReason(reason);
             // 환불액 계산 등은 관리자 승인 시점으로 이동
         }
-        enrollRepository.save(enroll);
+            enrollRepository.save(enroll);
     }
 
-    @Override
-    @Transactional
-    public void approveEnrollmentCancellationAdmin(Long enrollId, Integer manualUsedDays) { // refundPct 파라미터 대신 manualUsedDays 사용
-        Enroll enroll = enrollRepository.findById(enrollId)
-            .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found with ID: " + enrollId, ErrorCode.ENROLLMENT_NOT_FOUND));
-
-        // 관리자만 이 로직을 호출한다고 가정, 또는 역할 검증 필요
-        // if (!"ADMIN_ROLE_CHECK") { throw new BusinessRuleException(ErrorCode.ACCESS_DENIED); }
-
-        if (enroll.getCancelStatus() != Enroll.CancelStatusType.REQ && enroll.getCancelStatus() != Enroll.CancelStatusType.PENDING) {
-             throw new BusinessRuleException(ErrorCode.ENROLLMENT_CANCELLATION_NOT_ALLOWED, 
-                "취소 요청 상태가 아니거나 이미 처리된 건입니다. 현재 상태: " + enroll.getCancelStatus());
-        }
-        
+    /**
+     * 환불액 계산을 위한 내부 헬퍼 메소드.
+     *
+     * @param enroll 환불 대상 수강 정보
+     * @param payment 해당 수강에 대한 결제 정보
+     * @param manualUsedDaysOverride 관리자가 입력한 사용일수 (우선 적용). null이면 시스템 자동 계산.
+     * @param calculationDate 계산 기준일 (일반적으로 관리자 승인일 또는 현재일)
+     * @return 계산된 환불 상세 내역 DTO
+     */
+    private CalculatedRefundDetailsDto calculateRefundInternal(Enroll enroll, Payment payment, Integer manualUsedDaysOverride, LocalDate calculationDate) {
         Lesson lesson = enroll.getLesson();
-        Payment payment = paymentRepository.findByEnroll_EnrollId(enrollId)
-            .orElseThrow(() -> new ResourceNotFoundException("Payment record not found for enrollment ID: " + enrollId, ErrorCode.PAYMENT_INFO_NOT_FOUND));
+        if (lesson == null) {
+            throw new ResourceNotFoundException("Lesson not found for enrollment ID: " + enroll.getEnrollId(), ErrorCode.LESSON_NOT_FOUND);
+        }
+        if (payment == null) {
+            throw new ResourceNotFoundException("Payment record not found for enrollment ID: " + enroll.getEnrollId(), ErrorCode.PAYMENT_INFO_NOT_FOUND);
+        }
+        if (lesson.getStartDate() == null) {
+             throw new BusinessRuleException(ErrorCode.LESSON_NOT_FOUND, "강습 시작일 정보가 없습니다 (강습 ID: " + lesson.getLessonId() + ")");
+        }
 
-        // 결제 시 강습료와 사물함 요금을 Payment 엔티티에 분리 저장했다고 가정 (payment.getLessonAmount(), payment.getLockerAmount())
-        // 이것이 안되어 있다면, enroll.getLesson().getPrice() 와 payment.getPaidAmt()를 통해 역산 필요
-        int paidLessonAmount = Optional.ofNullable(payment.getLessonAmount()).orElse(lesson.getPrice()); // 예시
-        int paidLockerAmount = Optional.ofNullable(payment.getLockerAmount()).orElse(0); // 예시: payment에 lockerAmount 필드 없으면 0
-        if (payment.getLessonAmount() == null || payment.getLockerAmount() == null) {
-             // 실제로는 payment.getPaidAmt()와 lesson.getPrice(), 그리고 enroll.usesLocker()로 분리해야 함
+        // 1. 결제된 강습료 및 사물함료 확정 (Payment 엔티티에 분리 저장된 값을 우선 사용)
+        int paidLessonAmount = Optional.ofNullable(payment.getLessonAmount()).orElse(lesson.getPrice());
+        int paidLockerAmount = 0;
+        if (payment.getLessonAmount() == null || payment.getLockerAmount() == null) { // Payment 엔티티에 분리 저장 안된 경우 역산
             if (enroll.isUsesLocker() && payment.getPaidAmt() != null && payment.getPaidAmt() > lesson.getPrice()) {
-                 paidLessonAmount = lesson.getPrice();
-                 paidLockerAmount = payment.getPaidAmt() - lesson.getPrice();
+                paidLessonAmount = lesson.getPrice(); // 할인이 적용되었을 수 있으므로, 실제로는 payment.getPaidAmt()에서 사물함 정가를 빼는게 더 정확할 수 있음. 여기서는 일단 lesson.getPrice()로 가정.
+                paidLockerAmount = payment.getPaidAmt() - paidLessonAmount; // 사물함 요금은 정가로 가정 (defaultLockerFee)
+                 // 더 정확히 하려면: payment.getPaidAmt() - (lesson.getPrice() - 할인액) 으로 계산해야 함.
+                 // 현재 paidLessonAmount는 할인 후 금액일 수 있음.
             } else {
-                 paidLessonAmount = Optional.ofNullable(payment.getPaidAmt()).orElse(0);
-                 paidLockerAmount = 0;
+                paidLessonAmount = Optional.ofNullable(payment.getPaidAmt()).orElse(0);
             }
+        } else { // Payment 엔티티에 분리 저장된 값 사용
+            paidLockerAmount = Optional.ofNullable(payment.getLockerAmount()).orElse(0);
         }
+        // 만약 payment.getLessonAmount()가 할인된 금액이라면, 위약금 계산 기준인 강습 정가는 lesson.getPrice()를 사용해야 함.
 
+        boolean lockerWasUsed = enroll.isUsesLocker() || enroll.isLockerAllocated();
 
-        boolean lockerWasUsed = enroll.isUsesLocker() || enroll.isLockerAllocated(); // 결제 시점의 usesLocker와 실제 할당 여부 모두 고려
-        
-        BigDecimal finalRefundAmountBigDecimal;
-        LocalDate today = LocalDate.now(); // 관리자 승인일 기준
+        // 2. 사용일수 계산
         LocalDate lessonStartDate = lesson.getStartDate();
+        long systemCalculatedDaysUsed = ChronoUnit.DAYS.between(lessonStartDate, calculationDate) + 1;
+        if (systemCalculatedDaysUsed < 0) systemCalculatedDaysUsed = 0; // 시작일 전이면 0일
 
-        if (lessonStartDate == null) {
-            throw new BusinessRuleException(ErrorCode.LESSON_NOT_FOUND, "강습 시작일 정보가 없습니다.");
-        }
-
-        // 사용일수 계산: 관리자가 입력한 manualUsedDays 우선, 없으면 자동 계산
-        long daysUsed;
-        if (manualUsedDays != null && manualUsedDays >= 0) {
-            daysUsed = manualUsedDays;
-            enroll.setDaysUsedForRefund(manualUsedDays);
+        int effectiveDaysUsed;
+        if (manualUsedDaysOverride != null && manualUsedDaysOverride >= 0) {
+            effectiveDaysUsed = manualUsedDaysOverride;
         } else {
-            // 자동계산: 취소 요청일 또는 오늘까지 사용으로 간주 (정책에 따라 기준일 선택)
-            // 여기서는 관리자 승인일(today)까지 사용으로 간주
-            daysUsed = ChronoUnit.DAYS.between(lessonStartDate, today) + 1;
-            if (daysUsed < 0) daysUsed = 0; // 강습 시작 전인데 이 로직을 타는 경우 방지 (실제로는 request 단계에서 분기)
-            enroll.setDaysUsedForRefund((int)daysUsed);
+            effectiveDaysUsed = (int) systemCalculatedDaysUsed;
         }
-        
-        // 수강료 환불분 계산
-        BigDecimal lessonPaidDecimal = BigDecimal.valueOf(paidLessonAmount);
-        BigDecimal lessonUsageDeduction = LESSON_DAILY_RATE.multiply(BigDecimal.valueOf(daysUsed));
-        BigDecimal lessonPenalty = lessonPaidDecimal.multiply(PENALTY_RATE);
-        enroll.setPenaltyAmountLesson(lessonPenalty.intValue());
-        BigDecimal lessonRefundable = lessonPaidDecimal.subtract(lessonUsageDeduction).subtract(lessonPenalty);
+
+        // 3. 강습료 관련 계산
+        BigDecimal originalLessonPriceDecimal = BigDecimal.valueOf(lesson.getPrice()); // 강습 정가
+        BigDecimal paidLessonAmountDecimal = BigDecimal.valueOf(paidLessonAmount);     // 실제 결제된 강습료
+
+        BigDecimal lessonUsageDeduction = LESSON_DAILY_RATE.multiply(BigDecimal.valueOf(effectiveDaysUsed));
+        BigDecimal lessonPenalty = originalLessonPriceDecimal.multiply(PENALTY_RATE); // 위약금은 정가 기준
+
+        BigDecimal lessonRefundable = paidLessonAmountDecimal.subtract(lessonUsageDeduction).subtract(lessonPenalty);
         if (lessonRefundable.compareTo(BigDecimal.ZERO) < 0) {
             lessonRefundable = BigDecimal.ZERO;
         }
 
-        finalRefundAmountBigDecimal = lessonRefundable;
+        // 4. 사물함료 관련 계산 (사용한 경우)
+        BigDecimal lockerUsageDeduction = BigDecimal.ZERO;
+        BigDecimal lockerPenalty = BigDecimal.ZERO;
+        BigDecimal lockerRefundable = BigDecimal.ZERO;
 
-        // 사물함료 환불분 계산 (사물함을 사용했고, 사물함 요금이 있었던 경우)
         if (lockerWasUsed && paidLockerAmount > 0) {
-            BigDecimal lockerPaidDecimal = BigDecimal.valueOf(paidLockerAmount);
-            BigDecimal lockerUsageDeduction = LOCKER_DAILY_RATE.multiply(BigDecimal.valueOf(daysUsed));
-            BigDecimal lockerPenalty = lockerPaidDecimal.multiply(PENALTY_RATE);
-            enroll.setPenaltyAmountLocker(lockerPenalty.intValue());
-            BigDecimal lockerRefundable = lockerPaidDecimal.subtract(lockerUsageDeduction).subtract(lockerPenalty);
+            BigDecimal paidLockerAmountDecimal = BigDecimal.valueOf(paidLockerAmount);
+            lockerUsageDeduction = LOCKER_DAILY_RATE.multiply(BigDecimal.valueOf(effectiveDaysUsed));
+            lockerPenalty = paidLockerAmountDecimal.multiply(PENALTY_RATE); // 사물함 위약금은 실제 결제된 사물함료 기준
+
+            lockerRefundable = paidLockerAmountDecimal.subtract(lockerUsageDeduction).subtract(lockerPenalty);
             if (lockerRefundable.compareTo(BigDecimal.ZERO) < 0) {
                 lockerRefundable = BigDecimal.ZERO;
             }
-            finalRefundAmountBigDecimal = finalRefundAmountBigDecimal.add(lockerRefundable);
-        } else {
-            enroll.setPenaltyAmountLocker(0);
+        }
+
+        // 5. 최종 환불액
+        BigDecimal finalRefundAmountBigDecimal = lessonRefundable.add(lockerRefundable);
+        int totalPaidAmount = payment.getPaidAmt() != null ? payment.getPaidAmt() : 0;
+        if (finalRefundAmountBigDecimal.compareTo(BigDecimal.valueOf(totalPaidAmount)) > 0) {
+            finalRefundAmountBigDecimal = BigDecimal.valueOf(totalPaidAmount);
+        }
+        if (finalRefundAmountBigDecimal.compareTo(BigDecimal.ZERO) < 0) {
+            finalRefundAmountBigDecimal = BigDecimal.ZERO;
         }
         
-        enroll.setCalculatedRefundAmount(finalRefundAmountBigDecimal.intValue()); // 관리자 수정 전 시스템 계산 환불액 (또는 최종 환불액으로 사용)
+        return CalculatedRefundDetailsDto.builder()
+                .systemCalculatedUsedDays((int) systemCalculatedDaysUsed)
+                .manualUsedDays(manualUsedDaysOverride) // 관리자 입력값을 그대로 전달 (DB 저장된 값과 다를 수 있음)
+                .effectiveUsedDays(effectiveDaysUsed)
+                .originalLessonPrice(originalLessonPriceDecimal)
+                .paidLessonAmount(paidLessonAmountDecimal)
+                .paidLockerAmount(BigDecimal.valueOf(paidLockerAmount))
+                .lessonUsageDeduction(lessonUsageDeduction)
+                .lockerUsageDeduction(lockerUsageDeduction)
+                .lessonPenalty(lessonPenalty)
+                .lockerPenalty(lockerPenalty)
+                .finalRefundAmount(finalRefundAmountBigDecimal)
+                .build();
+    }
 
-        int finalRefundAmount = finalRefundAmountBigDecimal.intValue();
+    @Override
+    @Transactional
+    public void approveEnrollmentCancellationAdmin(Long enrollId, Integer manualUsedDaysFromRequest) {
+        Enroll enroll = enrollRepository.findById(enrollId)
+            .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found with ID: " + enrollId, ErrorCode.ENROLLMENT_NOT_FOUND));
+
+        if (enroll.getCancelStatus() != Enroll.CancelStatusType.REQ && enroll.getCancelStatus() != Enroll.CancelStatusType.PENDING) {
+             throw new BusinessRuleException(ErrorCode.ENROLLMENT_CANCELLATION_NOT_ALLOWED,
+                "취소 요청 상태가 아니거나 이미 처리된 건입니다. 현재 상태: " + enroll.getCancelStatus());
+        }
+
+        Payment payment = paymentRepository.findByEnroll_EnrollId(enrollId)
+            .orElseThrow(() -> new ResourceNotFoundException("Payment record not found for enrollment ID: " + enrollId, ErrorCode.PAYMENT_INFO_NOT_FOUND));
+
+        // 헬퍼 메서드를 사용하여 환불 상세 내역 계산 (계산 기준일: 오늘)
+        // manualUsedDaysFromRequest는 관리자가 이번 승인 시 최종적으로 입력한 값
+        CalculatedRefundDetailsDto refundDetails = calculateRefundInternal(enroll, payment, manualUsedDaysFromRequest, LocalDate.now());
+
+        // Enroll 엔티티에 계산된 상세 정보 저장
+        enroll.setDaysUsedForRefund(refundDetails.getEffectiveUsedDays());
+        enroll.setPenaltyAmountLesson(refundDetails.getLessonPenalty().intValue());
+        enroll.setPenaltyAmountLocker(refundDetails.getLockerPenalty().intValue());
+        enroll.setCalculatedRefundAmount(payment.getPaidAmt()); // 이 필드는 PG 요청 전 총 결제액으로 두거나, 다른 용도로 사용 고려.
+                                                               // 아니면 refundDetails.getFinalRefundAmount().intValue() 와 용도 구분 명확히.
+                                                               // 여기서는 최종 환불액을 refundAmount 필드에 저장하므로, calculated는 다른 의미 부여 가능.
+        enroll.setRefundAmount(refundDetails.getFinalRefundAmount().intValue()); // 최종 확정 환불액
+
+        // PG사 환불 연동 로직 (기존과 유사하게 진행, refundDetails.getFinalRefundAmount() 사용)
+        int finalRefundAmountForPg = refundDetails.getFinalRefundAmount().intValue();
         int totalPaidAmount = payment.getPaidAmt() != null ? payment.getPaidAmt() : 0;
 
-        if (finalRefundAmount > totalPaidAmount) {
-            finalRefundAmount = totalPaidAmount;
-        }
-        if (finalRefundAmount < 0) {
-            finalRefundAmount = 0;
-        }
-        enroll.setRefundAmount(finalRefundAmount); // 최종 환불액 설정
-
-        // PG사 환불 연동
-        if (finalRefundAmount > 0) {
+        if (finalRefundAmountForPg > 0) {
             String kispgTid = payment.getTid();
             if (kispgTid == null || kispgTid.trim().isEmpty()) {
-                // TID 없으면 PG 환불 불가, 관리자에게 알리고 수동 처리 유도 또는 다른 정책
                 logger.error("KISPG TID가 없어 자동 환불 불가 (enrollId: {}). 관리자 확인 필요.", enrollId);
-                enroll.setCancelStatus(CancelStatusType.PENDING); // PG 환불 실패 시 PENDING으로 두고 관리자 개입 유도
+                enroll.setCancelStatus(CancelStatusType.PENDING);
                 enroll.setCancelReason((enroll.getCancelReason() == null ? "" : enroll.getCancelReason()) + " [시스템: PG TID 없음]");
-                // throw new BusinessRuleException(ErrorCode.PAYMENT_INFO_NOT_FOUND, "KISPG 거래 ID(tid)가 없어 환불을 진행할 수 없습니다.");
             } else {
-                // boolean pgRefundSuccess = kispgService.requestPartialRefund(kispgTid, finalRefundAmount, "관리자 승인 취소");
-                // if (!pgRefundSuccess) {
-                //     logger.error("KISPG 부분 환불 실패 (enrollId: {}, tid: {}, amount: {})", enrollId, kispgTid, finalRefundAmount);
-                //     enroll.setCancelStatus(CancelStatusType.PENDING); // PG 환불 실패 시 PENDING
-                //     enroll.setCancelReason((enroll.getCancelReason() == null ? "" : enroll.getCancelReason()) + " [시스템: PG 환불 실패]");
-                //     // throw new BusinessRuleException(ErrorCode.PAYMENT_REFUND_FAILED, "KISPG 환불 처리 중 오류가 발생했습니다.");
-                // } else {
-                //     logger.info("KISPG 부분 환불 성공 (enrollId: {}, tid: {}, amount: {})", enrollId, kispgTid, finalRefundAmount);
-                //     payment.setRefundedAmt((payment.getRefundedAmt() == null ? 0 : payment.getRefundedAmt()) + finalRefundAmount);
-                //     payment.setRefundDt(LocalDateTime.now());
-                //     if (payment.getRefundedAmt() >= totalPaidAmount) {
-                //         payment.setStatus("CANCELED"); 
-                //         enroll.setPayStatus("REFUNDED");
-                //     } else if (payment.getRefundedAmt() > 0) { 
-                //         payment.setStatus("PARTIAL_REFUNDED");
-                //         enroll.setPayStatus("PARTIALLY_REFUNDED");
-                //     }
-                //     enroll.setCancelStatus(CancelStatusType.APPROVED);
-                // }
                 // --- 임시 KISPG 연동 성공 처리 ---
-                logger.info("KISPG 부분 환불 성공 (임시) (enrollId: {}, tid: {}, amount: {})", enrollId, kispgTid, finalRefundAmount);
-                payment.setRefundedAmt((payment.getRefundedAmt() == null ? 0 : payment.getRefundedAmt()) + finalRefundAmount);
+                logger.info("KISPG 부분 환불 성공 (임시) (enrollId: {}, tid: {}, amount: {})", enrollId, kispgTid, finalRefundAmountForPg);
+                payment.setRefundedAmt((payment.getRefundedAmt() == null ? 0 : payment.getRefundedAmt()) + finalRefundAmountForPg);
                 payment.setRefundDt(LocalDateTime.now());
                 if (payment.getRefundedAmt() >= totalPaidAmount) {
-                    payment.setStatus("CANCELED"); 
+                    payment.setStatus("CANCELED");
                     enroll.setPayStatus("REFUNDED");
-                } else if (payment.getRefundedAmt() > 0) { 
+                } else if (payment.getRefundedAmt() > 0) {
                     payment.setStatus("PARTIAL_REFUNDED");
                     enroll.setPayStatus("PARTIALLY_REFUNDED");
                 }
@@ -584,28 +599,58 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 // --- 임시 KISPG 연동 성공 처리 끝 ---
             }
         } else { // 환불 금액이 0원인 경우
-            enroll.setPayStatus("REFUNDED"); // 또는 CANCELED_NO_REFUND 등 상태 정의 필요
+            enroll.setPayStatus("REFUNDED"); 
             enroll.setCancelStatus(CancelStatusType.APPROVED);
-            payment.setStatus("CANCELED"); // 환불액이 0이어도 결제 자체는 취소된 것으로 볼 수 있음
+            if (payment != null) payment.setStatus("CANCELED");
         }
-        
-        enroll.setCancelApprovedAt(LocalDateTime.now()); // 취소 처리(승인) 시각
+
+        enroll.setCancelApprovedAt(LocalDateTime.now());
         enroll.setUpdatedBy("ADMIN"); // 또는 현재 로그인한 관리자 ID
 
-        if (lockerWasUsed && enroll.isLockerAllocated()) { // 취소 승인 시점에 실제 할당되어 있었다면 회수
+        boolean lockerWasAllocated = enroll.isLockerAllocated(); // 취소 승인 시점에 실제 할당되어 있었다면 회수
+        if (lockerWasAllocated) {
              String userGender = enroll.getUser().getGender();
             if (userGender != null && !userGender.trim().isEmpty()) {
                 lockerService.decrementUsedQuantity(userGender.toUpperCase());
             }
         }
-        enroll.setUsesLocker(false); 
-        enroll.setLockerAllocated(false); 
+        enroll.setUsesLocker(false);
+        enroll.setLockerAllocated(false);
         enroll.setLockerPgToken(null);
-        
+
         enrollRepository.save(enroll);
-        if (payment != null) { // payment가 null일 가능성은 적지만 방어 코드
+        if (payment != null) {
             paymentRepository.save(payment);
         }
+    }
+
+    @Override
+    @Transactional(readOnly = true) // DB 변경 없음
+    public CalculatedRefundDetailsDto getRefundPreview(Long enrollId, Integer manualUsedDaysPreview) {
+        Enroll enroll = enrollRepository.findById(enrollId)
+            .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found with ID: " + enrollId, ErrorCode.ENROLLMENT_NOT_FOUND));
+        Payment payment = paymentRepository.findByEnroll_EnrollId(enrollId)
+            .orElseThrow(() -> new ResourceNotFoundException("Payment record not found for enrollment ID: " + enrollId, ErrorCode.PAYMENT_INFO_NOT_FOUND));
+
+        // 헬퍼 메서드를 사용하여 환불 상세 내역 계산 (계산 기준일: 오늘)
+        // manualUsedDaysPreview는 관리자가 화면에서 입력해본 값
+        return calculateRefundInternal(enroll, payment, manualUsedDaysPreview, LocalDate.now());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public BigDecimal calculateDisplayRefundAmount(Long enrollId) {
+        // enroll.getDaysUsedForRefund()는 DB에 저장된 관리자 최종 입력일 수 있음.
+        // 또는 null이면 시스템 계산일 사용
+        Enroll enroll = enrollRepository.findById(enrollId)
+            .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found with ID: " + enrollId, ErrorCode.ENROLLMENT_NOT_FOUND));
+        
+        // 만약 enroll.getDaysUsedForRefund()가 있다면 그 값을 manualUsedDaysPreview로 전달
+        // 없다면 null을 전달하여 calculateRefundInternal 내부에서 시스템 자동 계산일 사용토록 함
+        Integer previouslySetManualDays = enroll.getDaysUsedForRefund(); 
+                                                                        
+        CalculatedRefundDetailsDto details = getRefundPreview(enrollId, previouslySetManualDays);
+        return details.getFinalRefundAmount();
     }
 
     @Override
@@ -615,95 +660,15 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 .orElseThrow(() -> new EntityNotFoundException("Enrollment not found with ID: " + enrollId));
 
         if (enroll.getCancelStatus() != Enroll.CancelStatusType.REQ) {
-            throw new IllegalStateException("Cancellation request not found or already processed for enrollment ID: " + enrollId);
+            throw new BusinessRuleException(ErrorCode.ENROLLMENT_CANCELLATION_NOT_ALLOWED, 
+                "취소 요청 상태가 아니거나 이미 처리된 건입니다. 현재 상태: " + enroll.getCancelStatus());
         }
 
         enroll.setCancelStatus(Enroll.CancelStatusType.DENIED);
         enroll.setCancelReason(comment);
-        enroll.setUpdatedBy("ADMIN");
+        enroll.setUpdatedBy("ADMIN"); // 또는 현재 로그인한 관리자 ID
         enroll.setUpdatedAt(LocalDateTime.now());
         enrollRepository.save(enroll);
-    }
-
-    @Override
-    @Transactional // 이 메소드는 DB 상태를 변경하지 않지만, 연관된 엔티티들을 읽어야 하므로 트랜잭션 컨텍스트가 필요할 수 있습니다.
-    public BigDecimal calculateDisplayRefundAmount(Long enrollId) {
-        Enroll enroll = enrollRepository.findById(enrollId)
-            .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found with ID: " + enrollId, ErrorCode.ENROLLMENT_NOT_FOUND));
-        
-        Lesson lesson = enroll.getLesson();
-        if (lesson == null) {
-             throw new ResourceNotFoundException("Lesson not found for enrollment ID: " + enrollId, ErrorCode.LESSON_NOT_FOUND);
-        }
-        Payment payment = paymentRepository.findByEnroll_EnrollId(enrollId)
-            .orElseThrow(() -> new ResourceNotFoundException("Payment record not found for enrollment ID: " + enrollId, ErrorCode.PAYMENT_INFO_NOT_FOUND));
-
-        // 결제 시 강습료와 사물함 요금 분리 (approve 메소드와 동일한 로직 사용)
-        int paidLessonAmount = Optional.ofNullable(payment.getLessonAmount()).orElse(lesson.getPrice());
-        int paidLockerAmount = 0;
-        if (payment.getLessonAmount() == null || payment.getLockerAmount() == null) {
-            if (enroll.isUsesLocker() && payment.getPaidAmt() != null && payment.getPaidAmt() > lesson.getPrice()) {
-                 paidLessonAmount = lesson.getPrice();
-                 paidLockerAmount = payment.getPaidAmt() - lesson.getPrice();
-            } else {
-                 paidLessonAmount = Optional.ofNullable(payment.getPaidAmt()).orElse(0);
-                 // paidLockerAmount는 0으로 유지
-            }
-        } else {
-            paidLockerAmount = Optional.ofNullable(payment.getLockerAmount()).orElse(0);
-        }
-        
-        boolean lockerWasUsed = enroll.isUsesLocker() || enroll.isLockerAllocated();
-        
-        BigDecimal finalRefundAmountBigDecimal;
-        LocalDate today = LocalDate.now(); // 항상 현재 시점 기준
-        LocalDate lessonStartDate = lesson.getStartDate();
-
-        if (lessonStartDate == null) {
-            return BigDecimal.ZERO; 
-        }
-
-        // 수강 시작일 전이면 총 결제액 반환 (PG 수수료 등은 별도 정책)
-        if (today.isBefore(lessonStartDate)) {
-            return BigDecimal.valueOf(Optional.ofNullable(payment.getPaidAmt()).orElse(0));
-        }
-        
-        // 수강 시작일 후: 사용일수 자동 계산 (approve와 동일하게 관리자 승인일 대신 현재일 사용)
-        long daysUsed = ChronoUnit.DAYS.between(lessonStartDate, today) + 1;
-        if (daysUsed < 0) daysUsed = 0; 
-
-        // 수강료 환불분 계산
-        BigDecimal lessonPaidDecimal = BigDecimal.valueOf(paidLessonAmount);
-        BigDecimal lessonUsageDeduction = LESSON_DAILY_RATE.multiply(BigDecimal.valueOf(daysUsed));
-        BigDecimal lessonPenalty = lessonPaidDecimal.multiply(PENALTY_RATE);
-        BigDecimal lessonRefundable = lessonPaidDecimal.subtract(lessonUsageDeduction).subtract(lessonPenalty);
-        if (lessonRefundable.compareTo(BigDecimal.ZERO) < 0) {
-            lessonRefundable = BigDecimal.ZERO;
-        }
-        finalRefundAmountBigDecimal = lessonRefundable;
-
-        // 사물함료 환불분 계산
-        if (lockerWasUsed && paidLockerAmount > 0) {
-            BigDecimal lockerPaidDecimal = BigDecimal.valueOf(paidLockerAmount);
-            BigDecimal lockerUsageDeduction = LOCKER_DAILY_RATE.multiply(BigDecimal.valueOf(daysUsed));
-            BigDecimal lockerPenalty = lockerPaidDecimal.multiply(PENALTY_RATE);
-            BigDecimal lockerRefundable = lockerPaidDecimal.subtract(lockerUsageDeduction).subtract(lockerPenalty);
-            if (lockerRefundable.compareTo(BigDecimal.ZERO) < 0) {
-                lockerRefundable = BigDecimal.ZERO;
-            }
-            finalRefundAmountBigDecimal = finalRefundAmountBigDecimal.add(lockerRefundable);
-        }
-
-        int finalRefundAmount = finalRefundAmountBigDecimal.intValue();
-        int totalPaidAmount = payment.getPaidAmt() != null ? payment.getPaidAmt() : 0;
-
-        if (finalRefundAmount > totalPaidAmount) {
-            finalRefundAmount = totalPaidAmount;
-        }
-        if (finalRefundAmount < 0) {
-            finalRefundAmount = 0;
-        }
-        return BigDecimal.valueOf(finalRefundAmount);
     }
 
     private EnrollResponseDto convertToSwimmingEnrollResponseDto(Enroll enroll) {

@@ -9,7 +9,7 @@
 **주요 원칙:**
 
 - **결제 페이지 접근은 제한된 자원**: 각 강습별로 동시에 결제 페이지에 머무를 수 있는 사용자 수는 강습의 총 정원에서 이미 결제를 완료한 사용자 수를 제외한 값으로 제한된다.
-- **5분 슬롯 점유**: `POST /api/v1/swimming/enroll` 요청에 성공한 사용자는 5분 동안 해당 강습의 결제 페이지 접근 슬롯을 점유한다. 이 시간 내에 결제를 완료하지 못하면 슬롯은 해제된다.
+- **5분 슬롯 점유**: `POST /api/v1/enrolls` 요청에 성공한 사용자는 5분 동안 해당 강습의 결제 페이지 접근 슬롯을 점유한다. 이 시간 내에 결제를 완료하지 못하면 슬롯은 해제된다.
 - **실시간 현황 반영**: 사용자에게 제공되는 강습 정보에는 결제 페이지 접근 가능 여부가 최대한 실시간으로 반영되어야 한다.
 
 ### 2. 결제 페이지 접근 슬롯 계산 로직
@@ -28,7 +28,7 @@
 
 ### 3. 백엔드 구현
 
-#### 3.1. `EnrollmentServiceImpl` (또는 `POST /api/v1/swimming/enroll` 처리 서비스)
+#### 3.1. `EnrollmentServiceImpl` (또는 `POST /api/v1/enrolls` 처리 서비스)
 
 `createInitialEnrollment` (또는 유사 메소드) 로직 수정:
 
@@ -91,7 +91,7 @@ PAYMENT_PAGE_SLOT_UNAVAILABLE(HttpStatus.CONFLICT, "LEC001", "죄송합니다, �
 
 1.  **API 호출 (React Query `useMutation`)**:
 
-    - `POST /api/v1/swimming/enroll` API 호출.
+    - `POST /api/v1/enrolls` API 호출.
 
       ```javascript
       const enrollMutation = useMutation(
@@ -127,7 +127,7 @@ PAYMENT_PAGE_SLOT_UNAVAILABLE(HttpStatus.CONFLICT, "LEC001", "죄송합니다, �
 
 ### 5. API 변경 사항 요약
 
-#### 5.1. `POST /api/v1/swimming/enroll`
+#### 5.1. `POST /api/v1/enrolls`
 
 - **성공 응답 (`200 OK`):** `EnrollInitiationResponseDto` (기존과 동일)
   ```json
@@ -176,7 +176,7 @@ sequenceDiagram
 
     alt 사용 가능한 슬롯이 있는 강습 선택
         U->>FE: "신청하기" 클릭 (lessonId)
-        FE->>API: POST /api/v1/swimming/enroll (lessonId)
+        FE->>API: POST /api/v1/enrolls (lessonId)
         API->>DB: (Transaction START + Lock Lesson)
         API->>DB: Calculate paidCount for lessonId
         DB-->>API: paidCount

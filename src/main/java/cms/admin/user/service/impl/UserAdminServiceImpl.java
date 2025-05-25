@@ -1,6 +1,7 @@
-package cms.admin.user.service;
+package cms.admin.user.service.impl;
 
 import cms.admin.user.dto.UserMemoDto;
+import cms.admin.user.service.UserAdminService;
 import cms.user.domain.User;
 import cms.user.domain.UserMemo;
 import cms.user.repository.UserMemoRepository;
@@ -10,7 +11,6 @@ import cms.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import java.time.LocalDateTime;
 
 @Service
 @RequiredArgsConstructor

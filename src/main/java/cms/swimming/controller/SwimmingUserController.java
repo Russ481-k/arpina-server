@@ -8,7 +8,6 @@ import cms.swimming.dto.LessonDto;
 // import cms.swimming.dto.LockerDto; // Remains commented as its primary use 'getAvailableLockers' list was removed
 import cms.enroll.service.EnrollmentService;
 import cms.swimming.service.LessonService;
-import cms.locker.service.LockerService; // Correct import for the new locker inventory service
 import cms.user.domain.User;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -29,12 +28,10 @@ import javax.servlet.http.HttpServletRequest;
 import javax.validation.Valid;
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Map;
 
 @RestController
-@RequestMapping("/swimming")
 @RequiredArgsConstructor
-@Tag(name = "swimming_user", description = "수영장 사용자 API")
+@Tag(name = "Swimming User API", description = "수영장 사용자 API (수업 조회, 신청 관련)") // Updated tag description
 @Validated
 public class SwimmingUserController {
 
@@ -79,7 +76,7 @@ public class SwimmingUserController {
 
     // 3. 신청 및 취소 API
     @Operation(summary = "수업 신청", description = "수업을 신청합니다. 결제는 마이페이지에서 진행됩니다.")
-    @PostMapping("/enroll")
+    @PostMapping("/enrolls")
     public ResponseEntity<ApiResponseSchema<EnrollResponseDto>> createEnroll(
             @Valid @RequestBody EnrollRequestDto enrollRequest,
             Authentication authentication,
@@ -93,9 +90,9 @@ public class SwimmingUserController {
     }
 
     @Operation(summary = "신청 취소", description = "수업 신청을 취소합니다. 개강 전 신청 건에 한해 사용자 직접 취소가 가능합니다.")
-    @PostMapping("/enroll/{enrollId}/cancel")
+    @PostMapping("/enrolls/{enrollId}/cancel")
     public ResponseEntity<ApiResponseSchema<Void>> cancelEnroll(
-            @Parameter(description = "취소할 신청 ID") @PathVariable Long enrollId,
+            @Parameter(description = "취소할 신청 ID", required = true) @PathVariable Long enrollId,
             @Valid @RequestBody CancelRequestDto cancelRequest,
             Authentication authentication) {
         User currentUser = getAuthenticatedUser(authentication);
@@ -106,31 +103,22 @@ public class SwimmingUserController {
     }
 
     // 4. 신청 내역 조회 API
-    @Operation(summary = "내 신청 내역 조회", description = "로그인한 사용자의 모든 신청 내역을 조회합니다. (Mypage DTO 사용)")
-    @GetMapping("/my-enrolls")
+    @Operation(summary = "내 신청 내역 조회", description = "로그인한 사용자의 신청 내역을 상태별(선택) 또는 전체 조회합니다. (Mypage DTO 사용)")
+    @GetMapping("/enrolls")
     public ResponseEntity<ApiResponseSchema<Page<cms.mypage.dto.EnrollDto>>> getMyEnrolls(
-            @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
-            Authentication authentication) {
-        User currentUser = getAuthenticatedUser(authentication);
-        Page<cms.mypage.dto.EnrollDto> enrolls = enrollmentService.getEnrollments(currentUser, null, pageable);
-        return ResponseEntity.ok(ApiResponseSchema.success(enrolls, "신청 내역 조회 성공"));
-    }
-
-    @Operation(summary = "내 신청 내역 상태별 조회", description = "로그인한 사용자의 신청 내역을 상태별로 조회합니다. (Mypage DTO 사용)")
-    @GetMapping("/my-enrolls/status")
-    public ResponseEntity<ApiResponseSchema<Page<cms.mypage.dto.EnrollDto>>> getMyEnrollsByStatus(
-            @Parameter(description = "신청 상태 (e.g. UNPAID, PAID, CANCELED - pay_status field from Enroll)") @RequestParam String status,
+            @Parameter(description = "신청 상태 (선택적 필터, 예: UNPAID, PAID, CANCELED - pay_status field from Enroll)") 
+            @RequestParam(required = false) String status,
             @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
             Authentication authentication) {
         User currentUser = getAuthenticatedUser(authentication);
         Page<cms.mypage.dto.EnrollDto> enrolls = enrollmentService.getEnrollments(currentUser, status, pageable);
-        return ResponseEntity.ok(ApiResponseSchema.success(enrolls, "상태별 신청 내역 조회 성공"));
+        return ResponseEntity.ok(ApiResponseSchema.success(enrolls, "신청 내역 조회 성공"));
     }
 
     @Operation(summary = "특정 신청 상세 조회", description = "특정 신청의 상세 정보를 조회합니다. (Mypage DTO 사용)")
     @GetMapping("/enrolls/{enrollId}")
     public ResponseEntity<ApiResponseSchema<cms.mypage.dto.EnrollDto>> getEnrollDetail(
-            @Parameter(description = "조회할 신청 ID") @PathVariable Long enrollId,
+            @Parameter(description = "조회할 신청 ID", required = true) @PathVariable Long enrollId,
             Authentication authentication) {
         User currentUser = getAuthenticatedUser(authentication);
         cms.mypage.dto.EnrollDto enroll = enrollmentService.getEnrollmentDetails(currentUser, enrollId);

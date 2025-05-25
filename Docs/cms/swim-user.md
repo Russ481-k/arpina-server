@@ -216,6 +216,7 @@ _성별 잔여 사물함 수는 `locker_inventory` 테이블의 해당 성별 `t
 
     - 정원 초과 시 결제 페이지 접근 불가 응답.
 
+
     - **결제 페이지 접근 슬롯 부족 시 `409 LEC001 PAYMENT_PAGE_SLOT_UNAVAILABLE` 응답.**
 
 2.  **KISPG 결제 실패 (결제 페이지)** → `payment.status=FAIL`, `enroll` 그대로 UNPAID (5분 내 재시도 가능).

@@ -14,7 +14,7 @@ import java.time.YearMonth;
 public class EnrollSpecification {
 
     public static Specification<Enroll> filterByAdminCriteria(
-            Long lessonId, String userId, String payStatus, String cancelStatus, Integer year, Integer month) {
+            Long lessonId, String userId, String payStatus, String cancelStatus, Integer year, Integer month, boolean excludeUnpaid) {
         return (root, query, criteriaBuilder) -> {
             List<Predicate> predicates = new ArrayList<>();
             Join<Enroll, Lesson> lessonJoin = null;
@@ -55,6 +55,10 @@ public class EnrollSpecification {
                     LocalDate yearEnd = LocalDate.of(year, 12, 31);
                     predicates.add(criteriaBuilder.between(lessonJoin.get("startDate"), yearStart, yearEnd));
                 }
+            }
+
+            if (excludeUnpaid) {
+                predicates.add(criteriaBuilder.notEqual(criteriaBuilder.upper(root.get("payStatus")), "UNPAID"));
             }
 
             // Ensure a default sort order if query.orderBy() is empty to avoid issues with pagination

@@ -16,7 +16,12 @@ public class CancelRequestAdminDto {
     private String userName;
     private String lessonTitle;
     private PaymentDetailsForCancel paymentInfo;
+
+    @Deprecated // 상세 내역 DTO인 calculatedRefundDetails를 사용 권장
     private Integer calculatedRefundAmtByNewPolicy; // 시스템 계산 환불 예상액
+    
+    private CalculatedRefundDetailsDto calculatedRefundDetails; // 프론트엔드에서 요청한 상세 환불 내역 필드
+
     private LocalDateTime requestedAt; // 사용자 요청 시각 또는 취소 처리 요청된 시각
     private String userReason;
     private String adminComment;

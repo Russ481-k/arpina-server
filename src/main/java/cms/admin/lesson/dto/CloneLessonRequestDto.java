@@ -1,10 +1,11 @@
 package cms.admin.lesson.dto;
 
-import lombok.Data;
-import javax.validation.constraints.NotBlank;
+import lombok.Getter;
+import lombok.Setter;
 
-@Data
+@Getter
+@Setter
 public class CloneLessonRequestDto {
-    @NotBlank(message = "새로운 시작일은 필수입니다.")
-    private String newStartDate; // "YYYY-MM-DD"
+    private String newStartDate; // yyyy-MM-dd 형식
+    // 필요하다면 다른 복제 시 변경 가능한 필드 추가 (예: 강사, 정원 등)
 } 

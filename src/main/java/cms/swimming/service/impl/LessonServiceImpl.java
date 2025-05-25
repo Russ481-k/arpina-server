@@ -5,6 +5,8 @@ import cms.swimming.dto.LessonDto;
 import cms.swimming.repository.LessonRepository;
 import cms.swimming.service.LessonService;
 import cms.enroll.repository.EnrollRepository;
+import cms.common.exception.InvalidInputException;
+import cms.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -36,9 +38,7 @@ public class LessonServiceImpl implements LessonService {
                     Lesson.LessonStatus lessonStatus = Lesson.LessonStatus.valueOf(status.toUpperCase());
                     predicates.add(criteriaBuilder.equal(root.get("status"), lessonStatus));
                 } catch (IllegalArgumentException e) {
-                    // TODO: Log this error or throw a specific business exception for invalid status format
-                    // For instance: throw new BusinessRuleException(ErrorCode.INVALID_LESSON_STATUS_FORMAT);
-                    // Depending on requirements, can also choose to ignore or add a predicate for no results.
+                    throw new InvalidInputException("Invalid lesson status format: " + status, ErrorCode.INVALID_INPUT_VALUE, e);
                 }
             }
 

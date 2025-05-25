@@ -10,6 +10,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -21,10 +22,12 @@ import java.util.Map;
 import cms.admin.enrollment.dto.AdminCancelRequestDto;
 import cms.admin.enrollment.dto.DiscountStatusUpdateRequestDto;
 import cms.admin.enrollment.dto.ApproveCancelRequestDto;
+import cms.admin.enrollment.dto.CalculatedRefundDetailsDto;
+import cms.admin.enrollment.dto.ManualUsedDaysRequestDto;
 
 @Tag(name = "CMS - Enrollment Management", description = "수강 신청 및 취소 요청 관리 API (관리자용)")
 @RestController
-@RequestMapping("/api/v1/cms/enrollments")
+@RequestMapping("/cms/enrollments")
 @RequiredArgsConstructor
 @PreAuthorize("hasAnyRole('ADMIN', 'SYSTEM_ADMIN')")
 public class EnrollmentAdminController {
@@ -39,7 +42,7 @@ public class EnrollmentAdminController {
             @Parameter(description = "강습 ID") @RequestParam(required = false) Long lessonId,
             @Parameter(description = "사용자 UUID") @RequestParam(required = false) String userId,
             @Parameter(description = "결제 상태 (UNPAID, PAID, REFUNDED 등)") @RequestParam(required = false) String payStatus,
-            @PageableDefault(size = 10, sort = "createdAt,desc") Pageable pageable) {
+            @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
         Page<EnrollAdminResponseDto> enrollments = enrollmentAdminService.getAllEnrollments(year, month, lessonId, userId, payStatus, pageable);
         return ResponseEntity.ok(ApiResponseSchema.success(enrollments, "신청 내역 조회 성공"));
     }
@@ -56,7 +59,7 @@ public class EnrollmentAdminController {
     @GetMapping("/cancel-requests")
     public ResponseEntity<ApiResponseSchema<Page<CancelRequestAdminDto>>> getCancelRequests(
             @Parameter(description = "취소 요청 상태 (기본: REQ)") @RequestParam(defaultValue = "REQ") String status,
-            @PageableDefault(size = 10, sort = "updatedAt,desc") Pageable pageable) {
+            @PageableDefault(size = 10, sort = "updatedAt", direction = Sort.Direction.DESC) Pageable pageable) {
         Page<CancelRequestAdminDto> cancelRequests = enrollmentAdminService.getCancelRequests(status, pageable);
         return ResponseEntity.ok(ApiResponseSchema.success(cancelRequests, "취소 요청 목록 조회 성공"));
     }
@@ -102,5 +105,16 @@ public class EnrollmentAdminController {
         }
         EnrollAdminResponseDto enrollDto = enrollmentAdminService.denyCancellation(enrollId, adminComment);
         return ResponseEntity.ok(ApiResponseSchema.success(enrollDto, "취소 요청 거부 처리 성공"));
+    }
+
+    @Operation(summary = "취소/환불 처리 시 예상 환불액 미리보기", 
+               description = "관리자가 실사용일수를 변경하며 예상 환불액을 미리 계산해봅니다. DB는 변경되지 않습니다.")
+    @PostMapping("/{enrollId}/calculate-refund-preview")
+    public ResponseEntity<ApiResponseSchema<CalculatedRefundDetailsDto>> calculateRefundPreview(
+            @Parameter(description = "신청 ID") @PathVariable Long enrollId,
+            @Valid @RequestBody(required = false) ManualUsedDaysRequestDto request) {
+        Integer manualUsedDays = (request != null) ? request.getManualUsedDays() : null;
+        CalculatedRefundDetailsDto refundDetails = enrollmentAdminService.getRefundPreview(enrollId, manualUsedDays);
+        return ResponseEntity.ok(ApiResponseSchema.success(refundDetails, "예상 환불액 계산 성공"));
     }
 } 
