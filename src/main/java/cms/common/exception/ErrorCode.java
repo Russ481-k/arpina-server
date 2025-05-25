@@ -47,6 +47,8 @@ public enum ErrorCode {
     PAYMENT_PAGE_SLOT_UNAVAILABLE("E017", "현재 해당 강습의 결제 페이지에 접근할 수 있는 인원이 가득 찼습니다. 잠시 후 다시 시도해주세요."),
     LESSON_CANNOT_BE_DELETED("E018", "해당 강습에 신청 내역이 존재하여 삭제할 수 없습니다."),
     LESSON_FULL("E019", "현재 해당 강습의 결제 페이지 접근 슬롯이 가득 찼습니다."),
+    LOCKER_GENDER_REQUIRED("E020", "사물함 사용 시 사용자의 성별 정보가 필요합니다."),
+    DUPLICATE_ENROLLMENT("E021", "이미 해당 강습에 대한 유효한 신청 내역이 존재합니다."),
 
     // --- 결제 (Payment) 관련 오류 코드 (P001 ~ P099) ---
     PAYMENT_INFO_NOT_FOUND("P001", "결제 정보를 찾을 수 없습니다."),

@@ -11,11 +11,9 @@ import org.springframework.stereotype.Controller;
 import org.springframework.stereotype.Repository;
 import org.springframework.stereotype.Service;
 import org.springframework.util.AntPathMatcher;
-import org.springframework.web.multipart.commons.CommonsMultipartResolver;
 
 import egov.com.cmm.EgovComTraceHandler;
 import egov.com.cmm.ImagePaginationRenderer;
-import egov.com.cmm.web.EgovMultipartResolver;
 
 import org.egovframe.rte.fdl.cmmn.trace.LeaveaTrace;
 import org.egovframe.rte.fdl.cmmn.trace.handler.TraceHandler;

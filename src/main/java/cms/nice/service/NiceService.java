@@ -2,7 +2,6 @@ package cms.nice.service;
 
 import NiceID.Check.CPClient;
 import cms.nice.dto.NiceErrorDataDto;
-import cms.nice.dto.NicePublicUserDataDto;
 import cms.nice.dto.NiceUserDataDto;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;

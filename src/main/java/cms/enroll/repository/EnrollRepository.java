@@ -2,6 +2,7 @@ package cms.enroll.repository;
 
 import cms.enroll.domain.Enroll;
 import cms.user.domain.User;
+import cms.swimming.domain.Lesson;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -48,9 +49,9 @@ public interface EnrollRepository extends JpaRepository<Enroll, Long>, JpaSpecif
     // Methods for admin view
     Page<Enroll> findByPayStatus(String payStatus, Pageable pageable);
     Page<Enroll> findByStatus(String status, Pageable pageable);
-    Page<Enroll> findByLesson(cms.swimming.domain.Lesson lesson, Pageable pageable);
+    Page<Enroll> findByLesson(Lesson lesson, Pageable pageable);
 
-    long countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(Long lessonId, String status, String payStatus, LocalDateTime expireDt);
+    long countByLessonAndPayStatusAndExpireDtAfter(Lesson lesson, String payStatus, LocalDateTime expireDt);
 
     // Method to count active enrollments for a lesson (PAID or (UNPAID and APPLIED and not expired))
     @Query("SELECT COUNT(e) FROM Enroll e WHERE e.lesson.lessonId = :lessonId AND (e.payStatus = 'PAID' OR (e.payStatus = 'UNPAID' AND e.status = 'APPLIED' AND e.expireDt > :now))")
@@ -92,4 +93,9 @@ public interface EnrollRepository extends JpaRepository<Enroll, Long>, JpaSpecif
     // For checking if a lesson can be deleted
     @Query("SELECT COUNT(e) FROM Enroll e WHERE e.lesson.lessonId = :lessonId AND e.status <> 'CANCELED' AND e.payStatus NOT IN ('REFUNDED', 'PARTIALLY_REFUNDED', 'CANCELED_UNPAID')")
     long countActiveEnrollmentsForLessonDeletion(@Param("lessonId") Long lessonId);
+
+    Optional<Enroll> findByUserAndLessonAndPayStatusNotIn(User user, Lesson lesson, List<String> excludedPayStatuses);
+
+    // Method that was missing or had an incorrect signature
+    long countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(Long lessonId, String status, String payStatus, LocalDateTime expireDt);
 } 

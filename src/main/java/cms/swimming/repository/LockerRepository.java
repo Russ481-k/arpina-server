@@ -2,7 +2,6 @@ package cms.swimming.repository;
 
 import cms.swimming.domain.Locker;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;

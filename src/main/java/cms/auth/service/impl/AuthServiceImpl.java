@@ -25,7 +25,6 @@ import cms.user.domain.User;
 import cms.user.domain.UserRoleType;
 import cms.user.repository.UserRepository;
 import cms.common.dto.ApiResponseSchema;
-import cms.nice.dto.NicePublicUserDataDto;
 import cms.nice.dto.NiceUserDataDto;
 import cms.nice.service.NiceService;
 

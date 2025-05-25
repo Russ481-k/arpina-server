@@ -2,6 +2,7 @@ package cms.admin.enrollment.service.impl;
 
 import cms.admin.enrollment.dto.CancelRequestAdminDto;
 import cms.admin.enrollment.dto.EnrollAdminResponseDto;
+import cms.admin.enrollment.model.dto.TemporaryEnrollmentRequestDto;
 import cms.admin.enrollment.service.EnrollmentAdminService;
 import cms.admin.enrollment.dto.DiscountStatusUpdateRequestDto;
 import cms.enroll.domain.Enroll;
@@ -16,6 +17,10 @@ import cms.common.exception.BusinessRuleException;
 import cms.locker.service.LockerService;
 import cms.enroll.domain.Enroll.DiscountStatusType;
 import cms.user.domain.User;
+import cms.user.domain.UserRoleType;
+import cms.user.repository.UserRepository;
+import cms.swimming.domain.Lesson;
+import cms.swimming.repository.LessonRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,6 +32,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 import cms.admin.enrollment.dto.CalculatedRefundDetailsDto;
 
@@ -39,6 +45,8 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
     private final PaymentRepository paymentRepository;
     private final EnrollmentService enrollmentService; // For approve/deny AND calculating display refund
     private final LockerService lockerService;
+    private final UserRepository userRepository;
+    private final LessonRepository lessonRepository;
 
     @Value("${app.default-locker-fee:5000}")
     private int defaultLockerFee;
@@ -250,6 +258,102 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
 
         Enroll savedEnroll = enrollRepository.save(enroll);
 
+        return convertToEnrollAdminResponseDto(savedEnroll);
+    }
+
+    @Override
+    @Transactional
+    public EnrollAdminResponseDto createTemporaryEnrollment(TemporaryEnrollmentRequestDto requestDto) {
+        Lesson lesson = lessonRepository.findById(requestDto.getLessonId())
+            .orElseThrow(() -> new ResourceNotFoundException("강습 정보를 찾을 수 없습니다.", ErrorCode.LESSON_NOT_FOUND)); 
+
+        User user;
+        if (requestDto.getUserPhone() != null && !requestDto.getUserPhone().trim().isEmpty()) {
+            user = userRepository.findByPhone(requestDto.getUserPhone()).orElse(null);
+        } else {
+            // To prevent multiple enrollments for users with no phone, we could disallow this
+            // or generate a truly unique anonymous user each time.
+            // For now, let's assume phone is highly recommended or a different unique identifier is used if phone is absent.
+            // If phone is not provided, we cannot reliably find an existing user.
+            user = null; 
+        }
+
+        if (user == null) {
+            // Create a new temporary user
+            String tempUsername = "temp_" + UUID.randomUUID().toString().substring(0, 8);
+            user = User.builder()
+                .uuid(UUID.randomUUID().toString())
+                .username(tempUsername)
+                .name(requestDto.getUserName())
+                .phone(requestDto.getUserPhone())
+                .email(tempUsername + "@temporary.com") // Placeholder email
+                .password("tempPassword") // Placeholder, should not be used for login
+                .role(UserRoleType.USER) // Default role
+                .status("TEMP_USER_PROFILE") // Specific status for temporary users
+                .gender(requestDto.getUserGender() != null ? requestDto.getUserGender().toUpperCase() : null)
+                .isTemporary(true)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+            user = userRepository.save(user);
+        } else {
+            // Update existing user's gender if provided and different, or if not set
+            if (requestDto.getUserGender() != null && 
+                (user.getGender() == null || !user.getGender().equalsIgnoreCase(requestDto.getUserGender()))) {
+                user.setGender(requestDto.getUserGender().toUpperCase());
+                user = userRepository.save(user);
+            }
+        }
+
+        // Check for existing active enrollment for this user and lesson
+        enrollRepository.findByUserAndLessonAndPayStatusNotIn(user, lesson, java.util.Arrays.asList("PAYMENT_TIMEOUT", "CANCELED_UNPAID", "CANCELED_PAID"))
+            .ifPresent(e -> {
+                throw new BusinessRuleException(ErrorCode.DUPLICATE_ENROLLMENT, "이미 해당 강습에 신청 내역이 존재합니다.");
+            });
+
+        Enroll enroll = Enroll.builder()
+            .user(user)
+            .lesson(lesson)
+            .status("APPLIED") // Standard status, payStatus will differentiate
+            .payStatus("PAID_OFFLINE")
+            .expireDt(LocalDateTime.now().plusYears(1)) // Effectively no expiry for admin-created paid offline
+            .renewalFlag(false)
+            .usesLocker(requestDto.getUsesLocker() != null && requestDto.getUsesLocker())
+            .lockerAllocated(false) // Will be set if locker is successfully allocated
+            .createdAt(LocalDateTime.now())
+            .updatedAt(LocalDateTime.now())
+            // Using cancelReason for admin memo as per frontend suggestion, can be a dedicated field later
+            .cancelReason(requestDto.getMemo() != null ? "임시등록 메모: " + requestDto.getMemo() : null)
+            .build();
+
+        if (enroll.isUsesLocker()) {
+            if (user.getGender() == null || user.getGender().trim().isEmpty()) {
+                throw new BusinessRuleException(ErrorCode.LOCKER_GENDER_REQUIRED, "사물함 사용 시 사용자의 성별 정보가 필요합니다. 사용자 정보에 성별을 먼저 등록하거나, 임시 등록 시 성별을 지정해주세요.");
+            }
+            try {
+                lockerService.incrementUsedQuantity(user.getGender().toUpperCase());
+                enroll.setLockerAllocated(true);
+            } catch (BusinessRuleException e) {
+                // e.g., LockerInventoryFullException or similar
+                 logger.warn("임시 등록 중 사물함 할당 실패 (사용자: {}, 성별: {}): {}", user.getUuid(), user.getGender(), e.getMessage());
+                //  If strict, re-throw or handle: throw new BusinessRuleException(ErrorCode.LOCKER_ALLOCATION_FAILED, "사물함 할당에 실패했습니다: " + e.getMessage());
+                // For now, we'll allow enrollment without locker if allocation fails, but log it.
+                // The DTO's usesLocker should reflect the actual allocation status from lockerAllocated field.
+                enroll.setUsesLocker(false); // Mark as not using locker if allocation failed
+                enroll.setLockerAllocated(false);
+                // Optionally add a specific memo about locker failure
+                String existingMemo = enroll.getCancelReason() == null ? "" : enroll.getCancelReason() + "\n";
+                enroll.setCancelReason(existingMemo + "사물함 할당 실패: " + e.getMessage());
+            } catch (Exception e) {
+                logger.error("임시 등록 중 사물함 할당 시 예외 발생 (사용자: {}, 성별: {}): {}", user.getUuid(), user.getGender(), e.getMessage(), e);
+                enroll.setUsesLocker(false);
+                enroll.setLockerAllocated(false);
+                String existingMemo = enroll.getCancelReason() == null ? "" : enroll.getCancelReason() + "\n";
+                enroll.setCancelReason(existingMemo + "사물함 할 μόνο 알 수 없는 오류로 실패했습니다.");
+            }
+        }
+
+        Enroll savedEnroll = enrollRepository.save(enroll);
         return convertToEnrollAdminResponseDto(savedEnroll);
     }
 } 

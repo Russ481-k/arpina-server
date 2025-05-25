@@ -24,6 +24,9 @@ import cms.admin.enrollment.dto.DiscountStatusUpdateRequestDto;
 import cms.admin.enrollment.dto.ApproveCancelRequestDto;
 import cms.admin.enrollment.dto.CalculatedRefundDetailsDto;
 import cms.admin.enrollment.dto.ManualUsedDaysRequestDto;
+import cms.admin.enrollment.model.dto.TemporaryEnrollmentRequestDto;
+
+import org.springframework.http.HttpStatus;
 
 @Tag(name = "CMS - Enrollment Management", description = "수강 신청 및 취소 요청 관리 API (관리자용)")
 @RestController
@@ -79,8 +82,8 @@ public class EnrollmentAdminController {
     public ResponseEntity<ApiResponseSchema<EnrollAdminResponseDto>> updateEnrollmentDiscountStatus(
             @Parameter(description = "신청 ID") @PathVariable Long enrollId,
             @Valid @RequestBody DiscountStatusUpdateRequestDto request) {
-        EnrollAdminResponseDto enrollDto = enrollmentAdminService.updateEnrollmentDiscountStatus(enrollId, request);
-        return ResponseEntity.ok(ApiResponseSchema.success(enrollDto, "신청 건 할인 상태 변경 성공"));
+        EnrollAdminResponseDto updatedEnrollment = enrollmentAdminService.updateEnrollmentDiscountStatus(enrollId, request);
+        return ResponseEntity.ok(ApiResponseSchema.success(updatedEnrollment, "신청 건 할인 상태 변경 성공"));
     }
 
     @Operation(summary = "취소 요청 승인 (실사용일수 입력 가능)", description = "특정 신청의 취소 요청을 승인하고 환불 절차를 진행합니다. 관리자가 실사용일수를 직접 입력하여 환불액을 조정할 수 있습니다.")
@@ -116,5 +119,14 @@ public class EnrollmentAdminController {
         Integer manualUsedDays = (request != null) ? request.getManualUsedDays() : null;
         CalculatedRefundDetailsDto refundDetails = enrollmentAdminService.getRefundPreview(enrollId, manualUsedDays);
         return ResponseEntity.ok(ApiResponseSchema.success(refundDetails, "예상 환불액 계산 성공"));
+    }
+
+    @PostMapping("/temporary")
+    @Operation(summary = "오프라인 등록자를 위한 임시 등록", description = "관리자가 오프라인으로 신청/결제한 사용자를 시스템에 임시로 등록합니다.")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SYSTEM_ADMIN')")
+    public ResponseEntity<EnrollAdminResponseDto> createTemporaryEnrollment(
+            @Valid @RequestBody TemporaryEnrollmentRequestDto requestDto) {
+        EnrollAdminResponseDto newEnrollment = enrollmentAdminService.createTemporaryEnrollment(requestDto);
+        return ResponseEntity.status(HttpStatus.CREATED).body(newEnrollment);
     }
 } 

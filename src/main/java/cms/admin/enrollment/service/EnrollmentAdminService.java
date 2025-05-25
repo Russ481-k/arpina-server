@@ -1,9 +1,11 @@
 package cms.admin.enrollment.service;
 
 import cms.admin.enrollment.dto.EnrollAdminResponseDto;
+import cms.admin.enrollment.model.dto.TemporaryEnrollmentRequestDto;
 import cms.admin.enrollment.dto.CancelRequestAdminDto;
 import cms.admin.enrollment.dto.DiscountStatusUpdateRequestDto;
 import cms.admin.enrollment.dto.CalculatedRefundDetailsDto;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
@@ -16,4 +18,5 @@ public interface EnrollmentAdminService {
     EnrollAdminResponseDto adminCancelEnrollment(Long enrollId, String adminComment);
     EnrollAdminResponseDto updateEnrollmentDiscountStatus(Long enrollId, DiscountStatusUpdateRequestDto request);
     CalculatedRefundDetailsDto getRefundPreview(Long enrollId, Integer manualUsedDays);
+    EnrollAdminResponseDto createTemporaryEnrollment(TemporaryEnrollmentRequestDto requestDto);
 } 

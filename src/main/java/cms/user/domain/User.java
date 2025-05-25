@@ -82,6 +82,9 @@ public class User implements UserDetails {
     @Column(name = "reset_token_expiry")
     private LocalDateTime resetTokenExpiry;
 
+    @Column(name = "is_temporary", columnDefinition = "TINYINT(1) DEFAULT 0")
+    private boolean isTemporary = false;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by", referencedColumnName = "uuid")
     private User createdBy;
