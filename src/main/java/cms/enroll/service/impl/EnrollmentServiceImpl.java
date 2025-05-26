@@ -65,6 +65,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import cms.websocket.handler.LessonCapacityWebSocketHandler;
 import cms.admin.enrollment.dto.CalculatedRefundDetailsDto; // 새로 추가한 DTO
+import java.time.YearMonth;
 
 @Service("enrollmentServiceImpl")
 @Transactional
@@ -90,8 +91,8 @@ public class EnrollmentServiceImpl implements EnrollmentService {
 
     private static final Logger logger = LoggerFactory.getLogger(EnrollmentServiceImpl.class);
     private static final BigDecimal LESSON_DAILY_RATE = new BigDecimal("3500");
-    private static final BigDecimal LOCKER_DAILY_RATE = new BigDecimal("170");
-    private static final BigDecimal PENALTY_RATE = new BigDecimal("0.10");
+    // private static final BigDecimal LOCKER_DAILY_RATE = new BigDecimal("170"); // 사물함 일일 요금 주석 처리
+    // private static final BigDecimal PENALTY_RATE = new BigDecimal("0.10"); // 위약금 비율 주석 처리
 
     public EnrollmentServiceImpl(EnrollRepository enrollRepository,
                                  PaymentRepository paymentRepository,
@@ -208,6 +209,36 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         // 동시에 여러 사용자가 같은 강좌에 신청하는 것을 방지
         Lesson lesson = lessonRepository.findByIdWithLock(initialEnrollRequest.getLessonId())
                 .orElseThrow(() -> new EntityNotFoundException("강습을 찾을 수 없습니다. ID: " + initialEnrollRequest.getLessonId()));
+
+        // *** 신규 등록 기간 정책 검사 ***
+        LocalDate today = LocalDate.now();
+        YearMonth currentYearMonth = YearMonth.from(today);
+        YearMonth lessonStartYearMonth = YearMonth.from(lesson.getStartDate());
+
+        boolean registrationAllowed = false;
+        String registrationPolicyMsg = "신청 기간이 아닙니다.";
+
+        if (lessonStartYearMonth.equals(currentYearMonth)) {
+            // 현재 달의 강습: 말일까지 신규 신청 가능
+            if (!today.isAfter(currentYearMonth.atEndOfMonth())) {
+                registrationAllowed = true;
+            }
+            registrationPolicyMsg = "현재 달의 강습은 말일까지 신청 가능합니다.";
+        } else if (lessonStartYearMonth.equals(currentYearMonth.plusMonths(1))) {
+            // 다음 달의 강습: 현월 26일 ~ 말일까지 신규 회원 등록 가능
+            if (today.getDayOfMonth() >= 26 && !today.isAfter(currentYearMonth.atEndOfMonth())) {
+                registrationAllowed = true;
+            }
+            registrationPolicyMsg = "다음 달 강습의 신규회원 등록은 현월 26일부터 말일까지 가능합니다.";
+        } else {
+            // 그 외 경우 (예: 두 달 후 강습 등)는 현재 정책상 신규 등록 불가
+            registrationPolicyMsg = "해당 강습은 현재 신규 등록 기간이 아닙니다.";
+        }
+
+        if (!registrationAllowed) {
+            throw new BusinessRuleException(ErrorCode.REGISTRATION_PERIOD_INVALID, registrationPolicyMsg);
+        }
+        // *** END 신규 등록 기간 정책 검사 ***
 
         if (lesson.getStatus() != Lesson.LessonStatus.OPEN) {
             throw new BusinessRuleException(ErrorCode.LESSON_NOT_OPEN_FOR_ENROLLMENT, "신청 가능한 강습이 아닙니다. 현재 상태: " + lesson.getStatus());
@@ -462,24 +493,48 @@ public class EnrollmentServiceImpl implements EnrollmentService {
              throw new BusinessRuleException(ErrorCode.LESSON_NOT_FOUND, "강습 시작일 정보가 없습니다 (강습 ID: " + lesson.getLessonId() + ")");
         }
 
-        // 1. 결제된 강습료 및 사물함료 확정 (Payment 엔티티에 분리 저장된 값을 우선 사용)
+        // 1. 결제된 강습료 확정
         int paidLessonAmount = Optional.ofNullable(payment.getLessonAmount()).orElse(lesson.getPrice());
+        // 사물함 결제액은 환불 계산에 사용되지 않음
         int paidLockerAmount = 0;
-        if (payment.getLessonAmount() == null || payment.getLockerAmount() == null) { // Payment 엔티티에 분리 저장 안된 경우 역산
+        if (payment.getLessonAmount() == null || payment.getLockerAmount() == null) {
             if (enroll.isUsesLocker() && payment.getPaidAmt() != null && payment.getPaidAmt() > lesson.getPrice()) {
-                paidLessonAmount = lesson.getPrice(); // 할인이 적용되었을 수 있으므로, 실제로는 payment.getPaidAmt()에서 사물함 정가를 빼는게 더 정확할 수 있음. 여기서는 일단 lesson.getPrice()로 가정.
-                paidLockerAmount = payment.getPaidAmt() - paidLessonAmount; // 사물함 요금은 정가로 가정 (defaultLockerFee)
-                 // 더 정확히 하려면: payment.getPaidAmt() - (lesson.getPrice() - 할인액) 으로 계산해야 함.
-                 // 현재 paidLessonAmount는 할인 후 금액일 수 있음.
+                // paidLessonAmount = lesson.getPrice(); // This was a simplification.
+                                                     // If discounts apply, paidLessonAmount should be the discounted lesson fee.
+                // For simplicity, assume payment.getLessonAmount() if available is the discounted one.
+                // If not, use lesson.getPrice() as non-discounted, or ensure payment.getPaidAmt() reflects total paid.
             } else {
                 paidLessonAmount = Optional.ofNullable(payment.getPaidAmt()).orElse(0);
             }
-        } else { // Payment 엔티티에 분리 저장된 값 사용
-            paidLockerAmount = Optional.ofNullable(payment.getLockerAmount()).orElse(0);
         }
-        // 만약 payment.getLessonAmount()가 할인된 금액이라면, 위약금 계산 기준인 강습 정가는 lesson.getPrice()를 사용해야 함.
+        // Ensure paidLessonAmount reflects the actual amount paid for the lesson part.
+        // If payment.getLessonAmount() is not null, it's assumed to be the accurate figure.
+        // Otherwise, if only payment.getPaidAmt() is available, and locker was used,
+        // paidLessonAmount might need to be deduced if original locker fee was fixed.
+        // For new policy, we only care about what was paid for the lesson itself.
+        if (payment.getLessonAmount() != null) {
+            paidLessonAmount = payment.getLessonAmount();
+        } else { // Fallback if lessonAmount is not in payment, assume paidAmt is only for lesson if no locker, or deduce
+            if (enroll.isUsesLocker() && payment.getPaidAmt() != null) {
+                 // This part is tricky without knowing the exact locker fee at time of payment or if it was fixed.
+                 // For the new policy "locker fee not refundable", we only need the part paid for the lesson.
+                 // Best if payment.lessonAmount clearly stores this. If not, use full price as a fallback for lesson portion.
+                 // Or, if payment.getPaidAmt() includes locker, and we need lesson portion only:
+                 // paidLessonAmount = payment.getPaidAmt() - (original_fixed_locker_fee_if_known);
+                 // For now, if payment.lessonAmount is null, we'll rely on lesson.getPrice() or payment.getPaidAmt() if no locker.
+                if (payment.getPaidAmt() > lesson.getPrice() && defaultLockerFee > 0) { // Assuming defaultLockerFee was the one used
+                    paidLessonAmount = payment.getPaidAmt() - defaultLockerFee;
+                    if (paidLessonAmount < 0) paidLessonAmount = 0; // Should not happen if paidAmt was correct
+        } else {
+                    paidLessonAmount = payment.getPaidAmt(); // Assume paidAmt was just for lesson
+                }
+            } else if (payment.getPaidAmt() != null) {
+                paidLessonAmount = payment.getPaidAmt();
+            } else {
+                paidLessonAmount = 0;
+            }
+        }
 
-        boolean lockerWasUsed = enroll.isUsesLocker() || enroll.isLockerAllocated();
 
         // 2. 사용일수 계산
         LocalDate lessonStartDate = lesson.getStartDate();
@@ -494,38 +549,28 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         }
 
         // 3. 강습료 관련 계산
-        BigDecimal originalLessonPriceDecimal = BigDecimal.valueOf(lesson.getPrice()); // 강습 정가
         BigDecimal paidLessonAmountDecimal = BigDecimal.valueOf(paidLessonAmount);     // 실제 결제된 강습료
 
         BigDecimal lessonUsageDeduction = LESSON_DAILY_RATE.multiply(BigDecimal.valueOf(effectiveDaysUsed));
-        BigDecimal lessonPenalty = originalLessonPriceDecimal.multiply(PENALTY_RATE); // 위약금은 정가 기준
+        // BigDecimal lessonPenalty = BigDecimal.ZERO; // 위약금 없음
 
-        BigDecimal lessonRefundable = paidLessonAmountDecimal.subtract(lessonUsageDeduction).subtract(lessonPenalty);
+        BigDecimal lessonRefundable = paidLessonAmountDecimal.subtract(lessonUsageDeduction);
         if (lessonRefundable.compareTo(BigDecimal.ZERO) < 0) {
             lessonRefundable = BigDecimal.ZERO;
         }
 
-        // 4. 사물함료 관련 계산 (사용한 경우)
-        BigDecimal lockerUsageDeduction = BigDecimal.ZERO;
-        BigDecimal lockerPenalty = BigDecimal.ZERO;
-        BigDecimal lockerRefundable = BigDecimal.ZERO;
+        // 4. 사물함료 관련 계산 - 환불 없음
+        // BigDecimal lockerUsageDeduction = BigDecimal.ZERO;
+        // BigDecimal lockerPenalty = BigDecimal.ZERO;
+        // BigDecimal lockerRefundable = BigDecimal.ZERO;
 
-        if (lockerWasUsed && paidLockerAmount > 0) {
-            BigDecimal paidLockerAmountDecimal = BigDecimal.valueOf(paidLockerAmount);
-            lockerUsageDeduction = LOCKER_DAILY_RATE.multiply(BigDecimal.valueOf(effectiveDaysUsed));
-            lockerPenalty = paidLockerAmountDecimal.multiply(PENALTY_RATE); // 사물함 위약금은 실제 결제된 사물함료 기준
 
-            lockerRefundable = paidLockerAmountDecimal.subtract(lockerUsageDeduction).subtract(lockerPenalty);
-            if (lockerRefundable.compareTo(BigDecimal.ZERO) < 0) {
-                lockerRefundable = BigDecimal.ZERO;
-            }
-        }
+        // 5. 최종 환불액 (강습료 환불액만 해당)
+        BigDecimal finalRefundAmountBigDecimal = lessonRefundable;
+        int totalPaidForLesson = paidLessonAmount; // Compare against what was paid for the lesson
 
-        // 5. 최종 환불액
-        BigDecimal finalRefundAmountBigDecimal = lessonRefundable.add(lockerRefundable);
-        int totalPaidAmount = payment.getPaidAmt() != null ? payment.getPaidAmt() : 0;
-        if (finalRefundAmountBigDecimal.compareTo(BigDecimal.valueOf(totalPaidAmount)) > 0) {
-            finalRefundAmountBigDecimal = BigDecimal.valueOf(totalPaidAmount);
+        if (finalRefundAmountBigDecimal.compareTo(BigDecimal.valueOf(totalPaidForLesson)) > 0) { //Should not exceed what was paid for the lesson
+            finalRefundAmountBigDecimal = BigDecimal.valueOf(totalPaidForLesson);
         }
         if (finalRefundAmountBigDecimal.compareTo(BigDecimal.ZERO) < 0) {
             finalRefundAmountBigDecimal = BigDecimal.ZERO;
@@ -533,15 +578,13 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         
         return CalculatedRefundDetailsDto.builder()
                 .systemCalculatedUsedDays((int) systemCalculatedDaysUsed)
-                .manualUsedDays(manualUsedDaysOverride) // 관리자 입력값을 그대로 전달 (DB 저장된 값과 다를 수 있음)
+                .manualUsedDays(manualUsedDaysOverride)
                 .effectiveUsedDays(effectiveDaysUsed)
-                .originalLessonPrice(originalLessonPriceDecimal)
+                .originalLessonPrice(BigDecimal.valueOf(lesson.getPrice())) // DTO에 원래 강습 정가는 유지
                 .paidLessonAmount(paidLessonAmountDecimal)
-                .paidLockerAmount(BigDecimal.valueOf(paidLockerAmount))
+                .paidLockerAmount(BigDecimal.valueOf(payment.getLockerAmount() != null ? payment.getLockerAmount() : 0)) // DTO에는 원래 사물함 결제액 표시
                 .lessonUsageDeduction(lessonUsageDeduction)
-                .lockerUsageDeduction(lockerUsageDeduction)
-                .lessonPenalty(lessonPenalty)
-                .lockerPenalty(lockerPenalty)
+    
                 .finalRefundAmount(finalRefundAmountBigDecimal)
                 .build();
     }
@@ -560,18 +603,10 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         Payment payment = paymentRepository.findByEnroll_EnrollId(enrollId)
             .orElseThrow(() -> new ResourceNotFoundException("Payment record not found for enrollment ID: " + enrollId, ErrorCode.PAYMENT_INFO_NOT_FOUND));
 
-        // 헬퍼 메서드를 사용하여 환불 상세 내역 계산 (계산 기준일: 오늘)
-        // manualUsedDaysFromRequest는 관리자가 이번 승인 시 최종적으로 입력한 값
         CalculatedRefundDetailsDto refundDetails = calculateRefundInternal(enroll, payment, manualUsedDaysFromRequest, LocalDate.now());
 
-        // Enroll 엔티티에 계산된 상세 정보 저장
         enroll.setDaysUsedForRefund(refundDetails.getEffectiveUsedDays());
-        enroll.setPenaltyAmountLesson(refundDetails.getLessonPenalty().intValue());
-        enroll.setPenaltyAmountLocker(refundDetails.getLockerPenalty().intValue());
-        enroll.setCalculatedRefundAmount(payment.getPaidAmt()); // 이 필드는 PG 요청 전 총 결제액으로 두거나, 다른 용도로 사용 고려.
-                                                               // 아니면 refundDetails.getFinalRefundAmount().intValue() 와 용도 구분 명확히.
-                                                               // 여기서는 최종 환불액을 refundAmount 필드에 저장하므로, calculated는 다른 의미 부여 가능.
-        enroll.setRefundAmount(refundDetails.getFinalRefundAmount().intValue()); // 최종 확정 환불액
+        enroll.setRefundAmount(refundDetails.getFinalRefundAmount().intValue()); // 최종 환불액 저장 (setFinalRefundAmount -> setRefundAmount)
 
         // PG사 환불 연동 로직 (기존과 유사하게 진행, refundDetails.getFinalRefundAmount() 사용)
         int finalRefundAmountForPg = refundDetails.getFinalRefundAmount().intValue();
@@ -712,26 +747,31 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                     .build();
         }
 
-        // Calculate renewal window: 18th-22nd of each month
+        // Calculate renewal window
         EnrollDto.RenewalWindow renewalWindow = null;
-        if (lesson != null && lesson.getEndDate() != null) {
-            // For a lesson ending in month X, renewal window is 18th-22nd of month X
-            LocalDate lessonEndDate = lesson.getEndDate();
-            int year = lessonEndDate.getYear();
-            int month = lessonEndDate.getMonthValue();
-            
-            LocalDate renewalStart = LocalDate.of(year, month, 18);
-            LocalDate renewalEnd = LocalDate.of(year, month, 22);
-            LocalDate now = LocalDate.now();
-            
-            boolean isRenewalOpen = !now.isBefore(renewalStart) && !now.isAfter(renewalEnd);
-            
-            renewalWindow = EnrollDto.RenewalWindow.builder()
-                    .isOpen(isRenewalOpen)
-                    .open(renewalStart.atStartOfDay().atOffset(ZoneOffset.UTC))
-                    .close(renewalEnd.atTime(23, 59, 59).atOffset(ZoneOffset.UTC))
-                    .build();
+        LocalDate today = LocalDate.now();
+
+        // Renewal is for lessons starting next month, window is 20th-25th of current month.
+        if (lesson != null && lesson.getStartDate() != null) {
+            LocalDate lessonStartDate = lesson.getStartDate();
+            YearMonth currentMonth = YearMonth.from(today);
+            YearMonth lessonStartMonth = YearMonth.from(lessonStartDate);
+
+            // Check if the lesson is for next month
+            if (lessonStartMonth.equals(currentMonth.plusMonths(1))) {
+                LocalDate renewalStart = LocalDate.of(today.getYear(), today.getMonth(), 20);
+                LocalDate renewalEnd = LocalDate.of(today.getYear(), today.getMonth(), 25);
+                
+                boolean isRenewalOpen = !today.isBefore(renewalStart) && !today.isAfter(renewalEnd);
+                
+                renewalWindow = EnrollDto.RenewalWindow.builder()
+                        .isOpen(isRenewalOpen)
+                        .open(renewalStart.atStartOfDay().atOffset(ZoneOffset.UTC))
+                        .close(renewalEnd.atTime(23, 59, 59).atOffset(ZoneOffset.UTC))
+                        .build();
+            }
         }
+        // If it's not a lesson for next month, renewalWindow remains null (or an empty/closed window can be set if preferred)
 
         // Calculate canAttemptPayment: UNPAID status and not expired
         // 마이페이지에서는 직접 결제 불가 - 재수강 버튼을 통해서만 결제 페이지 이동
@@ -767,6 +807,19 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         Lesson lesson = lessonRepository.findByIdWithLock(renewalRequestDto.getLessonId())
             .orElseThrow(() -> new ResourceNotFoundException("재수강 대상 강좌를 찾을 수 없습니다 (ID: " + renewalRequestDto.getLessonId() + ")", ErrorCode.LESSON_NOT_FOUND));
         
+        // Check registration window for renewal: 20th-25th of current month for next month's lesson
+        LocalDate today = LocalDate.now();
+        YearMonth currentMonth = YearMonth.from(today);
+        YearMonth lessonStartMonth = YearMonth.from(lesson.getStartDate());
+
+        boolean isLessonForNextMonth = lessonStartMonth.equals(currentMonth.plusMonths(1));
+        boolean isRenewalWindowActive = today.getDayOfMonth() >= 20 && today.getDayOfMonth() <= 25;
+
+        if (!isLessonForNextMonth || !isRenewalWindowActive) {
+            throw new BusinessRuleException(ErrorCode.RENEWAL_PERIOD_INVALID, 
+                "재수강 신청 기간이 아닙니다. (다음 달 강습: 현월 20~25일)");
+        }
+
         if (lesson.getStatus() != Lesson.LessonStatus.OPEN) {
             throw new BusinessRuleException(ErrorCode.LESSON_NOT_OPEN_FOR_ENROLLMENT, "재수강 가능한 강습이 아닙니다. 현재 상태: " + lesson.getStatus());
         }

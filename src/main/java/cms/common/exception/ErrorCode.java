@@ -49,6 +49,8 @@ public enum ErrorCode {
     LESSON_FULL("E019", "현재 해당 강습의 결제 페이지 접근 슬롯이 가득 찼습니다."),
     LOCKER_GENDER_REQUIRED("E020", "사물함 사용 시 사용자의 성별 정보가 필요합니다."),
     DUPLICATE_ENROLLMENT("E021", "이미 해당 강습에 대한 유효한 신청 내역이 존재합니다."),
+    REGISTRATION_PERIOD_INVALID("E022", "등록 기간이 아닙니다."),
+    RENEWAL_PERIOD_INVALID("E023", "재수강 신청 기간이 아닙니다."),
 
     // --- 결제 (Payment) 관련 오류 코드 (P001 ~ P099) ---
     PAYMENT_INFO_NOT_FOUND("P001", "결제 정보를 찾을 수 없습니다."),

@@ -24,6 +24,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
+import java.time.YearMonth;
 
 @Service
 @RequiredArgsConstructor
@@ -73,15 +74,19 @@ public class LessonAdminServiceImpl implements LessonAdminService {
         if (lessonDto.getStartDate() == null || lessonDto.getEndDate() == null) {
             throw new InvalidInputException("Start date and end date are required.", ErrorCode.INVALID_INPUT_VALUE);
         }
-        if (lessonDto.getRegistrationEndDate() == null) {
-            throw new InvalidInputException("Registration end date is required.", ErrorCode.INVALID_INPUT_VALUE);
-        }
         if (lessonDto.getStartDate().isAfter(lessonDto.getEndDate())) {
             throw new InvalidInputException("Start date cannot be after end date.", ErrorCode.INVALID_INPUT_VALUE);
         }
+
+        LocalDate lessonStartDate = lessonDto.getStartDate();
+        LocalDate calculatedRegEndDate = calculateRegistrationEndDate(lessonStartDate);
+        lessonDto.setRegistrationEndDate(calculatedRegEndDate); // Set calculated date
+
         if (lessonDto.getRegistrationEndDate().isAfter(lessonDto.getStartDate())) {
-            throw new InvalidInputException("Registration end date cannot be after start date.", ErrorCode.INVALID_INPUT_VALUE);
+            // This should ideally not happen if calculateRegistrationEndDate is correct
+            throw new InvalidInputException("Calculated registration end date cannot be after start date. Logic error.", ErrorCode.INTERNAL_SERVER_ERROR);
         }
+
         Lesson lesson = convertToEntity(lessonDto);
         // createdBy, createdIp 등은 AuditorAware 등으로 자동 설정되거나, SecurityContext에서 가져와 설정
         Lesson savedLesson = lessonRepository.save(lesson);
@@ -93,7 +98,6 @@ public class LessonAdminServiceImpl implements LessonAdminService {
         Lesson existingLesson = lessonRepository.findById(lessonId)
                 .orElseThrow(() -> new ResourceNotFoundException("Lesson not found with id: " + lessonId, ErrorCode.LESSON_NOT_FOUND));
 
-        // Determine effective values for update
         String title = lessonDto.getTitle() != null ? lessonDto.getTitle() : existingLesson.getTitle();
         LocalDate startDate = lessonDto.getStartDate() != null ? lessonDto.getStartDate() : existingLesson.getStartDate();
         LocalDate endDate = lessonDto.getEndDate() != null ? lessonDto.getEndDate() : existingLesson.getEndDate();
@@ -102,7 +106,7 @@ public class LessonAdminServiceImpl implements LessonAdminService {
         String instructorName = lessonDto.getInstructorName() != null ? lessonDto.getInstructorName() : existingLesson.getInstructorName();
         String lessonTime = lessonDto.getLessonTime() != null ? lessonDto.getLessonTime() : existingLesson.getLessonTime();
 
-        Lesson.LessonStatus newStatus = existingLesson.getStatus(); // Default to existing status
+        Lesson.LessonStatus newStatus = existingLesson.getStatus();
         if (lessonDto.getStatus() != null && !lessonDto.getStatus().trim().isEmpty()) {
             try {
                 newStatus = Lesson.LessonStatus.valueOf(lessonDto.getStatus().toUpperCase());
@@ -111,35 +115,23 @@ public class LessonAdminServiceImpl implements LessonAdminService {
             }
         }
 
-        LocalDate registrationEndDate;
-        if (lessonDto.getRegistrationEndDate() != null) {
-            registrationEndDate = lessonDto.getRegistrationEndDate();
-        } else {
-            // If DTO doesn't provide it, it means "don't change it" or client assumes server has it.
-            // We take the existing one. If existing is null (bad data), subsequent validation will catch it.
-            registrationEndDate = existingLesson.getRegistrationEndDate();
-        }
+        // Always recalculate registrationEndDate based on the (potentially updated) startDate
+        LocalDate registrationEndDate = calculateRegistrationEndDate(startDate);
 
-        // Validations for resolved values
-        if (startDate == null) { // Should ideally not happen if existingLesson is valid and DTO doesn't nullify it
-             throw new InvalidInputException("Start date is required.", ErrorCode.INVALID_INPUT_VALUE);
+        if (startDate == null || endDate == null) { // Should be caught by DTO validation or defaults
+             throw new InvalidInputException("Start date and end date are required.", ErrorCode.INVALID_INPUT_VALUE);
         }
-        if (endDate == null) { // Should ideally not happen
-             throw new InvalidInputException("End date is required.", ErrorCode.INVALID_INPUT_VALUE);
-        }
-        if (registrationEndDate == null) {
+        if (registrationEndDate == null) { // Should not happen with calculation
             throw new InvalidInputException("Registration end date is required and cannot be null.", ErrorCode.INVALID_INPUT_VALUE);
         }
-
         if (startDate.isAfter(endDate)) {
             throw new InvalidInputException("Start date cannot be after end date.", ErrorCode.INVALID_INPUT_VALUE);
         }
         if (registrationEndDate.isAfter(startDate)) {
-            throw new InvalidInputException("Registration end date cannot be after start date.", ErrorCode.INVALID_INPUT_VALUE);
+            // This should ideally not happen if calculateRegistrationEndDate is correct
+            throw new InvalidInputException("Calculated registration end date cannot be after start date. Logic error.", ErrorCode.INTERNAL_SERVER_ERROR);
         }
-        // Other fields like title, capacity, price usually have @NotNull or similar on DTO or default values.
 
-        // Use the entity's updateDetails method with validated and resolved values
         existingLesson.updateDetails(
                 title,
                 startDate,
@@ -147,14 +139,10 @@ public class LessonAdminServiceImpl implements LessonAdminService {
                 capacity,
                 price,
                 newStatus,
-                registrationEndDate, // This is now guaranteed non-null and validated
+                registrationEndDate, // Use the calculated date
                 instructorName,
                 lessonTime
         );
-
-        // The check 'existingLesson.getStartDate().isAfter(existingLesson.getEndDate())'
-        // that was here previously is now covered by the validation above using resolved 'startDate' and 'endDate'.
-
         Lesson updatedLesson = lessonRepository.save(existingLesson);
         return convertToDto(updatedLesson);
     }
@@ -221,31 +209,65 @@ public class LessonAdminServiceImpl implements LessonAdminService {
         long durationDays = ChronoUnit.DAYS.between(originalLesson.getStartDate(), originalLesson.getEndDate());
         LocalDate newEndDate = newStartDate.plusDays(durationDays);
         
-        // registrationEndDate도 원본의 시작일-종료일 간격과 유사하게 설정하거나, 특정 규칙(예: 새 시작일 며칠 전)으로 설정
-        LocalDate newRegistrationEndDate;
-        if (originalLesson.getRegistrationEndDate() != null && originalLesson.getStartDate() != null) {
-            long registrationDurationDays = ChronoUnit.DAYS.between(originalLesson.getRegistrationEndDate(), originalLesson.getStartDate());
-            newRegistrationEndDate = newStartDate.minusDays(registrationDurationDays);
-        } else {
-            newRegistrationEndDate = newStartDate.minusDays(1); // Default: 하루 전
-        }
-
+        LocalDate newRegistrationEndDate = calculateRegistrationEndDate(newStartDate);
 
         Lesson clonedLesson = Lesson.builder()
-                .title(originalLesson.getTitle() + " (복제)") // 기본적으로 복제본임을 명시
+                .title(originalLesson.getTitle() + " (복제)")
                 .startDate(newStartDate)
                 .endDate(newEndDate)
-                .registrationEndDate(newRegistrationEndDate)
+                .registrationEndDate(newRegistrationEndDate) // Use calculated date
                 .capacity(originalLesson.getCapacity())
                 .price(originalLesson.getPrice())
                 .instructorName(originalLesson.getInstructorName())
                 .lessonTime(originalLesson.getLessonTime())
-                .status(Lesson.LessonStatus.OPEN) // 복제된 강습은 기본적으로 OPEN 상태로 시작
-                // createdBy, createdIp 등은 AuditorAware 등으로 자동 설정
+                .status(Lesson.LessonStatus.OPEN)
                 .build();
 
         Lesson savedClonedLesson = lessonRepository.save(clonedLesson);
         return convertToDto(savedClonedLesson);
+    }
+
+    private LocalDate calculateRegistrationEndDate(LocalDate lessonStartDate) {
+        if (lessonStartDate == null) {
+            throw new InvalidInputException("Lesson start date is required to calculate registration end date.", ErrorCode.INVALID_INPUT_VALUE);
+        }
+        YearMonth lessonStartYearMonth = YearMonth.from(lessonStartDate);
+        // For any lesson, new registrations (not renewals) close at the end of the month *before* the lesson starts,
+        // OR, if the lesson is in the current month, at the end of the current month.
+        // The user-facing service (EnrollmentServiceImpl) will handle specific windows (20-25 for renewal, 26-EOM for new for *next* month).
+        // Lesson.registrationEndDate should be the absolute final day for any type of new registration.
+
+        // If lesson starts this month, registration is open until end of this month.
+        // If lesson starts next month (or later), registration is open until end of *this* current month.
+        // This logic reflects the NEW registration part of the policy for users.
+        // Renewal period (20-25 of current month for next month lesson) is handled in EnrollmentService.
+
+        // Simplified: the latest a *new* enrollment for a lesson can occur.
+        // For a lesson starting in month M:
+        // - If M is current month: EOM of M.
+        // - If M is a future month: EOM of M-1.
+        // This 'registrationEndDate' is the gate for lesson.status=OPEN from an admin perspective.
+        
+        LocalDate today = LocalDate.now(); // Consider the date of admin operation for context
+        YearMonth currentAdminOpMonth = YearMonth.from(today);
+
+        if (lessonStartYearMonth.equals(currentAdminOpMonth)) {
+            // Lesson starts in the same month as the admin is operating.
+            // New registrations for this lesson should be allowed until EOM of this month.
+            return lessonStartYearMonth.atEndOfMonth();
+        } else if (lessonStartYearMonth.isAfter(currentAdminOpMonth)) {
+            // Lesson starts in a future month.
+            // New registrations for this future lesson are allowed until EOM of the month *before* the lesson starts.
+            return lessonStartYearMonth.minusMonths(1).atEndOfMonth();
+        } else {
+            // Lesson starts in a past month (should not typically happen for new/cloned lessons being set to OPEN)
+            // Default to a date that's clearly in the past or handle as error.
+            // For safety, let's make it the day before the lesson start, or just the lesson start date.
+            // Given it's for admin, and they might be fixing old data, let's be slightly lenient.
+            // But the primary rule is: registrationEndDate shouldn't be after startDate.
+            // If a lesson from past is being made OPEN, its reg end date should also be in past.
+            return lessonStartDate.minusDays(1); // Or handle error: "Cannot set open registration for past lesson"
+        }
     }
 
     // Helper to convert DTO to Entity for creation/update

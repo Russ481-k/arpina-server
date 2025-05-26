@@ -114,15 +114,6 @@ public class Enroll {
     @Column(name = "days_used_for_refund")
     private Integer daysUsedForRefund;
 
-    @Column(name = "calculated_refund_amount")
-    private Integer calculatedRefundAmount;
-
-    @Column(name = "penalty_amount_lesson")
-    private Integer penaltyAmountLesson;
-
-    @Column(name = "penalty_amount_locker")
-    private Integer penaltyAmountLocker;
-
     @Column(name = "CREATED_AT", nullable = false, updatable = false)
     @ColumnDefault("CURRENT_TIMESTAMP")
     private LocalDateTime createdAt;
