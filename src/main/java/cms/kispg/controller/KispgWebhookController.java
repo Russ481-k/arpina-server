@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 import javax.servlet.http.HttpServletRequest;
 
 @RestController
-@RequestMapping("/api/v1/kispg")
+@RequestMapping("/kispg")
 @RequiredArgsConstructor
 public class KispgWebhookController {
 
