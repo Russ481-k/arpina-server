@@ -33,6 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
+import java.util.List;
 
 import cms.admin.enrollment.dto.CalculatedRefundDetailsDto;
 
@@ -149,9 +150,7 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
     @Override
     @Transactional(readOnly = true)
     public Page<EnrollAdminResponseDto> getAllEnrollments(Integer year, Integer month, Long lessonId, String userId, String payStatus, Pageable pageable) {
-        // getAllEnrollments는 UNPAID도 포함하여 조회하는 것이 일반적이므로 Specification은 그대로 둡니다.
-        // DTO 변환 시 Null 처리를 강화합니다.
-        Specification<Enroll> spec = EnrollSpecification.filterByAdminCriteria(lessonId, userId, payStatus, null, year, month, false); // excludeUnpaid = false
+        Specification<Enroll> spec = EnrollSpecification.filterByAdminCriteria(lessonId, userId, payStatus, null, year, month, false);
         Page<Enroll> enrollPage = enrollRepository.findAll(spec, pageable);
         return enrollPage.map(this::convertToEnrollAdminResponseDto);
     }
@@ -166,9 +165,10 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
 
     @Override
     @Transactional(readOnly = true)
-    public Page<CancelRequestAdminDto> getCancelRequests(String status, Pageable pageable) {
-        // 취소 요청 목록에서는 UNPAID 건을 제외합니다.
-        Specification<Enroll> spec = EnrollSpecification.filterByAdminCriteria(null, null, null, status, null, null, true); // excludeUnpaid = true
+    public Page<CancelRequestAdminDto> getCancelRequests(Long lessonId, List<cms.enroll.domain.Enroll.CancelStatusType> cancelStatuses, List<String> targetPayStatuses, boolean useCombinedLogic, Pageable pageable) {
+        // For cancel/refund management, we generally do NOT want to exclude unpaid items if they are otherwise relevant (e.g., CANCELED status).
+        // So, setting excludeUnpaid to false here.
+        Specification<Enroll> spec = EnrollSpecification.filterForCancelAndRefundManagement(lessonId, cancelStatuses, targetPayStatuses, useCombinedLogic, false);
         Page<Enroll> enrollPage = enrollRepository.findAll(spec, pageable);
         return enrollPage.map(this::convertToCancelRequestAdminDto);
     }
@@ -188,10 +188,18 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
         Enroll updatedEnroll = enrollRepository.findById(enrollId)
             .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found after approval: " + enrollId, ErrorCode.ENROLLMENT_NOT_FOUND));
         
-        if (adminComment != null && !adminComment.isEmpty()) {
+        if (adminComment != null && !adminComment.trim().isEmpty()) {
             String currentReason = updatedEnroll.getCancelReason() == null ? "" : updatedEnroll.getCancelReason();
-            updatedEnroll.setCancelReason(currentReason + " [Admin: " + adminComment + "]"); 
-            enrollRepository.save(updatedEnroll);
+            String newReasonSegment = " [Admin: " + adminComment.trim() + "]";
+            String combinedReason;
+
+            if (currentReason.isEmpty()) {
+                combinedReason = newReasonSegment.trim();
+            } else {
+                combinedReason = currentReason + newReasonSegment;
+            }
+            updatedEnroll.setCancelReason(combinedReason); 
+            enrollRepository.save(updatedEnroll); // Save again to update cancelReason
         }
         return convertToEnrollAdminResponseDto(updatedEnroll);
     }
@@ -215,9 +223,11 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
         boolean lockerWasAllocated = enroll.isLockerAllocated();
 
         enroll.setStatus("CANCELED_BY_ADMIN");
-        enroll.setPayStatus("REFUND_PENDING_ADMIN_CANCEL"); // UNPAID 였던 건도 이 상태로 변경될 수 있음
+        enroll.setPayStatus("REFUND_PENDING_ADMIN_CANCEL");
         enroll.setCancelStatus(Enroll.CancelStatusType.APPROVED);
-        enroll.setCancelReason("관리자 직접 취소: " + adminComment);
+        
+        String fullCancelReason = "관리자 직접 취소: " + (adminComment == null ? "" : adminComment);
+        enroll.setCancelReason(fullCancelReason);
         enroll.setCancelApprovedAt(LocalDateTime.now());
 
         if (lockerWasAllocated) {

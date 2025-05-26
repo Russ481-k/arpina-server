@@ -77,13 +77,13 @@
 
   ## 3. **화면 정의**
 
-  | ID       | 화면                | 주요 UI 요소                                                                                                            | 전송 API                                                                                                                                       |
-  | -------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-  | **P-01** | 강습 목록           | ① 필터 모달(상태, 월, 시간대)② 강습 카드 Grid - 버튼색: `신청(Y)/잔여없음(gray)`                                        | GET /api/v1/swimming/lessons                                                                                                                   |
-  | **P-02** | **결제 페이지**     | ① 신청 요약 ② **5분 카운트다운 타이머** ③ 사물함 선택 ④ KISPG 결제 UI 연동                                              | GET /api/v1/payment/details/{enrollId}, GET /api/v1/payment/kispg-init-params/{enrollId}, POST /api/v1/payment/confirm/{enrollId} (KISPG 연동) |
-  | **P-03** | 마이페이지-신청내역 | ① 리스트(상태 Badge: `PAID`, `CANCELED`, `PAYMENT_TIMEOUT`, `UNPAID` (결제 계속 가능 시)) ② 취소/환불 버튼 (KISPG 연동) | GET /api/v1/swimming/my-enrolls (또는 Mypage API `/enroll`)                                                                                    |
-  | **P-04** | ~~결제처리~~        | (P-02 KISPG 결제 페이지에 통합됨)                                                                                       | ~~POST /api/v1/swimming/pay~~ (제거됨)                                                                                                         |
-  | **P-05** | 재등록 모달         | 이전 수강 강습 제안 + 사물함 유지 여부                                                                                  | POST /api/v1/mypage/renewal (성공 시 KISPG 결제 페이지로 이동)                                                                                 |
+  | ID       | 화면                | 주요 UI 요소                                                                                         | 전송 API                                                                                                                                       |
+  | -------- | ------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+  | **P-01** | 강습 목록           | ① 필터 모달(상태, 월, 시간대)② 강습 카드 Grid - 버튼색: `신청(Y)/잔여없음(gray)`                     | GET /api/v1/swimming/lessons                                                                                                                   |
+  | **P-02** | **결제 페이지**     | ① 신청 요약 ② **5분 카운트다운 타이머** ③ 사물함 선택 ④ KISPG 결제 UI 연동                           | GET /api/v1/payment/details/{enrollId}, GET /api/v1/payment/kispg-init-params/{enrollId}, POST /api/v1/payment/confirm/{enrollId} (KISPG 연동) |
+  | **P-03** | 마이페이지-신청내역 | ① 리스트(상태 Badge: `PAID`, `CANCELED`, `UNPAID` (결제 계속 가능 시)) ② 취소/환불 버튼 (KISPG 연동) | GET /api/v1/swimming/my-enrolls (또는 Mypage API `/enroll`)                                                                                    |
+  | **P-04** | ~~결제처리~~        | (P-02 KISPG 결제 페이지에 통합됨)                                                                    | ~~POST /api/v1/swimming/pay~~ (제거됨)                                                                                                         |
+  | **P-05** | 재등록 모달         | 이전 수강 강습 제안 + 사물함 유지 여부                                                               | POST /api/v1/mypage/renewal (성공 시 KISPG 결제 페이지로 이동)                                                                                 |
 
   > 모바일: P-01, P-03는 Masonry Grid → 1 열, P-02(결제 페이지)는 풀스크린 모달 또는 전용 페이지.
 
@@ -216,7 +216,6 @@ _성별 잔여 사물함 수는 `locker_inventory` 테이블의 해당 성별 `t
 
     - 정원 초과 시 결제 페이지 접근 불가 응답.
 
-
     - **결제 페이지 접근 슬롯 부족 시 `409 LEC001 PAYMENT_PAGE_SLOT_UNAVAILABLE` 응답.**
 
 2.  **KISPG 결제 실패 (결제 페이지)** → `payment.status=FAIL`, `enroll` 그대로 UNPAID (5분 내 재시도 가능).
@@ -324,7 +323,7 @@ CREATE TABLE enroll (
     pay_status VARCHAR(20) NOT NULL DEFAULT 'UNPAID' COMMENT '결제 상태(UNPAID, PAID, CANCELED_UNPAID, PAYMENT_TIMEOUT)',
     expire_dt DATETIME NOT NULL COMMENT '결제 페이지 접근 및 결제 시도 만료 시간 (신청 시점 + 5분)',
     renewal_flag TINYINT(1) NOT NULL DEFAULT 0 COMMENT '재등록 여부(1: 재등록, 0: 신규)',
-    cancel_reason VARCHAR(100) COMMENT '취소 사유',
+  cancel_reason VARCHAR(255) COMMENT '취소 사유',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '신청일시',
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '수정일시',
     created_by VARCHAR(50) COMMENT '등록자',

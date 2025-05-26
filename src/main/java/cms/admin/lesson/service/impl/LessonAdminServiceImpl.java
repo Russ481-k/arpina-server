@@ -73,8 +73,14 @@ public class LessonAdminServiceImpl implements LessonAdminService {
         if (lessonDto.getStartDate() == null || lessonDto.getEndDate() == null) {
             throw new InvalidInputException("Start date and end date are required.", ErrorCode.INVALID_INPUT_VALUE);
         }
+        if (lessonDto.getRegistrationEndDate() == null) {
+            throw new InvalidInputException("Registration end date is required.", ErrorCode.INVALID_INPUT_VALUE);
+        }
         if (lessonDto.getStartDate().isAfter(lessonDto.getEndDate())) {
             throw new InvalidInputException("Start date cannot be after end date.", ErrorCode.INVALID_INPUT_VALUE);
+        }
+        if (lessonDto.getRegistrationEndDate().isAfter(lessonDto.getStartDate())) {
+            throw new InvalidInputException("Registration end date cannot be after start date.", ErrorCode.INVALID_INPUT_VALUE);
         }
         Lesson lesson = convertToEntity(lessonDto);
         // createdBy, createdIp 등은 AuditorAware 등으로 자동 설정되거나, SecurityContext에서 가져와 설정
@@ -87,9 +93,17 @@ public class LessonAdminServiceImpl implements LessonAdminService {
         Lesson existingLesson = lessonRepository.findById(lessonId)
                 .orElseThrow(() -> new ResourceNotFoundException("Lesson not found with id: " + lessonId, ErrorCode.LESSON_NOT_FOUND));
 
-        // Parse status from DTO
-        Lesson.LessonStatus newStatus = existingLesson.getStatus(); // Keep existing if not provided or invalid
-        if (lessonDto.getStatus() != null) {
+        // Determine effective values for update
+        String title = lessonDto.getTitle() != null ? lessonDto.getTitle() : existingLesson.getTitle();
+        LocalDate startDate = lessonDto.getStartDate() != null ? lessonDto.getStartDate() : existingLesson.getStartDate();
+        LocalDate endDate = lessonDto.getEndDate() != null ? lessonDto.getEndDate() : existingLesson.getEndDate();
+        Integer capacity = lessonDto.getCapacity() != null ? lessonDto.getCapacity() : existingLesson.getCapacity();
+        Integer price = lessonDto.getPrice() != null ? lessonDto.getPrice() : existingLesson.getPrice();
+        String instructorName = lessonDto.getInstructorName() != null ? lessonDto.getInstructorName() : existingLesson.getInstructorName();
+        String lessonTime = lessonDto.getLessonTime() != null ? lessonDto.getLessonTime() : existingLesson.getLessonTime();
+
+        Lesson.LessonStatus newStatus = existingLesson.getStatus(); // Default to existing status
+        if (lessonDto.getStatus() != null && !lessonDto.getStatus().trim().isEmpty()) {
             try {
                 newStatus = Lesson.LessonStatus.valueOf(lessonDto.getStatus().toUpperCase());
             } catch (IllegalArgumentException e) {
@@ -97,24 +111,50 @@ public class LessonAdminServiceImpl implements LessonAdminService {
             }
         }
 
-        // Use the entity's updateDetails method
-        existingLesson.updateDetails(
-                lessonDto.getTitle() != null ? lessonDto.getTitle() : existingLesson.getTitle(),
-                lessonDto.getStartDate() != null ? lessonDto.getStartDate() : existingLesson.getStartDate(),
-                lessonDto.getEndDate() != null ? lessonDto.getEndDate() : existingLesson.getEndDate(),
-                lessonDto.getCapacity() != null ? lessonDto.getCapacity() : existingLesson.getCapacity(),
-                lessonDto.getPrice() != null ? lessonDto.getPrice() : existingLesson.getPrice(),
-                newStatus, // Use parsed status
-                lessonDto.getRegistrationEndDate() != null ? lessonDto.getRegistrationEndDate() : existingLesson.getRegistrationEndDate(),
-                lessonDto.getInstructorName() != null ? lessonDto.getInstructorName() : existingLesson.getInstructorName(),
-                lessonDto.getLessonTime() != null ? lessonDto.getLessonTime() : existingLesson.getLessonTime()
-        );
-
-        if (existingLesson.getStartDate().isAfter(existingLesson.getEndDate())) {
-            throw new InvalidInputException("Start date cannot be after end date.", ErrorCode.INVALID_INPUT_VALUE);
+        LocalDate registrationEndDate;
+        if (lessonDto.getRegistrationEndDate() != null) {
+            registrationEndDate = lessonDto.getRegistrationEndDate();
+        } else {
+            // If DTO doesn't provide it, it means "don't change it" or client assumes server has it.
+            // We take the existing one. If existing is null (bad data), subsequent validation will catch it.
+            registrationEndDate = existingLesson.getRegistrationEndDate();
         }
 
-        // updatedBy, updatedIp 등은 AuditorAware 등으로 자동 설정되거나, SecurityContext에서 가져와 설정
+        // Validations for resolved values
+        if (startDate == null) { // Should ideally not happen if existingLesson is valid and DTO doesn't nullify it
+             throw new InvalidInputException("Start date is required.", ErrorCode.INVALID_INPUT_VALUE);
+        }
+        if (endDate == null) { // Should ideally not happen
+             throw new InvalidInputException("End date is required.", ErrorCode.INVALID_INPUT_VALUE);
+        }
+        if (registrationEndDate == null) {
+            throw new InvalidInputException("Registration end date is required and cannot be null.", ErrorCode.INVALID_INPUT_VALUE);
+        }
+
+        if (startDate.isAfter(endDate)) {
+            throw new InvalidInputException("Start date cannot be after end date.", ErrorCode.INVALID_INPUT_VALUE);
+        }
+        if (registrationEndDate.isAfter(startDate)) {
+            throw new InvalidInputException("Registration end date cannot be after start date.", ErrorCode.INVALID_INPUT_VALUE);
+        }
+        // Other fields like title, capacity, price usually have @NotNull or similar on DTO or default values.
+
+        // Use the entity's updateDetails method with validated and resolved values
+        existingLesson.updateDetails(
+                title,
+                startDate,
+                endDate,
+                capacity,
+                price,
+                newStatus,
+                registrationEndDate, // This is now guaranteed non-null and validated
+                instructorName,
+                lessonTime
+        );
+
+        // The check 'existingLesson.getStartDate().isAfter(existingLesson.getEndDate())'
+        // that was here previously is now covered by the validation above using resolved 'startDate' and 'endDate'.
+
         Lesson updatedLesson = lessonRepository.save(existingLesson);
         return convertToDto(updatedLesson);
     }

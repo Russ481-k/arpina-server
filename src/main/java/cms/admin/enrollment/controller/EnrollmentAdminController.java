@@ -18,6 +18,9 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.validation.Valid;
 import java.util.Map;
+import java.util.List;
+import java.util.Collections;
+import cms.enroll.domain.Enroll;
 
 import cms.admin.enrollment.dto.AdminCancelRequestDto;
 import cms.admin.enrollment.dto.DiscountStatusUpdateRequestDto;
@@ -58,13 +61,38 @@ public class EnrollmentAdminController {
         return ResponseEntity.ok(ApiResponseSchema.success(enrollDto, "신청 상세 조회 성공"));
     }
 
-    @Operation(summary = "취소 요청 목록 조회", description = "취소 요청 상태(예: REQ)의 목록을 조회합니다.")
+    @Operation(summary = "취소/환불 관리 목록 조회", description = "취소 요청(REQ), 취소 처리 중(PENDING) 상태의 신청 또는 특정 환불 관련 payStatus(예: REFUND_PENDING_ADMIN_CANCEL)를 가진 신청 목록을 조회합니다.")
     @GetMapping("/cancel-requests")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SYSTEM_ADMIN')")
     public ResponseEntity<ApiResponseSchema<Page<CancelRequestAdminDto>>> getCancelRequests(
-            @Parameter(description = "취소 요청 상태 (기본: REQ)") @RequestParam(defaultValue = "REQ") String status,
-            @PageableDefault(size = 10, sort = "updatedAt", direction = Sort.Direction.DESC) Pageable pageable) {
-        Page<CancelRequestAdminDto> cancelRequests = enrollmentAdminService.getCancelRequests(status, pageable);
-        return ResponseEntity.ok(ApiResponseSchema.success(cancelRequests, "취소 요청 목록 조회 성공"));
+            @Parameter(description = "필터링할 강습 ID (선택 사항)") @RequestParam(required = false) Long lessonId,
+            @RequestParam(name = "status", required = false) List<Enroll.CancelStatusType> queryCancelStatuses,
+            @RequestParam(name = "payStatus", required = false) List<String> queryPayStatuses,
+            @PageableDefault(page = 0, size = 20) Pageable pageable) {
+
+        List<Enroll.CancelStatusType> effectiveCancelStatuses = queryCancelStatuses;
+        List<String> effectivePayStatuses = queryPayStatuses;
+        boolean useCombinedLogic;
+
+        boolean noCancelStatusFilter = (effectiveCancelStatuses == null || effectiveCancelStatuses.isEmpty());
+        boolean noPayStatusFilter = (effectivePayStatuses == null || effectivePayStatuses.isEmpty());
+
+        if (lessonId == null && noCancelStatusFilter && noPayStatusFilter) {
+            useCombinedLogic = true;
+            effectiveCancelStatuses = Collections.emptyList();
+            effectivePayStatuses = Collections.emptyList();
+        } else {
+            useCombinedLogic = false;
+            if (noCancelStatusFilter) {
+                effectiveCancelStatuses = Collections.emptyList();
+            }
+            if (noPayStatusFilter) {
+                effectivePayStatuses = Collections.emptyList();
+            }
+        }
+        
+        Page<CancelRequestAdminDto> page = enrollmentAdminService.getCancelRequests(lessonId, effectiveCancelStatuses, effectivePayStatuses, useCombinedLogic, pageable);
+        return ResponseEntity.ok(ApiResponseSchema.success(page, "취소 요청 목록 조회 성공"));
     }
 
     @Operation(summary = "관리자 직접 취소 처리", description = "관리자가 특정 신청 건을 직접 취소 처리합니다.")

@@ -33,7 +33,7 @@ public class LessonAdminController {
     @GetMapping
     @PreAuthorize("hasAnyRole('SYSTEM_ADMIN', 'ADMIN')")
     public ResponseEntity<ApiResponseSchema<Page<LessonDto>>> getAllLessons(
-            @PageableDefault(size = 10, sort = "startDate", direction = Sort.Direction.DESC) Pageable pageable) {
+            @PageableDefault(size = 50, sort = "startDate", direction = Sort.Direction.DESC) Pageable pageable) {
         Page<LessonDto> lessons = lessonAdminService.getAllLessonsAdmin(pageable);
         return ResponseEntity.ok(ApiResponseSchema.success(lessons, "강습 목록 조회 성공"));
     }

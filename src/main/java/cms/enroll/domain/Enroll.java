@@ -53,7 +53,7 @@ public class Enroll {
     @Column(name = "status", nullable = false, length = 20)
     private String status;
 
-    @Column(name = "pay_status", nullable = false, length = 20)
+    @Column(name = "pay_status", nullable = false, length = 50)
     @ColumnDefault("'UNPAID'")
     private String payStatus;
 

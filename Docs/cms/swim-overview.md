@@ -18,7 +18,7 @@
   | ---------------- | ---------------------------------------------------------------------------------------------------- |
   | **USER**         | 일반 회원(성인)                                                                                      |
   | **JUNIOR_USER**  | 미성년자(온라인 신청 차단)                                                                           |
-  | **ENROLL**       | 강습 신청 레코드 (`APPLIED`/`CANCELED`, 내부 `payStatus`: `UNPAID`, `PAID`, `PAYMENT_TIMEOUT`)       |
+  | **ENROLL**       | 강습 신청 레코드 (`APPLIED`/`CANCELED`, 내부 `payStatus`: `UNPAID`, `PAID`)                          |
   | **LOCKER**       | (개념 변경) `locker_inventory`를 통해 성별 총량 및 사용량으로 관리. 사용자는 신청 시 사용 여부 선택. |
   | **RENEWAL**      | 기존 수강생 재등록 프로세스                                                                          |
   | **PAYMENT_PAGE** | **결제 전용 페이지 (5분 제한)**                                                                      |

@@ -17,7 +17,7 @@ import java.util.List;
 
 @Tag(name = "CMS - Locker Inventory Management", description = "사물함 재고 관리 API (관리자용)")
 @RestController
-@RequestMapping("/api/v1/cms/lockers/inventory")
+@RequestMapping("/cms/lockers/inventory")
 @RequiredArgsConstructor
 @PreAuthorize("hasAnyRole('ADMIN', 'SYSTEM_ADMIN')")
 public class LockerAdminController {

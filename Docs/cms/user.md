@@ -300,7 +300,7 @@ FOREIGN KEY (`enroll_id`) REFERENCES `enroll` (`enroll_id`)
 
 | 컴포넌트 (Next.js/React)              | 구현 포인트                                                                                                                                                                                                        |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **EnrollCard (`EnrollCard.jsx`)**     | 상태 Badge (`UNPAID` [만료 전이면 `<Link href={paymentPageUrl}>` 또는 `router.push(paymentPageUrl)`로 "결제 페이지로" 버튼 - 남은 시간 표시], `PAID`, `PAYMENT_TIMEOUT`, `CANCELED_*`) + `Cancel` 버튼 (API 호출)  |
+| **EnrollCard (`EnrollCard.jsx`)**     | 상태 Badge (`UNPAID` [만료 전이면 `<Link href={paymentPageUrl}>` 또는 `router.push(paymentPageUrl)`로 "결제 페이지로" 버튼 - 남은 시간 표시], `PAID`, `CANCELED_*`) + `Cancel` 버튼 (API 호출)                     |
 | **~~Countdown~~**                     | (제거됨 - 결제 페이지에서 처리) `enroll.paymentExpireDt`는 마이페이지 카드에 표시될 수 있음.                                                                                                                       |
 | **~~Checkout Modal~~**                | (제거됨 - 결제 페이지로 대체)                                                                                                                                                                                      |
 | **RenewalModal (`RenewalModal.jsx`)** | 라커 carry 토글, API 호출 성공 시 (백엔드에서 `EnrollInitiationResponseDto`의 `paymentPageUrl` 받아) Next.js `router.push()`로 결제 페이지로 리디렉션. 성공/실패 React Toast 메시지 (e.g., `react-toastify`) 사용. |
