@@ -66,6 +66,9 @@ import org.slf4j.LoggerFactory;
 import cms.websocket.handler.LessonCapacityWebSocketHandler;
 import cms.admin.enrollment.dto.CalculatedRefundDetailsDto; // 새로 추가한 DTO
 import java.time.YearMonth;
+import java.time.format.DateTimeFormatter; // Added for formatting
+import java.util.regex.Matcher; // Added for regex parsing
+import java.util.regex.Pattern; // Added for regex parsing
 
 @Service("enrollmentServiceImpl")
 @Transactional
@@ -730,71 +733,144 @@ public class EnrollmentServiceImpl implements EnrollmentService {
 
     private EnrollDto convertToMypageEnrollDto(Enroll enroll) {
         Lesson lesson = enroll.getLesson();
-
         EnrollDto.LessonDetails lessonDetails = null;
+
         if (lesson != null) {
-            // Format period as "YYYY-MM-DD ~ YYYY-MM-DD"
-            String period = null;
+            String periodString = null;
             if (lesson.getStartDate() != null && lesson.getEndDate() != null) {
-                period = lesson.getStartDate().toString() + " ~ " + lesson.getEndDate().toString();
+                periodString = lesson.getStartDate().toString() + " ~ " + lesson.getEndDate().toString();
             }
 
+            Integer remainingSpots = null;
+            if (lesson.getCapacity() != null) {
+                long paidEnrollments = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
+                long unpaidActiveEnrollments = enrollRepository.countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(lesson.getLessonId(), "APPLIED", "UNPAID", LocalDateTime.now());
+                remainingSpots = lesson.getCapacity() - (int) paidEnrollments - (int) unpaidActiveEnrollments;
+                if (remainingSpots < 0) remainingSpots = 0;
+            }
+
+            String days = null;
+            String timePrefix = null;
+            String timeSlot = null;
+            if (lesson.getLessonTime() != null && !lesson.getLessonTime().isEmpty()) {
+                String lessonTimeString = lesson.getLessonTime();
+                Pattern pattern = Pattern.compile("^(?:(\\(.*?\\))\\s*)?(?:(오전|오후)\\s*)?(\\d{1,2}:\\d{2}\\s*[~-]\\s*\\d{1,2}:\\d{2})$");
+                Matcher matcher = pattern.matcher(lessonTimeString.trim());
+                if (matcher.find()) {
+                    days = matcher.group(1);
+                    timePrefix = matcher.group(2);
+                    timeSlot = matcher.group(3);
+                } else {
+                    if (lessonTimeString.matches("^\\d{1,2}:\\d{2}\\s*[~-]\\s*\\d{1,2}:\\d{2}$")) {
+                        timeSlot = lessonTimeString.trim();
+                    } else {
+                        logger.warn("LessonTime '{}' did not match expected patterns. Full string stored in time field.", lessonTimeString);
+                    }
+                }
+            }
+            
+            String lessonStatusDisplay = null;
+            if (lesson.getStatus() != null) {
+                switch (lesson.getStatus()) {
+                    case OPEN: lessonStatusDisplay = "접수중"; break;
+                    case CLOSED: lessonStatusDisplay = "접수마감"; break;
+                    case ONGOING: lessonStatusDisplay = "수강중"; break;
+                    case COMPLETED: lessonStatusDisplay = "강습종료"; break;
+                    default: lessonStatusDisplay = lesson.getStatus().name();
+                }
+            }
+
+            // Assumes Lesson.java now has getDisplayName() returning specific display name like "힐링수영반"
+            String displayName = (lesson.getDisplayName() != null && !lesson.getDisplayName().isEmpty()) 
+                               ? lesson.getDisplayName() 
+                               : lesson.getTitle(); // Fallback to title if getDisplayName is null/empty
+            
+            // Assumes Lesson.java has getInstructorName() or similar for "성인(온라인)" like data.
+            // If "성인(온라인)" is more of a target audience, a different field in Lesson.java might be appropriate.
+            String instructorDisplay = lesson.getInstructorName(); 
+
+            // Assumes Lesson.java now has getRegistrationStartDateTime() of type LocalDateTime.
+            String reservationIdString = null; 
+            if (lesson.getRegistrationStartDateTime() != null) { 
+                reservationIdString = lesson.getRegistrationStartDateTime().format(DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm:ss")) + " 부터";
+            }
+
+            // Assumes Lesson.java now has getRegistrationEndDateTime() of type LocalDateTime.
+            String receiptIdString = null;
+            if (lesson.getRegistrationEndDateTime() != null) { 
+                receiptIdString = lesson.getRegistrationEndDateTime().format(DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm:ss")) + " 까지";
+            }
+            
+            // Assumes Lesson.java now has getLocationName().
+            String locationNameValue = lesson.getLocationName(); 
+
             lessonDetails = EnrollDto.LessonDetails.builder()
+                    .lessonId(lesson.getLessonId())
                     .title(lesson.getTitle())
-                    .period(period)
-                    .time(lesson.getLessonTime()) // e.g., "(월,화,수,목,금) 오전 07:00 ~ 07:50"
-                    .price(BigDecimal.valueOf(lesson.getPrice()))
+                    .name(displayName) // From Lesson.getDisplayName() or fallback
+                    .period(periodString)
+                    .startDate(lesson.getStartDate() != null ? lesson.getStartDate().toString() : null)
+                    .endDate(lesson.getEndDate() != null ? lesson.getEndDate().toString() : null)
+                    .time(lesson.getLessonTime()) // Full original time string
+                    .days(days) // Parsed
+                    .timePrefix(timePrefix) // Parsed
+                    .timeSlot(timeSlot) // Parsed
+                    .capacity(lesson.getCapacity())
+                    .remaining(remainingSpots) // Calculated
+                    .price(lesson.getPrice() != null ? new BigDecimal(lesson.getPrice()) : null)
+                    .status(lessonStatusDisplay) // Mapped display string
+                    .instructor(instructorDisplay) // From Lesson.getInstructorName()
+                    .location(locationNameValue) // From Lesson.getLocationName()
+                    .reservationId(reservationIdString) // From Lesson.getRegistrationStartDateTime()
+                    .receiptId(receiptIdString) // From Lesson.getRegistrationEndDateTime()
                     .build();
+        } else {
+            logger.error("Enrollment with ID {} has a null lesson associated.", enroll.getEnrollId());
+            lessonDetails = EnrollDto.LessonDetails.builder().build(); 
         }
 
-        // Calculate renewal window
-        EnrollDto.RenewalWindow renewalWindow = null;
+        // Renewal window logic (remains as previously corrected)
+        EnrollDto.RenewalWindow renewalWindowDto = null;
         LocalDate today = LocalDate.now();
-
-        // Renewal is for lessons starting next month, window is 20th-25th of current month.
         if (lesson != null && lesson.getStartDate() != null) {
             LocalDate lessonStartDate = lesson.getStartDate();
             YearMonth currentMonth = YearMonth.from(today);
             YearMonth lessonStartMonth = YearMonth.from(lessonStartDate);
 
-            // Check if the lesson is for next month
             if (lessonStartMonth.equals(currentMonth.plusMonths(1))) {
                 LocalDate renewalStart = LocalDate.of(today.getYear(), today.getMonth(), 20);
                 LocalDate renewalEnd = LocalDate.of(today.getYear(), today.getMonth(), 25);
                 
                 boolean isRenewalOpen = !today.isBefore(renewalStart) && !today.isAfter(renewalEnd);
                 
-                renewalWindow = EnrollDto.RenewalWindow.builder()
+                renewalWindowDto = EnrollDto.RenewalWindow.builder()
                         .isOpen(isRenewalOpen)
                         .open(renewalStart.atStartOfDay().atOffset(ZoneOffset.UTC))
                         .close(renewalEnd.atTime(23, 59, 59).atOffset(ZoneOffset.UTC))
                         .build();
             }
         }
-        // If it's not a lesson for next month, renewalWindow remains null (or an empty/closed window can be set if preferred)
 
-        // Calculate canAttemptPayment: UNPAID status and not expired
-        // 마이페이지에서는 직접 결제 불가 - 재수강 버튼을 통해서만 결제 페이지 이동
-        boolean canAttemptPayment = false; // 항상 false로 설정
+        boolean canAttemptPayment = "UNPAID".equals(enroll.getPayStatus()) &&
+                                    (enroll.getExpireDt() == null || LocalDateTime.now().isBefore(enroll.getExpireDt()));
         
-        // Set paymentPageUrl if payment can be attempted
-        // 마이페이지에서는 결제 URL 제공하지 않음
-        String paymentPageUrl = null; // 항상 null로 설정
+        String paymentPageUrl = null;
+        // TODO: If direct payment URLs are needed, logic to generate/fetch them should go here.
 
         return EnrollDto.builder()
-            .enrollId(enroll.getEnrollId())
-            .lesson(lessonDetails)
-            .status(enroll.getPayStatus())
-            .applicationDate(enroll.getCreatedAt() != null ? enroll.getCreatedAt().atOffset(ZoneOffset.UTC) : null)
-            .paymentExpireDt(enroll.getExpireDt() != null ? enroll.getExpireDt().atOffset(ZoneOffset.UTC) : null)
-            .usesLocker(enroll.isUsesLocker())
-            .renewalWindow(renewalWindow)
-            .isRenewal(enroll.isRenewalFlag())
-            .cancelStatus(enroll.getCancelStatus() != null ? enroll.getCancelStatus().name() : null)
-            .cancelReason(enroll.getCancelReason())
-            .canAttemptPayment(canAttemptPayment)
-            .paymentPageUrl(paymentPageUrl)
-            .build();
+                .enrollId(enroll.getEnrollId())
+                .lesson(lessonDetails)
+                .status(enroll.getPayStatus())
+                .applicationDate(enroll.getCreatedAt().atOffset(ZoneOffset.UTC))
+                .paymentExpireDt(enroll.getExpireDt() != null ? enroll.getExpireDt().atOffset(ZoneOffset.UTC) : null)
+                .usesLocker(enroll.isUsesLocker())
+                .renewalWindow(renewalWindowDto)
+                .isRenewal(enroll.isRenewalFlag())
+                .cancelStatus(enroll.getCancelStatus() != null ? enroll.getCancelStatus().name() : Enroll.CancelStatusType.NONE.name())
+                .cancelReason(enroll.getCancelReason())
+                .canAttemptPayment(canAttemptPayment)
+                .paymentPageUrl(paymentPageUrl)
+                .build();
     }
 
     @Override

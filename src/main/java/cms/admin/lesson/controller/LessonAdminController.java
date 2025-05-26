@@ -1,7 +1,9 @@
 package cms.admin.lesson.controller;
 
+import cms.admin.lesson.dto.AdminLessonCreateRequestDto;
+import cms.admin.lesson.dto.AdminLessonResponseDto;
+import cms.admin.lesson.dto.AdminLessonUpdateRequestDto;
 import cms.common.dto.ApiResponseSchema;
-import cms.swimming.dto.*;
 import cms.admin.lesson.service.LessonAdminService;
 import cms.admin.lesson.dto.CloneLessonRequestDto;
 import io.swagger.v3.oas.annotations.Operation;
@@ -19,6 +21,9 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+import javax.servlet.http.HttpServletRequest;
+import javax.validation.Valid;
+
 @Tag(name = "CMS - Lesson Management", description = "강습 관리 API (관리자용)")
 @RestController
 @RequestMapping("/cms/lessons")
@@ -29,68 +34,86 @@ public class LessonAdminController {
 
     private final LessonAdminService lessonAdminService;
 
-    @Operation(summary = "모든 강습 목록 조회", description = "모든 강습 목록을 페이징하여 조회합니다.")
+    private String getClientIp(HttpServletRequest request) {
+        String remoteAddr = "";
+        if (request != null) {
+            remoteAddr = request.getHeader("X-FORWARDED-FOR");
+            if (remoteAddr == null || "".equals(remoteAddr)) {
+                remoteAddr = request.getRemoteAddr();
+            }
+        }
+        return remoteAddr;
+    }
+
+    private String getCurrentUsername() {
+        return "admin_user";
+    }
+
+    @Operation(summary = "모든 강습 목록 조회 (관리자용)", description = "모든 강습 목록을 페이징하여 조회합니다. 상태, 년도, 월별 필터링 가능.")
     @GetMapping
     @PreAuthorize("hasAnyRole('SYSTEM_ADMIN', 'ADMIN')")
-    public ResponseEntity<ApiResponseSchema<Page<LessonDto>>> getAllLessons(
-            @PageableDefault(size = 50, sort = "startDate", direction = Sort.Direction.DESC) Pageable pageable) {
-        Page<LessonDto> lessons = lessonAdminService.getAllLessonsAdmin(pageable);
-        return ResponseEntity.ok(ApiResponseSchema.success(lessons, "강습 목록 조회 성공"));
+    public ResponseEntity<ApiResponseSchema<Page<AdminLessonResponseDto>>> getAllLessonsAdmin(
+            @PageableDefault(size = 10, sort = "startDate", direction = Sort.Direction.DESC) Pageable pageable,
+            @Parameter(description = "강습 상태 (OPEN, CLOSED, ONGOING, COMPLETED)") @RequestParam(required = false) String status,
+            @Parameter(description = "년도 (YYYY)") @RequestParam(required = false) Integer year,
+            @Parameter(description = "월 (1-12)") @RequestParam(required = false) Integer month) {
+        Page<AdminLessonResponseDto> lessons = lessonAdminService.getAllLessonsAdmin(pageable, status, year, month);
+        return ResponseEntity.ok(ApiResponseSchema.success(lessons, "관리자용 강습 목록 조회 성공"));
     }
 
-    @Operation(summary = "특정 상태의 강습 목록 조회", description = "특정 상태의 강습 목록을 페이징하여 조회합니다.")
-    @GetMapping("/status/{status}")
-    @PreAuthorize("hasAnyRole('SYSTEM_ADMIN', 'CS_AGENT', 'ADMIN')")
-    public ResponseEntity<ApiResponseSchema<Page<LessonDto>>> getLessonsByStatus(
-            @Parameter(description = "강습 상태 (OPEN, CLOSED, ONGOING, COMPLETED)") @PathVariable String status,
-            @PageableDefault(size = 10, sort = "startDate", direction = Sort.Direction.DESC) Pageable pageable) {
-        Page<LessonDto> lessons = lessonAdminService.getLessonsByStatusAdmin(status, pageable);
-        return ResponseEntity.ok(ApiResponseSchema.success(lessons, "강습 목록 조회 성공"));
-    }
-
-    @Operation(summary = "강습 상세 조회", description = "특정 강습의 상세 정보를 조회합니다.")
+    @Operation(summary = "강습 상세 조회 (관리자용)", description = "특정 강습의 상세 정보를 조회합니다.")
     @GetMapping("/{lessonId}")
     @PreAuthorize("hasAnyRole('SYSTEM_ADMIN', 'CS_AGENT', 'ADMIN')")
-    public ResponseEntity<ApiResponseSchema<LessonDto>> getLessonById(
+    public ResponseEntity<ApiResponseSchema<AdminLessonResponseDto>> getLessonByIdAdmin(
             @Parameter(description = "조회할 강습 ID") @PathVariable Long lessonId) {
-        LessonDto lesson = lessonAdminService.getLessonByIdAdmin(lessonId);
+        AdminLessonResponseDto lesson = lessonAdminService.getLessonByIdAdmin(lessonId);
         return ResponseEntity.ok(ApiResponseSchema.success(lesson, "강습 상세 조회 성공"));
     }
 
-    @Operation(summary = "새 강습 생성", description = "새로운 강습을 생성합니다. 스케줄(기간, 시간) 포함.")
+    @Operation(summary = "새 강습 생성 (관리자용)", description = "새로운 강습을 생성합니다.")
     @PostMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'SYSTEM_ADMIN')")
-    public ResponseEntity<ApiResponseSchema<LessonDto>> createLesson(@RequestBody LessonDto lessonDto) {
-        LessonDto createdLesson = lessonAdminService.createLesson(lessonDto);
+    public ResponseEntity<ApiResponseSchema<AdminLessonResponseDto>> createLessonAdmin(
+            @Valid @RequestBody AdminLessonCreateRequestDto createRequestDto,
+            HttpServletRequest request) {
+        String createdBy = getCurrentUsername();
+        String createdIp = getClientIp(request);
+        AdminLessonResponseDto createdLesson = lessonAdminService.createLessonAdmin(createRequestDto, createdBy, createdIp);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponseSchema.success(createdLesson, "강습 생성 성공"));
     }
 
-    @Operation(summary = "강습 정보 수정", description = "기존 강습의 정보 및 스케줄을 수정합니다.")
+    @Operation(summary = "강습 정보 수정 (관리자용)", description = "기존 강습의 정보를 수정합니다.")
     @PutMapping("/{lessonId}")
     @PreAuthorize("hasAnyRole('ADMIN', 'SYSTEM_ADMIN')")
-    public ResponseEntity<ApiResponseSchema<LessonDto>> updateLesson(
+    public ResponseEntity<ApiResponseSchema<AdminLessonResponseDto>> updateLessonAdmin(
             @Parameter(description = "수정할 강습 ID") @PathVariable Long lessonId,
-            @RequestBody LessonDto lessonDto) {
-        LessonDto updatedLesson = lessonAdminService.updateLesson(lessonId, lessonDto);
+            @Valid @RequestBody AdminLessonUpdateRequestDto updateRequestDto,
+            HttpServletRequest request) {
+        String updatedBy = getCurrentUsername();
+        String updatedIp = getClientIp(request);
+        AdminLessonResponseDto updatedLesson = lessonAdminService.updateLessonAdmin(lessonId, updateRequestDto, updatedBy, updatedIp);
         return ResponseEntity.ok(ApiResponseSchema.success(updatedLesson, "강습 정보 수정 성공"));
     }
 
-    @Operation(summary = "강습 삭제", description = "특정 강습을 삭제합니다 (조건부).")
+    @Operation(summary = "강습 삭제 (관리자용)", description = "특정 강습을 삭제합니다 (조건부).")
     @DeleteMapping("/{lessonId}")
     @PreAuthorize("hasAnyRole('ADMIN', 'SYSTEM_ADMIN')")
-    public ResponseEntity<ApiResponseSchema<Void>> deleteLesson(
+    public ResponseEntity<ApiResponseSchema<Void>> deleteLessonAdmin(
             @Parameter(description = "삭제할 강습 ID") @PathVariable Long lessonId) {
-        lessonAdminService.deleteLesson(lessonId);
-        return ResponseEntity.noContent().build();
+        lessonAdminService.deleteLessonAdmin(lessonId);
+        return ResponseEntity.status(HttpStatus.NO_CONTENT).body(ApiResponseSchema.success(null, "강습 삭제 성공"));
     }
 
-    @Operation(summary = "강습 복제", description = "기존 강습을 복제하여 새 강습을 생성합니다.")
+    @Operation(summary = "강습 복제 (관리자용)", description = "기존 강습을 복제하여 새 강습을 생성합니다.")
     @PostMapping("/{lessonId}/clone")
     @PreAuthorize("hasAnyRole('ADMIN', 'SYSTEM_ADMIN')")
-    public ResponseEntity<ApiResponseSchema<LessonDto>> cloneLesson(
+    public ResponseEntity<ApiResponseSchema<AdminLessonResponseDto>> cloneLessonAdmin(
             @Parameter(description = "복제할 강습 ID") @PathVariable Long lessonId,
-            @RequestBody CloneLessonRequestDto cloneRequest) {
-        LessonDto clonedLesson = lessonAdminService.cloneLesson(lessonId, cloneRequest);
+            @Valid @RequestBody CloneLessonRequestDto cloneRequest,
+            HttpServletRequest request) {
+        String createdBy = getCurrentUsername();
+        String createdIp = getClientIp(request);
+        AdminLessonResponseDto clonedLesson = lessonAdminService.cloneLessonAdmin(lessonId, cloneRequest, createdBy, createdIp);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponseSchema.success(clonedLesson, "강습 복제 성공"));
     }
 } 

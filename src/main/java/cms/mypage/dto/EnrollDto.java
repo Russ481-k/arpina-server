@@ -35,10 +35,24 @@ public class EnrollDto {
   @NoArgsConstructor
   @AllArgsConstructor
   public static class LessonDetails {
+    private Long lessonId;
     private String title;
+    private String name;
     private String period;
+    private String startDate;
+    private String endDate;
     private String time;
+    private String days;
+    private String timePrefix;
+    private String timeSlot;
+    private Integer capacity;
+    private Integer remaining;
     private BigDecimal price;
+    private String status;
+    private String instructor;
+    private String location;
+    private String reservationId;
+    private String receiptId;
   }
 
   @Getter

@@ -31,6 +31,8 @@ import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
+@RequestMapping("/swimming")
+
 @Tag(name = "Swimming User API", description = "수영장 사용자 API (수업 조회, 신청 관련)") // Updated tag description
 @Validated
 public class SwimmingUserController {
@@ -61,8 +63,8 @@ public class SwimmingUserController {
     }
 
     // 3. 신청 및 취소 API
-    @Operation(summary = "수업 신청", description = "수업을 신청합니다. 결제는 마이페이지에서 진행됩니다.")
-    @PostMapping("/enrolls")
+    @Operation(summary = "수업 신청", description = "수업을 신청하고 결제합합니다.")
+    @PostMapping("/enroll")
     public ResponseEntity<ApiResponseSchema<EnrollResponseDto>> createEnroll(
             @Valid @RequestBody EnrollRequestDto enrollRequest,
             Authentication authentication,
@@ -72,11 +74,11 @@ public class SwimmingUserController {
         
         EnrollResponseDto enrollResponse = enrollmentService.createInitialEnrollment(currentUser, enrollRequest, clientIp);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponseSchema.success(enrollResponse, "수업 신청이 완료되었습니다. 마이페이지에서 결제를 진행해주세요."));
+                .body(ApiResponseSchema.success(enrollResponse, "수업 신청 및 결제가 완료되었습니다."));
     }
 
     @Operation(summary = "신청 취소", description = "수업 신청을 취소합니다. 개강 전 신청 건에 한해 사용자 직접 취소가 가능합니다.")
-    @PostMapping("/enrolls/{enrollId}/cancel")
+    @PostMapping("/enroll/{enrollId}/cancel")
     public ResponseEntity<ApiResponseSchema<Void>> cancelEnroll(
             @Parameter(description = "취소할 신청 ID", required = true) @PathVariable Long enrollId,
             @Valid @RequestBody CancelRequestDto cancelRequest,
@@ -102,7 +104,7 @@ public class SwimmingUserController {
     }
 
     @Operation(summary = "특정 신청 상세 조회", description = "특정 신청의 상세 정보를 조회합니다. (Mypage DTO 사용)")
-    @GetMapping("/enrolls/{enrollId}")
+    @GetMapping("/enroll/{enrollId}")
     public ResponseEntity<ApiResponseSchema<cms.mypage.dto.EnrollDto>> getEnrollDetail(
             @Parameter(description = "조회할 신청 ID", required = true) @PathVariable Long enrollId,
             Authentication authentication) {

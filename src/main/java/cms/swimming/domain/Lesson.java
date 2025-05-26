@@ -11,6 +11,7 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "lesson")
 @Getter
+@Setter
 @Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
@@ -21,17 +22,17 @@ public class Lesson {
     @Column(name = "lesson_id")
     private Long lessonId;
 
-    @Column(name = "title", nullable = false)
+    @Column(name = "title", nullable = false, length = 100)
     private String title;
+
+    @Column(name = "display_name", length = 150)
+    private String displayName;
 
     @Column(name = "start_date", nullable = false)
     private LocalDate startDate;
 
     @Column(name = "end_date", nullable = false)
     private LocalDate endDate;
-
-    @Column(name = "registration_end_date", nullable = false)
-    private LocalDate registrationEndDate;
 
     @Column(name = "capacity", nullable = false)
     private Integer capacity;
@@ -45,8 +46,17 @@ public class Lesson {
     @Column(name = "lesson_time", length = 100)
     private String lessonTime;
 
+    @Column(name = "location_name", length = 100)
+    private String locationName;
+
+    @Column(name = "registration_start_datetime")
+    private LocalDateTime registrationStartDateTime;
+
+    @Column(name = "registration_end_datetime", nullable = false)
+    private LocalDateTime registrationEndDateTime;
+
     @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false)
+    @Column(name = "status", nullable = false, length = 20)
     private LessonStatus status;
 
     @CreationTimestamp
@@ -84,23 +94,29 @@ public class Lesson {
 
     // 수업 정보 업데이트 메소드
     public void updateDetails(
-            String title, 
-            LocalDate startDate, 
-            LocalDate endDate, 
-            Integer capacity, 
+            String title,
+            String displayName,
+            LocalDate startDate,
+            LocalDate endDate,
+            Integer capacity,
             Integer price,
             LessonStatus status,
-            LocalDate registrationEndDate,
             String instructorName,
-            String lessonTime) {
+            String lessonTime,
+            String locationName,
+            LocalDateTime registrationStartDateTime,
+            LocalDateTime registrationEndDateTime) {
         this.title = title;
+        this.displayName = displayName;
         this.startDate = startDate;
         this.endDate = endDate;
         this.capacity = capacity;
         this.price = price;
         this.status = status;
-        this.registrationEndDate = registrationEndDate;
         this.instructorName = instructorName;
         this.lessonTime = lessonTime;
+        this.locationName = locationName;
+        this.registrationStartDateTime = registrationStartDateTime;
+        this.registrationEndDateTime = registrationEndDateTime;
     }
 } 
