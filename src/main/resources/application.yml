@@ -151,7 +151,7 @@ Globals:
   addedOptions: ${GLOBALS_ADDED_OPTIONS:false}
   MainPage: ${GLOBALS_MAIN_PAGE:/cmm/main/mainPage.do}
   Allow:
-    Origin: ${GLOBALS_ALLOW_ORIGIN:http://localhost:3000}
+    # Origin: ${GLOBALS_ALLOW_ORIGIN:http://localhost:3000}
   crypto:
     algoritm: ${GLOBALS_CRYPTO_ALGORITM:egovframe}
   fileUpload:

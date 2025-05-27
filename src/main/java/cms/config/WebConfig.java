@@ -26,12 +26,15 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
+        // Spring Boot CORS 설정을 Nginx에서 처리하도록 주석 처리
+        /*
         registry.addMapping("/**")
             .allowedOrigins("*")
             .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
             .allowedHeaders("*")
             .exposedHeaders("Authorization")
             .maxAge(3600);
+        */
     }
 } 
  

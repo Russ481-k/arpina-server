@@ -18,7 +18,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         // 실시간 강좌 정원 정보 업데이트
         registry.addHandler(lessonCapacityHandler, "/ws/lesson-capacity")
-                .setAllowedOrigins("*") // 프로덕션에서는 특정 도메인으로 제한
+                // .setAllowedOrigins("*") // Nginx에서 처리하도록 주석 처리
                 .withSockJS(); // SockJS fallback 지원
     }
 } 
