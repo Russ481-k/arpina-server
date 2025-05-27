@@ -67,7 +67,7 @@ public class EgovConfigAppJpa {
         Properties properties = new Properties();
         // Basic Hibernate Properties
         properties.setProperty("hibernate.format_sql", "true");
-        properties.setProperty("hibernate.jdbc.time_zone", "UTC");
+        properties.setProperty("hibernate.jdbc.time_zone", "Asia/Seoul");
         properties.setProperty("hibernate.dialect", "org.hibernate.dialect.MariaDBDialect");
         
         // Physical Naming Strategy

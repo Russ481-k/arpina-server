@@ -26,9 +26,11 @@ spring:
       width: ${FILE_THUMBNAIL_WIDTH:256}
       height: ${FILE_THUMBNAIL_HEIGHT:256}
       format: ${FILE_THUMBNAIL_FORMAT:webp}
+  jackson:
+    time-zone: Asia/Seoul
   datasource:
     driver-class-name: ${SPRING_DATASOURCE_DRIVER_CLASS_NAME:org.mariadb.jdbc.Driver}
-    url: ${SPRING_DATASOURCE_URL:jdbc:mariadb://172.30.1.11:3306/cms_new?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&useProxy=false}
+    url: ${SPRING_DATASOURCE_URL:jdbc:mariadb://172.30.1.11:3306/arpina_new?useSSL=false&serverTimezone=Asia/Seoul&allowPublicKeyRetrieval=true&useProxy=false}
     username: ${SPRING_DATASOURCE_USERNAME:handy}
     password: ${SPRING_DATASOURCE_PASSWORD:gosel@1224}
     hikari:
@@ -54,7 +56,7 @@ spring:
         dialect: org.hibernate.dialect.MariaDB103Dialect
         format_sql: true
         jdbc:
-          time_zone: UTC
+          time_zone: Asia/Seoul
           batch_size: 50
           order_inserts: true
           order_updates: true
