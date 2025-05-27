@@ -69,6 +69,7 @@ import java.time.YearMonth;
 import java.time.format.DateTimeFormatter; // Added for formatting
 import java.util.regex.Matcher; // Added for regex parsing
 import java.util.regex.Pattern; // Added for regex parsing
+import java.util.Arrays; // For Arrays.asList
 
 @Service("enrollmentServiceImpl")
 @Transactional
@@ -206,12 +207,33 @@ public class EnrollmentServiceImpl implements EnrollmentService {
 
     /**
      * 실제 신청 로직 (내부 메소드)
+     * FOR TEMP-ENROLLMENT-BYPASS BRANCH:
+     * - Sets payStatus to "PAID" immediately.
+     * - Removes expireDt.
      */
     private EnrollResponseDto createInitialEnrollmentInternal(User user, EnrollRequestDto initialEnrollRequest, String ipAddress) {
         // *** 비관적 잠금으로 동시성 문제 해결 ***
-        // 동시에 여러 사용자가 같은 강좌에 신청하는 것을 방지
         Lesson lesson = lessonRepository.findByIdWithLock(initialEnrollRequest.getLessonId())
                 .orElseThrow(() -> new EntityNotFoundException("강습을 찾을 수 없습니다. ID: " + initialEnrollRequest.getLessonId()));
+
+        // *** START Check for previous admin-cancelled enrollment for this lesson ***
+        List<String> adminCancelledPayStatuses = Arrays.asList(
+            "REFUNDED", 
+            "PARTIALLY_REFUNDED", 
+            "REFUND_PENDING_ADMIN_CANCEL"
+        );
+        boolean hasAdminCancelledEnrollment = enrollRepository.existsByUserUuidAndLessonLessonIdAndCancelStatusAndPayStatusIn(
+            user.getUuid(), 
+            lesson.getLessonId(), 
+            Enroll.CancelStatusType.APPROVED, 
+            adminCancelledPayStatuses
+        );
+
+        if (hasAdminCancelledEnrollment) {
+            throw new BusinessRuleException(ErrorCode.ENROLLMENT_PREVIOUSLY_CANCELLED_BY_ADMIN, 
+                "해당 강습에 대한 이전 신청이 관리자에 의해 취소된 내역이 있어 재신청할 수 없습니다.");
+        }
+        // *** END Check for previous admin-cancelled enrollment for this lesson ***
 
         // *** 신규 등록 기간 정책 검사 ***
         LocalDate today = LocalDate.now();
@@ -249,26 +271,18 @@ public class EnrollmentServiceImpl implements EnrollmentService {
 
         // *** 잠금 상태에서 정원 체크 (동시성 안전) ***
         long paidEnrollments = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
-        long unpaidExpiringEnrollments = enrollRepository.countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(lesson.getLessonId(), "APPLIED", "UNPAID", LocalDateTime.now());
-        long availableSlots = lesson.getCapacity() - paidEnrollments - unpaidExpiringEnrollments;
+        long availableSlots = lesson.getCapacity() - paidEnrollments;
 
         if (availableSlots <= 0) {
-            // 잠금 해제 후 예외 발생 (다른 사용자들이 대기 중)
             throw new BusinessRuleException(ErrorCode.PAYMENT_PAGE_SLOT_UNAVAILABLE, 
-                "정원이 마감되었습니다. 현재 정원: " + lesson.getCapacity() + ", 결제완료: " + paidEnrollments + ", 결제대기: " + unpaidExpiringEnrollments);
+                "정원이 마감되었습니다. 현재 정원: " + lesson.getCapacity() + ", 결제완료(즉시처리됨): " + paidEnrollments);
         }
 
         // *** 기존 신청 체크 (중복 방지) ***
-        Optional<Enroll> existingEnrollOpt = enrollRepository.findByUserUuidAndLessonLessonIdAndStatus(
-                user.getUuid(), initialEnrollRequest.getLessonId(), "APPLIED");
-        if (existingEnrollOpt.isPresent()) {
-            Enroll exEnroll = existingEnrollOpt.get();
-            if ("PAID".equals(exEnroll.getPayStatus())) {
-                throw new BusinessRuleException(ErrorCode.DUPLICATE_ENROLLMENT_ATTEMPT, "이미 해당 강습에 대해 결제 완료된 신청 내역이 존재합니다.");
-            }
-            if ("UNPAID".equals(exEnroll.getPayStatus()) && exEnroll.getExpireDt().isAfter(LocalDateTime.now())) {
-                 throw new BusinessRuleException(ErrorCode.DUPLICATE_ENROLLMENT_ATTEMPT, "이미 신청한 강습의 결제가능 시간이 남아있습니다. 재수강 버튼을 통해 결제를 진행해주세요. 만료시간: " + exEnroll.getExpireDt());
-            }
+        Optional<Enroll> existingPaidEnrollOpt = enrollRepository.findByUserUuidAndLessonLessonIdAndPayStatus(
+            user.getUuid(), initialEnrollRequest.getLessonId(), "PAID");
+        if (existingPaidEnrollOpt.isPresent()) {
+            throw new BusinessRuleException(ErrorCode.DUPLICATE_ENROLLMENT_ATTEMPT, "이미 해당 강습에 대해 신청(즉시 결제처리)된 내역이 존재합니다.");
         }
 
         // *** 월별 신청 제한 체크 ***
@@ -294,10 +308,8 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         Enroll savedEnroll = enrollRepository.save(enroll);
 
         // *** 정원 달성 시 강좌 상태 변경 ***
-        // 재계산하여 정확한 수량 확인
         long finalPaidCount = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
-        long finalUnpaidCount = enrollRepository.countByLessonLessonIdAndStatusAndPayStatus(lesson.getLessonId(), "APPLIED", "UNPAID");
-        if ((finalPaidCount + finalUnpaidCount) >= lesson.getCapacity() && lesson.getStatus() == Lesson.LessonStatus.OPEN) {
+        if (finalPaidCount >= lesson.getCapacity() && lesson.getStatus() == Lesson.LessonStatus.OPEN) {
             lesson.updateStatus(Lesson.LessonStatus.CLOSED);
             lessonRepository.save(lesson);
         }
@@ -308,7 +320,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 lesson.getLessonId(),
                 lesson.getCapacity(),
                 (int) finalPaidCount,
-                (int) finalUnpaidCount
+                0
             );
             logger.debug("[WebSocket] Broadcasted capacity update for lesson {}", lesson.getLessonId());
         } catch (Exception e) {
@@ -409,6 +421,8 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         if (!enroll.getUser().getUuid().equals(user.getUuid())) {
             throw new BusinessRuleException(ErrorCode.ACCESS_DENIED, "You do not have permission to cancel this enrollment.");
         }
+        
+        // Check if already cancelled to prevent multiple attempts on a record that might get processed differently.
         if (enroll.getCancelStatus() != null && enroll.getCancelStatus() != Enroll.CancelStatusType.NONE) {
              throw new BusinessRuleException(ErrorCode.ALREADY_CANCELLED_ENROLLMENT, "This enrollment is already in a cancellation process or has been cancelled/denied.");
         }
@@ -418,61 +432,73 @@ public class EnrollmentServiceImpl implements EnrollmentService {
             throw new ResourceNotFoundException("Lesson not found for enrollment ID: " + enrollId, ErrorCode.LESSON_NOT_FOUND);
         }
         
-        LocalDate today = LocalDate.now();
-        enroll.setCancelRequestedAt(LocalDateTime.now()); // 취소 요청 시각 기록
-
-        if (today.isBefore(lesson.getStartDate())) {
-            // 수강 시작일 전: 위약금 없이 전액 환불 요청
-            logger.info("수강 시작일 전 취소 요청 (enrollId: {}). 전액 환불 처리 시도.", enrollId);
-            enroll.setOriginalPayStatusBeforeCancel(enroll.getPayStatus()); // 현재 결제 상태 저장
-            enroll.setStatus("CANCELED"); 
-            enroll.setPayStatus("REFUND_REQUESTED"); // PG사와 연동하여 실제 환불 처리 필요
-            enroll.setCancelStatus(Enroll.CancelStatusType.REQ); // 관리자 승인 없이 바로 REQ (또는 자동 APPROVED)
-            enroll.setCancelReason(reason);
-            enroll.setRefundAmount(enroll.getLesson().getPrice()); // 단순 예시, 실제로는 Payment 테이블 금액 참조
-                                                                // 사물함 금액도 고려해야 함
-
-            // KISPG 전액 환불 로직 호출 (실제 구현 필요)
-            // Payment payment = paymentRepository.findByEnroll_EnrollId(enrollId).orElse(null);
-            // if (payment != null && payment.getTid() != null) {
-            //     boolean refundSuccess = kispgService.requestFullRefund(payment.getTid(), "사용자 강습 시작 전 취소");
-            //     if (refundSuccess) {
-            //         enroll.setPayStatus("REFUNDED");
-            //         enroll.setCancelStatus(Enroll.CancelStatusType.APPROVED); // 자동 승인 간주
-            //         payment.setStatus("CANCELED"); // 또는 REFUNDED
-            //         payment.setRefundedAmt(payment.getPaidAmt());
-            //         payment.setRefundDt(LocalDateTime.now());
-            //         paymentRepository.save(payment);
-            //     } else {
-            //          logger.error("KISPG 전액 환불 실패 (enrollId: {}, tid: {})", enrollId, payment.getTid());
-            //          enroll.setCancelStatus(Enroll.CancelStatusType.PENDING); // 실패 시 관리자 확인 필요
-            //     }
-            // } else {
-            //      logger.warn("결제 정보 또는 TID가 없어 PG 환불 불가 (enrollId: {})", enrollId);
-            //      enroll.setCancelStatus(Enroll.CancelStatusType.PENDING); // PG 연동 불가 시 관리자 확인
-            // }
-
-            if (enroll.isLockerAllocated()) {
-                String userGender = enroll.getUser().getGender();
-                if (userGender != null && !userGender.trim().isEmpty()) {
-                    lockerService.decrementUsedQuantity(userGender.toUpperCase());
-                    enroll.setLockerAllocated(false);
-                 }
+        if ("UNPAID".equalsIgnoreCase(enroll.getPayStatus())) {
+            // Check for associated payments for this UNPAID enrollment. This should ideally be zero.
+            long paymentCount = paymentRepository.countByEnrollEnrollId(enrollId);
+            if (paymentCount > 0) {
+                logger.error("UNPAID enrollment (ID: {}) has {} associated payment records. Cannot delete directly. Please review.", enrollId, paymentCount);
+                // Fallback: Mark as cancelled instead of deleting, or throw a specific error.
+                // For now, let's use the previous logic of marking it cancelled to avoid data loss if payments exist unexpectedly.
+                enroll.setCancelRequestedAt(LocalDateTime.now());
+                enroll.setCancelReason(reason);
+                enroll.setStatus("CANCELED");
+                enroll.setPayStatus("CANCELED_UNPAID"); 
+                enroll.setCancelStatus(CancelStatusType.APPROVED);
+                enroll.setCancelApprovedAt(LocalDateTime.now());
+                enroll.setRefundAmount(0);
+                logger.warn("Enrollment ID: {} was UNPAID but had payments. Marked as CANCELED_UNPAID instead of deleting.", enrollId);
+            } else {
+                logger.info("UNPAID enrollment cancellation request (enrollId: {}). Deleting enrollment record.", enrollId);
+                // If somehow allocated, release locker before deleting.
+                if (enroll.isLockerAllocated()) { 
+                    String userGender = enroll.getUser().getGender();
+                    if (userGender != null && !userGender.trim().isEmpty()) {
+                        logger.warn("Locker was allocated for an UNPAID enrollment (enrollId: {}) being deleted. Releasing.", enrollId);
+                        lockerService.decrementUsedQuantity(userGender.toUpperCase());
+                    }
+                }
+                enrollRepository.delete(enroll); // Delete the enrollment record
+                // No need to save 'enroll' object after deletion.
+                return; // Exit after deletion
             }
-            enroll.setUsesLocker(false); 
-            enroll.setLockerPgToken(null);
 
-        } else {
-            // 수강 시작일 후: 관리자 승인 필요한 취소 요청
-            logger.info("수강 시작일 후 취소 요청 (enrollId: {}). 관리자 승인 대기.", enrollId);
-            enroll.setOriginalPayStatusBeforeCancel(enroll.getPayStatus());
-            enroll.setStatus("CANCELED_REQ"); // 상태 변경 (예시)
-            enroll.setPayStatus("REFUND_REQUESTED"); // 환불 요청 상태로 변경
-            enroll.setCancelStatus(Enroll.CancelStatusType.REQ);
+        } else if ("PAID".equalsIgnoreCase(enroll.getPayStatus())) { 
+            // Existing logic for PAID enrollments
+            LocalDateTime now = LocalDateTime.now();
+            enroll.setCancelRequestedAt(now);
             enroll.setCancelReason(reason);
-            // 환불액 계산 등은 관리자 승인 시점으로 이동
+            enroll.setOriginalPayStatusBeforeCancel(enroll.getPayStatus());
+            LocalDate today = LocalDate.now();
+
+            if (today.isBefore(lesson.getStartDate())) {
+                logger.info("PAID enrollment cancellation request before lesson start (enrollId: {}). Requesting refund.", enrollId);
+                enroll.setStatus("CANCELED"); 
+                enroll.setPayStatus("REFUND_REQUESTED"); 
+                enroll.setCancelStatus(CancelStatusType.REQ); 
+                enroll.setRefundAmount(enroll.getLesson().getPrice()); 
+
+                if (enroll.isLockerAllocated()) {
+                    String userGender = enroll.getUser().getGender();
+                    if (userGender != null && !userGender.trim().isEmpty()) {
+                        lockerService.decrementUsedQuantity(userGender.toUpperCase());
+                        enroll.setLockerAllocated(false);
+                     }
+                }
+                enroll.setUsesLocker(false); 
+                enroll.setLockerPgToken(null);
+
+            } else {
+                logger.info("PAID enrollment cancellation request on/after lesson start (enrollId: {}). Admin review required.", enrollId);
+                enroll.setStatus("CANCELED_REQ"); 
+                enroll.setPayStatus("REFUND_REQUESTED"); 
+                enroll.setCancelStatus(CancelStatusType.REQ);
+            }
+        } else {
+            logger.warn("Cancellation requested for enrollment (enrollId: {}) with unhandled payStatus: {}. No action taken.", enrollId, enroll.getPayStatus());
+            throw new BusinessRuleException(ErrorCode.ENROLLMENT_CANCELLATION_NOT_ALLOWED, 
+                "Cancellation is not allowed for the current payment status: " + enroll.getPayStatus());
         }
-            enrollRepository.save(enroll);
+        enrollRepository.save(enroll); // Save changes if not deleted
     }
 
     /**

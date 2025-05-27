@@ -2,6 +2,7 @@ package cms.common.exception;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 
 @Getter
 @RequiredArgsConstructor
@@ -51,6 +52,7 @@ public enum ErrorCode {
     DUPLICATE_ENROLLMENT("E021", "이미 해당 강습에 대한 유효한 신청 내역이 존재합니다."),
     REGISTRATION_PERIOD_INVALID("E022", "등록 기간이 아닙니다."),
     RENEWAL_PERIOD_INVALID("E023", "재수강 신청 기간이 아닙니다."),
+    ENROLLMENT_PREVIOUSLY_CANCELLED_BY_ADMIN("E024", "관리자에 의해 취소된 강습에 대해 재신청할 수 없습니다."),
 
     // --- 결제 (Payment) 관련 오류 코드 (P001 ~ P099) ---
     PAYMENT_INFO_NOT_FOUND("P001", "결제 정보를 찾을 수 없습니다."),
@@ -60,9 +62,6 @@ public enum ErrorCode {
     ALREADY_PAID_ENROLLMENT("P005", "이미 결제가 완료된 수강 신청입니다."),
     NOT_UNPAID_ENROLLMENT_STATUS("P006", "결제 대기 상태의 수강 신청이 아닙니다."),
     PAYMENT_CANCEL_NOT_ALLOWED("P007", "결제를 취소할 수 없는 상태입니다.");
-
-
-
 
     private final String code;
     private final String defaultMessage;

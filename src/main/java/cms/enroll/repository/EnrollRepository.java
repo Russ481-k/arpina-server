@@ -29,17 +29,14 @@ public interface EnrollRepository extends JpaRepository<Enroll, Long>, JpaSpecif
 
     Optional<Enroll> findByUserUuidAndLessonLessonIdAndStatus(String userUuid, Long lessonId, String status);
 
+    Optional<Enroll> findByUserUuidAndLessonLessonIdAndPayStatus(String userUuid, Long lessonId, String payStatus);
+
     @Query("SELECT COUNT(e) FROM Enroll e " +
            "WHERE e.lesson.lessonId = :lessonId " +
            "AND e.user.gender = :gender " +
            "AND e.usesLocker = true " +
            "AND e.status = 'APPLIED'")
     long countUsedLockersByLessonAndUserGender(@Param("lessonId") Long lessonId, @Param("gender") String gender);
-
-    @Query("SELECT COUNT(e) FROM Enroll e WHERE e.user.uuid = :userUuid AND e.status = 'APPLIED' " +
-           "AND FUNCTION('YEAR', e.lesson.startDate) = FUNCTION('YEAR', :date) " +
-           "AND FUNCTION('MONTH', e.lesson.startDate) = FUNCTION('MONTH', :date)")
-    long countUserEnrollmentsInMonth(@Param("userUuid") String userUuid, @Param("date") LocalDate date);
 
     // Added methods for capacity checks
     long countByLessonLessonIdAndPayStatus(Long lessonId, String payStatus);
@@ -98,4 +95,35 @@ public interface EnrollRepository extends JpaRepository<Enroll, Long>, JpaSpecif
 
     // Method that was missing or had an incorrect signature
     long countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(Long lessonId, String status, String payStatus, LocalDateTime expireDt);
+
+    // For checking existing UNPAID enrollment before payment for a specific lesson by a user
+    Optional<Enroll> findByUserUuidAndLessonLessonIdAndPayStatusAndExpireDtAfter(
+        String userUuid, Long lessonId, String payStatus, LocalDateTime expireDt
+    );
+
+    // Check if a user has any enrollment (regardless of status) for a specific lesson that was admin-cancelled
+    boolean existsByUserUuidAndLessonLessonIdAndCancelStatusAndPayStatusIn(
+        String userUuid, 
+        Long lessonId, 
+        Enroll.CancelStatusType cancelStatus, 
+        List<String> payStatuses
+    );
+
+    // For the temp-enrollment-bypass branch: check for PAID status directly
+    // Removed duplicated findByUserUuidAndLessonLessonIdAndPayStatus from here
+
+    // For monthly enrollment limit check (counts any active/paid status for a given month)
+    @Query("SELECT count(e) FROM Enroll e WHERE e.user.uuid = :userUuid " +
+           "AND e.lesson.startDate >= :monthStart AND e.lesson.startDate <= :monthEnd " +
+           "AND e.payStatus IN ('PAID', 'UNPAID') AND e.status NOT IN ('CANCELED', 'EXPIRED')") // Consider only active states
+    long countUserEnrollmentsInMonthForDateRange(@Param("userUuid") String userUuid, 
+                                               @Param("monthStart") LocalDate monthStart, 
+                                               @Param("monthEnd") LocalDate monthEnd);
+
+    // Simpler version if lesson.getStartDate() is sufficient for month grouping (assumes lessons are monthly)
+    @Query("SELECT count(e) FROM Enroll e WHERE e.user.uuid = :userUuid " +
+           "AND FUNCTION('YEAR', e.lesson.startDate) = FUNCTION('YEAR', :lessonMonthDate) " +
+           "AND FUNCTION('MONTH', e.lesson.startDate) = FUNCTION('MONTH', :lessonMonthDate) " +
+           "AND e.payStatus IN ('PAID', 'UNPAID') AND e.status NOT IN ('CANCELED', 'EXPIRED', 'CANCELED_UNPAID')")
+    long countUserEnrollmentsInMonth(@Param("userUuid") String userUuid, @Param("lessonMonthDate") LocalDate lessonMonthDate);
 } 

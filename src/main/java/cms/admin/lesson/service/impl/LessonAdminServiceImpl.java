@@ -47,19 +47,22 @@ public class LessonAdminServiceImpl implements LessonAdminService {
     private AdminLessonResponseDto convertToAdminLessonResponseDto(Lesson lesson) {
         if (lesson == null) return null;
 
-        // Example: Calculate remaining spots (can be more sophisticated)
         Integer remainingSpots = null;
+        long paidEnrollments = 0;
+        long unpaidActiveEnrollments = 0;
+
         if (lesson.getCapacity() != null) {
-            long paidEnrollments = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
-            // Consider other statuses if they also occupy a spot
-            remainingSpots = lesson.getCapacity() - (int) paidEnrollments;
+            paidEnrollments = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
+            unpaidActiveEnrollments = enrollRepository.countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(
+                    lesson.getLessonId(), "APPLIED", "UNPAID", LocalDateTime.now());
+            remainingSpots = lesson.getCapacity() - (int) paidEnrollments - (int) unpaidActiveEnrollments;
             if (remainingSpots < 0) remainingSpots = 0;
         }
 
-        long currentEnrollmentCount = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
-        // Add unpaid active enrollments if they count towards current enrollments for admin view
-        // currentEnrollmentCount += enrollRepository.countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(lesson.getLessonId(), "APPLIED", "UNPAID", LocalDateTime.now());
-
+        // currentEnrollmentCount can remain as just paid, or also include unpaid active depending on definition for admin view
+        long currentEnrollmentCountForDisplay = paidEnrollments; 
+        // If you want currentEnrollmentCountForDisplay to also include pending applications:
+        // currentEnrollmentCountForDisplay = paidEnrollments + unpaidActiveEnrollments;
 
         return AdminLessonResponseDto.builder()
                 .lessonId(lesson.getLessonId())
@@ -83,7 +86,7 @@ public class LessonAdminServiceImpl implements LessonAdminService {
                 .updatedAt(lesson.getUpdatedAt())
                 .updatedBy(lesson.getUpdatedBy())
                 .updatedIp(lesson.getUpdatedIp())
-                .currentEnrollmentCount((int) currentEnrollmentCount)
+                .currentEnrollmentCount((int) currentEnrollmentCountForDisplay) // Using the chosen definition
                 .remainingSpots(remainingSpots)
                 .build();
     }

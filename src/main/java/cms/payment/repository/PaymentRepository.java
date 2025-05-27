@@ -16,5 +16,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long>, JpaSpec
     // Methods needed by KispgWebhookServiceImpl
     Optional<Payment> findByTid(String tid);
     Optional<Payment> findByEnroll_EnrollId(Long enrollId);
+    Optional<Payment> findByMerchantUid(String merchantUid);
+    long countByEnrollEnrollId(Long enrollId);
     // Add more custom query methods as needed
 } 

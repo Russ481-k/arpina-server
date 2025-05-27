@@ -57,7 +57,7 @@ public class Enroll {
     @ColumnDefault("'UNPAID'")
     private String payStatus;
 
-    @Column(name = "expire_dt", nullable = false)
+    @Column(name = "expire_dt", nullable = true)
     private LocalDateTime expireDt;
 
     @Column(name = "renewal_flag", nullable = false, columnDefinition = "TINYINT(1) DEFAULT 0")
