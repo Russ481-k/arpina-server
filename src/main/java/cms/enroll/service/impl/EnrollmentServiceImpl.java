@@ -207,9 +207,18 @@ public class EnrollmentServiceImpl implements EnrollmentService {
 
     /**
      * 실제 신청 로직 (내부 메소드)
-     * FOR TEMP-ENROLLMENT-BYPASS BRANCH:
-     * - Sets payStatus to "PAID" immediately.
-     * - Removes expireDt.
+     * // FOR TEMP-ENROLLMENT-BYPASS BRANCH: (기존 주석 제거 또는 업데이트)
+     * 
+     * 수정된 로직 (2024-05-27):
+     * - 신규 신청 시 payStatus를 "UNPAID" 로 설정합니다.
+     * - status를 "APPLIED" 로 설정합니다.
+     * - expireDt는 현재 결제 모듈 연동 전이므로, UNPAID 신청이 만료되지 않고 "신청 인원"으로 계속 집계되도록 매우 긴 시간(예: 1년 후)으로 설정합니다.
+     *   (이렇게 하면 남은 정원 계산 시 이 UNPAID 신청이 `unpaidActiveEnrollments`로 카운트됩니다.)
+     * - 추후 결제 모듈 연동 시:
+     *   1. expireDt를 현재 로직(.plusYears(1)) 대신 짧은 시간(예: LocalDateTime.now().plusMinutes(30))으로 변경해야 합니다.
+     *   2. 만료된 UNPAID 신청을 자동으로 'EXPIRED' 또는 'CANCELED_UNPAID' 상태로 변경하고, 필요시 관련 라커 예약도 해제하는 스케줄러(Batch Job) 구현이 필요합니다.
+     *   3. 결제가 성공적으로 완료되면 해당 Enroll 레코드의 payStatus를 'PAID'로, status를 상황에 맞게(예: 'ACTIVE') 업데이트하고, expireDt를 null 또는 매우 먼 미래로 변경하여 더 이상 만료되지 않도록 처리해야 합니다.
+     *   4. 결제 실패 시 사용자에게 알리고, 신청은 UNPAID 상태로 두거나, 특정 횟수 실패 시 취소 처리할 수 있습니다.
      */
     private EnrollResponseDto createInitialEnrollmentInternal(User user, EnrollRequestDto initialEnrollRequest, String ipAddress) {
         // *** 비관적 잠금으로 동시성 문제 해결 ***
@@ -270,19 +279,31 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         }
 
         // *** 잠금 상태에서 정원 체크 (동시성 안전) ***
-        long paidEnrollments = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
-        long availableSlots = lesson.getCapacity() - paidEnrollments;
+        long currentPaidEnrollments = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
+        long currentUnpaidActiveEnrollments = enrollRepository.countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(
+                lesson.getLessonId(), "APPLIED", "UNPAID", LocalDateTime.now());
+        long totalCurrentEnrollments = currentPaidEnrollments + currentUnpaidActiveEnrollments;
+        long availableSlots = lesson.getCapacity() - totalCurrentEnrollments;
 
         if (availableSlots <= 0) {
             throw new BusinessRuleException(ErrorCode.PAYMENT_PAGE_SLOT_UNAVAILABLE, 
-                "정원이 마감되었습니다. 현재 정원: " + lesson.getCapacity() + ", 결제완료(즉시처리됨): " + paidEnrollments);
+                "정원이 마감되었습니다. 현재 신청된 (결제완료 및 결제대기 포함) 인원: " + totalCurrentEnrollments);
         }
 
         // *** 기존 신청 체크 (중복 방지) ***
+        Optional<Enroll> existingUnpaidEnrollOpt = enrollRepository.findByUserUuidAndLessonLessonIdAndPayStatusAndExpireDtAfter(
+            user.getUuid(), initialEnrollRequest.getLessonId(), "UNPAID", LocalDateTime.now()
+        );
+        if (existingUnpaidEnrollOpt.isPresent() && "APPLIED".equals(existingUnpaidEnrollOpt.get().getStatus())) {
+             throw new BusinessRuleException(ErrorCode.DUPLICATE_ENROLLMENT_ATTEMPT, "이미 해당 강습에 대해 결제 대기 중인 신청 내역이 존재합니다.");
+        }
+        
         Optional<Enroll> existingPaidEnrollOpt = enrollRepository.findByUserUuidAndLessonLessonIdAndPayStatus(
             user.getUuid(), initialEnrollRequest.getLessonId(), "PAID");
         if (existingPaidEnrollOpt.isPresent()) {
-            throw new BusinessRuleException(ErrorCode.DUPLICATE_ENROLLMENT_ATTEMPT, "이미 해당 강습에 대해 신청(즉시 결제처리)된 내역이 존재합니다.");
+            // 고려: 이미 PAID 상태인데 또 신청하는 경우, 혹은 이전 로직에서 UNPAID였다가 PAID로 변경된 후 다시 신청하는 경우 등
+            // 현재 로직은 PAID가 있으면 무조건 중복으로 처리.
+            throw new BusinessRuleException(ErrorCode.DUPLICATE_ENROLLMENT_ATTEMPT, "이미 해당 강습에 대해 결제 완료된 신청 내역이 존재합니다.");
         }
 
         // *** 월별 신청 제한 체크 ***
@@ -292,24 +313,40 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         }
 
         // *** 잠금 상태에서 Enroll 생성 (원자적 연산) ***
-        Enroll enroll = Enroll.builder()
+        Enroll newEnroll = Enroll.builder()
                 .user(user)
                 .lesson(lesson)
-                .usesLocker(false)
-                .status("APPLIED")
-                .payStatus("UNPAID")
-                .expireDt(LocalDateTime.now().plusMinutes(5))
-                .renewalFlag(false)
-                .createdBy(user.getName())
-                .createdIp(ipAddress)
-                .updatedBy(user.getName())
-                .updatedIp(ipAddress)
+                .status("APPLIED") // 신청 상태: APPLIED (문자열 직접 사용)
+                .payStatus("UNPAID")   // 결제 상태: UNPAID (문자열 직접 사용)
+                .cancelStatus(null) // 취소 상태 초기값
+                .createdBy(user.getUuid()) // 생성자 UUID
+                .createdIp(ipAddress) // 생성자 IP
+                .createdAt(LocalDateTime.now()) // 생성 시간
+                // expireDt (만료 시간) 설정:
+                // 현재 (결제 모듈 미연동): UNPAID 신청이 만료되지 않고 계속 유효하도록 매우 긴 시간(1년 후)으로 설정.
+                // 이렇게 설정하면 `unpaidActiveEnrollments` 계산 시 항상 포함되어 정원에 영향을 줌.
+                .expireDt(LocalDateTime.now().plusYears(1)) 
+                // TODO: [결제 모듈 연동 후] 위 .expireDt(LocalDateTime.now().plusYears(1)) 라인을 아래와 같이 변경 또는 유사하게 수정 필요.
+                // .expireDt(LocalDateTime.now().plusMinutes(30)) // 예: 30분 후 만료
+                // TODO: [결제 모듈 연동 후] 만료된 UNPAID 신청(status=APPLIED, payStatus=UNPAID, expireDt < now)을
+                // 주기적으로 EXPIRED 또는 CANCELED_UNPAID 등으로 변경하는 Batch Job 또는 스케줄러 필요.
                 .build();
-        Enroll savedEnroll = enrollRepository.save(enroll);
+
+        // TODO: [EnrollRequestDto 확장 필요] 라커 사용 여부(usesLocker), 갱신 여부(renewalFlag), 라커 선택 정보(lockerSelection) 등을 
+        // EnrollRequestDto에 추가하고, 여기서 newEnroll 객체에 해당 값을 설정하는 로직 필요.
+        // 예시: if (initialEnrollRequest.getUsesLocker() != null) newEnroll.setUsesLocker(initialEnrollRequest.getUsesLocker());
+        // 현재는 Enroll 엔티티의 @Builder.Default 또는 @ColumnDefault에 의해 기본값(대부분 false 또는 null)으로 처리됨.
+
+        Enroll savedEnroll = enrollRepository.save(newEnroll);
 
         // *** 정원 달성 시 강좌 상태 변경 ***
         long finalPaidCount = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
-        if (finalPaidCount >= lesson.getCapacity() && lesson.getStatus() == Lesson.LessonStatus.OPEN) {
+        long finalUnpaidActiveCount = enrollRepository.countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(
+            lesson.getLessonId(), "APPLIED", "UNPAID", LocalDateTime.now()
+        );
+        long finalTotalEnrollments = finalPaidCount + finalUnpaidActiveCount;
+
+        if (finalTotalEnrollments >= lesson.getCapacity() && lesson.getStatus() == Lesson.LessonStatus.OPEN) {
             lesson.updateStatus(Lesson.LessonStatus.CLOSED);
             lessonRepository.save(lesson);
         }
@@ -320,7 +357,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 lesson.getLessonId(),
                 lesson.getCapacity(),
                 (int) finalPaidCount,
-                0
+                (int) finalUnpaidActiveCount 
             );
             logger.debug("[WebSocket] Broadcasted capacity update for lesson {}", lesson.getLessonId());
         } catch (Exception e) {
@@ -928,11 +965,11 @@ public class EnrollmentServiceImpl implements EnrollmentService {
 
         long paidEnrollments = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
         long unpaidExpiringEnrollments = enrollRepository.countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(lesson.getLessonId(), "APPLIED", "UNPAID", LocalDateTime.now());
-        long availableSlots = lesson.getCapacity() - paidEnrollments - unpaidExpiringEnrollments;
+        long availableSlotsForRenewal = lesson.getCapacity() - paidEnrollments - unpaidExpiringEnrollments;
 
-        if (availableSlots <= 0) {
+        if (availableSlotsForRenewal <= 0) {
             throw new BusinessRuleException(ErrorCode.PAYMENT_PAGE_SLOT_UNAVAILABLE, 
-                "재수강 정원이 마감되었습니다. 현재 정원: " + lesson.getCapacity() + ", 결제완료: " + paidEnrollments + ", 결제대기: " + unpaidExpiringEnrollments);
+                "재수강 정원이 마감되었습니다. 현재 정원: " + lesson.getCapacity() + ", 결제완료: " + paidEnrollments + ", 결제대기(만료전): " + unpaidExpiringEnrollments);
         }
 
         Enroll.EnrollBuilder newEnrollBuilder = Enroll.builder()
@@ -950,9 +987,13 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         try {
             enrollRepository.save(newEnroll);
             
-            long finalPaidCount = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
-            long finalUnpaidCount = enrollRepository.countByLessonLessonIdAndStatusAndPayStatus(lesson.getLessonId(), "APPLIED", "UNPAID");
-            if ((finalPaidCount + finalUnpaidCount) >= lesson.getCapacity() && lesson.getStatus() == Lesson.LessonStatus.OPEN) {
+            long finalPaidCountAfterRenewal = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
+            long finalUnpaidActiveCountAfterRenewal = enrollRepository.countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(
+                lesson.getLessonId(), "APPLIED", "UNPAID", LocalDateTime.now()
+            );
+            long finalTotalEnrollmentsAfterRenewal = finalPaidCountAfterRenewal + finalUnpaidActiveCountAfterRenewal;
+
+            if (finalTotalEnrollmentsAfterRenewal >= lesson.getCapacity() && lesson.getStatus() == Lesson.LessonStatus.OPEN) {
                 lesson.updateStatus(Lesson.LessonStatus.CLOSED);
                 lessonRepository.save(lesson);
             }

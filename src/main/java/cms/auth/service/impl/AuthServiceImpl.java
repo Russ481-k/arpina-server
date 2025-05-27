@@ -251,10 +251,10 @@ public class AuthServiceImpl implements AuthService {
             return ResponseEntity.ok(ApiResponseSchema.success(result, "로그인이 성공적으로 완료되었습니다."));
         } catch (BadCredentialsException e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body(ApiResponseSchema.error("401", "아이디 또는 비밀번호가 일치하지 않습니다."));
+                .body(ApiResponseSchema.error("아이디 또는 비밀번호가 일치하지 않습니다.","401" ));
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ApiResponseSchema.error("500", "로그인 처리 중 오류가 발생했습니다."));
+                .body(ApiResponseSchema.error("로그인 처리 중 오류가 발생했습니다.","500" ));
         }
     }
 
