@@ -15,19 +15,9 @@ public class LessonSpecification {
 
     private static final Logger logger = LoggerFactory.getLogger(LessonSpecification.class);
 
-    public static Specification<Lesson> filterBy(String status, Integer year, Integer month) {
+    public static Specification<Lesson> filterBy(Integer year, Integer month) {
         return (root, query, criteriaBuilder) -> {
             List<Predicate> predicates = new ArrayList<>();
-
-            if (status != null && !status.trim().isEmpty()) {
-                try {
-                    Lesson.LessonStatus lessonStatus = Lesson.LessonStatus.valueOf(status.toUpperCase());
-                    predicates.add(criteriaBuilder.equal(root.get("status"), lessonStatus));
-                } catch (IllegalArgumentException e) {
-                    logger.warn("Invalid status string provided: '{}'. This filter will be ignored.", status, e);
-                    // Invalid status string - effectively ignored in terms of adding a predicate
-                }
-            }
 
             if (year != null) {
                 try {

@@ -50,7 +50,7 @@ public class SwimmingUserController {
             @Parameter(description = "조회 시작 날짜 (YYYY-MM-DD)") @RequestParam(required = false) LocalDate startDate,
             @Parameter(description = "조회 종료 날짜 (YYYY-MM-DD)") @RequestParam(required = false) LocalDate endDate,
             @PageableDefault(size = 10, sort = "startDate", direction = Sort.Direction.ASC) Pageable pageable) {
-        Page<LessonDto> lessons = lessonService.getLessons(status, months, startDate, endDate, pageable);
+        Page<LessonDto> lessons = lessonService.getLessons( months, startDate, endDate, pageable);
         return ResponseEntity.ok(ApiResponseSchema.success(lessons, "수업 목록 조회 성공"));
     }
 

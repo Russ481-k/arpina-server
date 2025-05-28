@@ -55,10 +55,6 @@ public class Lesson {
     @Column(name = "registration_end_datetime", nullable = false)
     private LocalDateTime registrationEndDateTime;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, length = 20)
-    private LessonStatus status;
-
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -79,19 +75,6 @@ public class Lesson {
     @Column(name = "updated_ip", length = 45)
     private String updatedIp;
 
-    public enum LessonStatus {
-        OPEN, // 접수중
-        CLOSED, // 접수마감
-        ONGOING, // 수강중
-        COMPLETED // 수강종료
-        // WAIT, FINISHED // Old values, replaced by ONGOING, COMPLETED and a more explicit OPEN/CLOSED distinction
-    }
-
-    // 수업 상태 변경 메소드
-    public void updateStatus(LessonStatus status) {
-        this.status = status;
-    }
-
     // 수업 정보 업데이트 메소드
     public void updateDetails(
             String title,
@@ -100,7 +83,6 @@ public class Lesson {
             LocalDate endDate,
             Integer capacity,
             Integer price,
-            LessonStatus status,
             String instructorName,
             String lessonTime,
             String locationName,
@@ -112,7 +94,6 @@ public class Lesson {
         this.endDate = endDate;
         this.capacity = capacity;
         this.price = price;
-        this.status = status;
         this.instructorName = instructorName;
         this.lessonTime = lessonTime;
         this.locationName = locationName;

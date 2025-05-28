@@ -1,6 +1,6 @@
 package cms.admin.lesson.dto;
 
-import cms.swimming.domain.Lesson.LessonStatus;
+// import cms.swimming.domain.Lesson.LessonStatus;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Getter;
 import lombok.Setter;
@@ -28,8 +28,6 @@ public class AdminLessonUpdateRequestDto {
 
     @Min(value = 0, message = "Price cannot be negative")
     private Integer price;
-
-    private LessonStatus status;
 
     private String instructorName;
     private String lessonTime;

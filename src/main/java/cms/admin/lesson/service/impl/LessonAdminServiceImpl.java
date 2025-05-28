@@ -1,7 +1,6 @@
 package cms.admin.lesson.service.impl;
 
 import cms.swimming.domain.Lesson;
-import cms.swimming.domain.Lesson.LessonStatus;
 import cms.swimming.repository.LessonRepository;
 import cms.swimming.repository.specification.LessonSpecification;
 import cms.admin.lesson.dto.AdminLessonCreateRequestDto;
@@ -74,7 +73,6 @@ public class LessonAdminServiceImpl implements LessonAdminService {
                 .lessonMonth(lesson.getStartDate() != null ? lesson.getStartDate().getMonthValue() : null)
                 .capacity(lesson.getCapacity())
                 .price(lesson.getPrice())
-                .status(lesson.getStatus())
                 .instructorName(lesson.getInstructorName())
                 .lessonTime(lesson.getLessonTime())
                 .locationName(lesson.getLocationName())
@@ -93,8 +91,8 @@ public class LessonAdminServiceImpl implements LessonAdminService {
 
     @Override
     @Transactional(readOnly = true)
-    public Page<AdminLessonResponseDto> getAllLessonsAdmin(Pageable pageable, String status, Integer year, Integer month) {
-        Specification<Lesson> spec = LessonSpecification.filterBy(status, year, month);
+    public Page<AdminLessonResponseDto> getAllLessonsAdmin(Pageable pageable, Integer year, Integer month) {
+        Specification<Lesson> spec = LessonSpecification.filterBy( year, month);
         Page<Lesson> lessonPage = lessonRepository.findAll(spec, pageable);
         List<AdminLessonResponseDto> dtoList = lessonPage.getContent().stream()
                 .map(this::convertToAdminLessonResponseDto)
@@ -131,7 +129,6 @@ public class LessonAdminServiceImpl implements LessonAdminService {
                 .endDate(createRequestDto.getEndDate())
                 .capacity(createRequestDto.getCapacity())
                 .price(createRequestDto.getPrice())
-                .status(createRequestDto.getStatus())
                 .instructorName(createRequestDto.getInstructorName())
                 .lessonTime(createRequestDto.getLessonTime())
                 .locationName(createRequestDto.getLocationName())
@@ -157,7 +154,6 @@ public class LessonAdminServiceImpl implements LessonAdminService {
         if (updateRequestDto.getEndDate() != null) existingLesson.setEndDate(updateRequestDto.getEndDate());
         if (updateRequestDto.getCapacity() != null) existingLesson.setCapacity(updateRequestDto.getCapacity());
         if (updateRequestDto.getPrice() != null) existingLesson.setPrice(updateRequestDto.getPrice());
-        if (updateRequestDto.getStatus() != null) existingLesson.setStatus(updateRequestDto.getStatus());
         if (updateRequestDto.getInstructorName() != null) existingLesson.setInstructorName(updateRequestDto.getInstructorName());
         if (updateRequestDto.getLessonTime() != null) existingLesson.setLessonTime(updateRequestDto.getLessonTime());
         if (updateRequestDto.getLocationName() != null) existingLesson.setLocationName(updateRequestDto.getLocationName());
@@ -237,7 +233,6 @@ public class LessonAdminServiceImpl implements LessonAdminService {
                 .instructorName(originalLesson.getInstructorName())
                 .lessonTime(originalLesson.getLessonTime())
                 .locationName(originalLesson.getLocationName())
-                .status(LessonStatus.OPEN) // Default status for cloned lesson
                 .registrationStartDateTime(newRegStartDateTime)
                 .registrationEndDateTime(newRegEndDateTime)
                 .createdBy(createdBy)

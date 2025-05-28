@@ -1,6 +1,5 @@
 package cms.admin.lesson.dto;
 
-import cms.swimming.domain.Lesson.LessonStatus;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Getter;
 import lombok.Setter;
@@ -36,9 +35,6 @@ public class AdminLessonCreateRequestDto {
     @NotNull(message = "Price is mandatory")
     @Min(value = 0, message = "Price cannot be negative")
     private Integer price;
-
-    @NotNull(message = "Status is mandatory")
-    private LessonStatus status; // OPEN, CLOSED, etc.
 
     private String instructorName;
     private String lessonTime;

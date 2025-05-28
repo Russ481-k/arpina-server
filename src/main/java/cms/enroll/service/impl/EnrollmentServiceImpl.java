@@ -274,10 +274,6 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         }
         // *** END 신규 등록 기간 정책 검사 ***
 
-        if (lesson.getStatus() != Lesson.LessonStatus.OPEN) {
-            throw new BusinessRuleException(ErrorCode.LESSON_NOT_OPEN_FOR_ENROLLMENT, "신청 가능한 강습이 아닙니다. 현재 상태: " + lesson.getStatus());
-        }
-
         // *** 잠금 상태에서 정원 체크 (동시성 안전) ***
         long currentPaidEnrollments = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
         long currentUnpaidActiveEnrollments = enrollRepository.countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(
@@ -345,11 +341,6 @@ public class EnrollmentServiceImpl implements EnrollmentService {
             lesson.getLessonId(), "APPLIED", "UNPAID", LocalDateTime.now()
         );
         long finalTotalEnrollments = finalPaidCount + finalUnpaidActiveCount;
-
-        if (finalTotalEnrollments >= lesson.getCapacity() && lesson.getStatus() == Lesson.LessonStatus.OPEN) {
-            lesson.updateStatus(Lesson.LessonStatus.CLOSED);
-            lessonRepository.save(lesson);
-        }
 
         // *** 실시간 정원 정보 업데이트 브로드캐스트 ***
         try {
@@ -832,17 +823,6 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 }
             }
             
-            String lessonStatusDisplay = null;
-            if (lesson.getStatus() != null) {
-                switch (lesson.getStatus()) {
-                    case OPEN: lessonStatusDisplay = "접수중"; break;
-                    case CLOSED: lessonStatusDisplay = "접수마감"; break;
-                    case ONGOING: lessonStatusDisplay = "수강중"; break;
-                    case COMPLETED: lessonStatusDisplay = "강습종료"; break;
-                    default: lessonStatusDisplay = lesson.getStatus().name();
-                }
-            }
-
             // Assumes Lesson.java now has getDisplayName() returning specific display name like "힐링수영반"
             String displayName = (lesson.getDisplayName() != null && !lesson.getDisplayName().isEmpty()) 
                                ? lesson.getDisplayName() 
@@ -881,7 +861,6 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                     .capacity(lesson.getCapacity())
                     .remaining(remainingSpots) // Calculated
                     .price(lesson.getPrice() != null ? new BigDecimal(lesson.getPrice()) : null)
-                    .status(lessonStatusDisplay) // Mapped display string
                     .instructor(instructorDisplay) // From Lesson.getInstructorName()
                     .location(locationNameValue) // From Lesson.getLocationName()
                     .reservationId(reservationIdString) // From Lesson.getRegistrationStartDateTime()
@@ -959,10 +938,6 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 "재수강 신청 기간이 아닙니다. (다음 달 강습: 현월 20~25일)");
         }
 
-        if (lesson.getStatus() != Lesson.LessonStatus.OPEN) {
-            throw new BusinessRuleException(ErrorCode.LESSON_NOT_OPEN_FOR_ENROLLMENT, "재수강 가능한 강습이 아닙니다. 현재 상태: " + lesson.getStatus());
-        }
-
         long paidEnrollments = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
         long unpaidExpiringEnrollments = enrollRepository.countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(lesson.getLessonId(), "APPLIED", "UNPAID", LocalDateTime.now());
         long availableSlotsForRenewal = lesson.getCapacity() - paidEnrollments - unpaidExpiringEnrollments;
@@ -993,11 +968,6 @@ public class EnrollmentServiceImpl implements EnrollmentService {
             );
             long finalTotalEnrollmentsAfterRenewal = finalPaidCountAfterRenewal + finalUnpaidActiveCountAfterRenewal;
 
-            if (finalTotalEnrollmentsAfterRenewal >= lesson.getCapacity() && lesson.getStatus() == Lesson.LessonStatus.OPEN) {
-                lesson.updateStatus(Lesson.LessonStatus.CLOSED);
-                lessonRepository.save(lesson);
-            }
-            
             return EnrollInitiationResponseDto.builder()
                     .enrollId(newEnroll.getEnrollId())
                     .lessonId(lesson.getLessonId())

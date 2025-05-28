@@ -54,10 +54,9 @@ public class LessonAdminController {
     @PreAuthorize("hasAnyRole('SYSTEM_ADMIN', 'ADMIN')")
     public ResponseEntity<ApiResponseSchema<Page<AdminLessonResponseDto>>> getAllLessonsAdmin(
             @PageableDefault(size = 10, sort = "startDate", direction = Sort.Direction.DESC) Pageable pageable,
-            @Parameter(description = "강습 상태 (OPEN, CLOSED, ONGOING, COMPLETED)") @RequestParam(required = false) String status,
             @Parameter(description = "년도 (YYYY)") @RequestParam(required = false) Integer year,
             @Parameter(description = "월 (1-12)") @RequestParam(required = false) Integer month) {
-        Page<AdminLessonResponseDto> lessons = lessonAdminService.getAllLessonsAdmin(pageable, status, year, month);
+        Page<AdminLessonResponseDto> lessons = lessonAdminService.getAllLessonsAdmin(pageable, year, month);
         return ResponseEntity.ok(ApiResponseSchema.success(lessons, "관리자용 강습 목록 조회 성공"));
     }
 

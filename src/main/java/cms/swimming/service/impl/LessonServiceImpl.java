@@ -68,33 +68,13 @@ public class LessonServiceImpl implements LessonService {
             }
         }
 
-        String lessonStatusDisplay = null;
-        if (lesson.getStatus() != null) {
-            switch (lesson.getStatus()) {
-                case OPEN: lessonStatusDisplay = "접수중"; break;
-                case CLOSED: lessonStatusDisplay = "접수마감"; break;
-                case ONGOING: lessonStatusDisplay = "수강중"; break;
-                case COMPLETED: lessonStatusDisplay = "강습종료"; break; // Corrected typo from EnrollDto "강습종료" to "수강종료" to match other logic
-                default: lessonStatusDisplay = lesson.getStatus().name();
-            }
-        }
-
-        return LessonDto.fromEntity(lesson, remainingSpots, days, timePrefix, timeSlot, lessonStatusDisplay);
+        return LessonDto.fromEntity(lesson, remainingSpots, days, timePrefix, timeSlot);
     }
 
     @Override
-    public Page<LessonDto> getLessons(String status, List<Integer> months, LocalDate startDate, LocalDate endDate, Pageable pageable) {
+    public Page<LessonDto> getLessons(List<Integer> months, LocalDate startDate, LocalDate endDate, Pageable pageable) {
         Specification<Lesson> spec = (root, query, criteriaBuilder) -> {
             List<Predicate> predicates = new ArrayList<>();
-
-            if (status != null && !status.trim().isEmpty()) {
-                try {
-                    Lesson.LessonStatus lessonStatus = Lesson.LessonStatus.valueOf(status.toUpperCase());
-                    predicates.add(criteriaBuilder.equal(root.get("status"), lessonStatus));
-                } catch (IllegalArgumentException e) {
-                    throw new InvalidInputException("Invalid lesson status format: " + status, ErrorCode.INVALID_INPUT_VALUE, e);
-                }
-            }
 
             if (months != null && !months.isEmpty()) {
                 predicates.add(criteriaBuilder.function("MONTH", Integer.class, root.get("startDate")).in(months));

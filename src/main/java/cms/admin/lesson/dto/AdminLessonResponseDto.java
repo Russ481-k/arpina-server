@@ -1,6 +1,6 @@
 package cms.admin.lesson.dto;
 
-import cms.swimming.domain.Lesson.LessonStatus;
+// import cms.swimming.domain.Lesson.LessonStatus; // 제거
 import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Builder;
 import lombok.Getter;
@@ -28,7 +28,7 @@ public class AdminLessonResponseDto {
 
     private Integer capacity;
     private Integer price;
-    private LessonStatus status; // Enum type directly
+    // private LessonStatus status; // Enum type directly // 제거
     private String instructorName;
     private String lessonTime;
     private String locationName;

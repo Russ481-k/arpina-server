@@ -36,7 +36,6 @@ public class LessonDto {
     
     private Integer capacity;
     private Integer price; // Lesson entity has Integer, matching here.
-    private String status; // String representation (e.g., "OPEN", "접수중") - mapping to be handled in service or here
     private String instructorName;
     private String lessonTime; // Full original lesson time string
     private String locationName; // New
@@ -64,7 +63,7 @@ public class LessonDto {
     // This method will be more complex now and might require access to other services/repositories (e.g., for remaining spots)
     // Or, the service layer handles complex mapping and this DTO is simpler.
     // For now, let's assume the service layer will populate all fields, including calculated/parsed ones.
-    public static LessonDto fromEntity(Lesson lesson, Integer remainingSpots, String days, String timePrefix, String timeSlot, String statusDisplay) {
+    public static LessonDto fromEntity(Lesson lesson, Integer remainingSpots, String days, String timePrefix, String timeSlot) {
         return LessonDto.builder()
                 .lessonId(lesson.getLessonId())
                 .title(lesson.getTitle())
@@ -75,7 +74,6 @@ public class LessonDto {
                 .registrationEndDateTime(lesson.getRegistrationEndDateTime()) // From new field (type changed)
                 .capacity(lesson.getCapacity())
                 .price(lesson.getPrice())
-                .status(statusDisplay) // Use the display string passed from service
                 .instructorName(lesson.getInstructorName())
                 .lessonTime(lesson.getLessonTime())
                 .locationName(lesson.getLocationName()) // From new field

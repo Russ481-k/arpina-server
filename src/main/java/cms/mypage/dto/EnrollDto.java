@@ -48,7 +48,6 @@ public class EnrollDto {
     private Integer capacity;
     private Integer remaining;
     private BigDecimal price;
-    private String status;
     private String instructor;
     private String location;
     private String reservationId;

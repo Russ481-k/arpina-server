@@ -13,7 +13,7 @@ public interface LessonAdminService {
     // Page<LessonDto> getAllLessons(String status, Integer year, Integer month, Pageable pageable);
     
     // Admin specific methods using new DTOs
-    Page<AdminLessonResponseDto> getAllLessonsAdmin(Pageable pageable, String status, Integer year, Integer month); // Added filters
+    Page<AdminLessonResponseDto> getAllLessonsAdmin(Pageable pageable, Integer year, Integer month); // status 파라미터 제거
     AdminLessonResponseDto getLessonByIdAdmin(Long lessonId);
     AdminLessonResponseDto createLessonAdmin(AdminLessonCreateRequestDto createRequestDto, String createdBy, String createdIp);
     AdminLessonResponseDto updateLessonAdmin(Long lessonId, AdminLessonUpdateRequestDto updateRequestDto, String updatedBy, String updatedIp);

@@ -17,7 +17,7 @@ public interface LessonService {
     // List<LessonDto> getLessonsByDateRange(LocalDate startDate, LocalDate endDate, String status);
 
     // Consolidated method for fetching lessons with various filters
-    Page<LessonDto> getLessons(String status, List<Integer> months, LocalDate startDate, LocalDate endDate, Pageable pageable);
+    Page<LessonDto> getLessons(List<Integer> months, LocalDate startDate, LocalDate endDate, Pageable pageable);
     
     // 특정 강습 상세 조회
     LessonDto getLessonById(Long lessonId);
