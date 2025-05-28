@@ -21,6 +21,7 @@ public class EnrollDto {
   private OffsetDateTime applicationDate; 
   private OffsetDateTime paymentExpireDt; // Renamed from expireDt to be specific
   private boolean usesLocker;      // Added to indicate locker usage
+  private String membershipType; // Added to show the applied membership/discount type
   private RenewalWindow renewalWindow;
   private boolean isRenewal;
   private String cancelStatus;

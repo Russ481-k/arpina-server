@@ -10,6 +10,7 @@ import lombok.AllArgsConstructor;
 import javax.persistence.*;
 import java.time.LocalDateTime;
 import org.hibernate.annotations.ColumnDefault;
+import org.hibernate.annotations.CreationTimestamp;
 
 @Entity
 @Table(name = "enroll", 
@@ -35,6 +36,10 @@ public class Enroll {
 
     public static enum DiscountStatusType {
         PENDING, APPROVED, DENIED
+    }
+
+    public static enum MembershipType {
+        GENERAL, PREMIUM, VIP
     }
 
     @Id
@@ -100,7 +105,8 @@ public class Enroll {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "discount_status", length = 20)
-    private DiscountStatusType discountStatus;
+    @ColumnDefault("'PENDING'")
+    private DiscountStatusType discountStatus = DiscountStatusType.PENDING;
 
     @Column(name = "discount_approved_at")
     private LocalDateTime discountApprovedAt;
@@ -133,6 +139,17 @@ public class Enroll {
 
     @Column(name = "UPDATED_IP", length = 45)
     private String updatedIp;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "membership_type", length = 50, nullable = false)
+    @ColumnDefault("'GENERAL'")
+    private cms.enroll.domain.MembershipType membershipType = cms.enroll.domain.MembershipType.GENERAL;
+
+    @Column(name = "final_amount")
+    private Integer finalAmount;
+
+    @Column(name = "discount_applied_percentage")
+    private Integer discountAppliedPercentage;
 
     @PrePersist
     protected void onCreate() {

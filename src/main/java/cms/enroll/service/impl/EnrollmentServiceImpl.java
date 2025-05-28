@@ -308,71 +308,74 @@ public class EnrollmentServiceImpl implements EnrollmentService {
             throw new BusinessRuleException(ErrorCode.MONTHLY_ENROLLMENT_LIMIT_EXCEEDED, "같은 달에 이미 다른 강습을 신청하셨습니다. 한 달에 한 개의 강습만 신청 가능합니다.");
         }
 
-        // *** 잠금 상태에서 Enroll 생성 (원자적 연산) ***
-        Enroll newEnroll = Enroll.builder()
+        // Convert membershipType string to MembershipType enum
+        cms.enroll.domain.MembershipType membershipTypeEnum;
+        try {
+            membershipTypeEnum = cms.enroll.domain.MembershipType.fromValue(initialEnrollRequest.getMembershipType());
+        } catch (IllegalArgumentException e) {
+            logger.warn("Invalid membershipType received: {}. Details: {}", initialEnrollRequest.getMembershipType(), e.getMessage());
+            throw new BusinessRuleException(ErrorCode.INVALID_INPUT_VALUE, "유효하지 않은 할인 유형입니다: " + initialEnrollRequest.getMembershipType());
+        }
+
+        // Calculate final price
+        int lessonPrice = lesson.getPrice();
+        int discountPercentage = membershipTypeEnum.getDiscountPercentage();
+        double discountedLessonPrice = lessonPrice * (1 - (discountPercentage / 100.0));
+        
+        int calculatedFinalAmount = (int) Math.round(discountedLessonPrice); // Round to nearest integer
+
+        if (initialEnrollRequest.getUsesLocker()) {
+            calculatedFinalAmount += defaultLockerFee;
+        }
+
+        // Create Enroll entity
+        Enroll enroll = Enroll.builder()
                 .user(user)
                 .lesson(lesson)
-                .status("APPLIED") // 신청 상태: APPLIED (문자열 직접 사용)
-                .payStatus("UNPAID")   // 결제 상태: UNPAID (문자열 직접 사용)
-                .cancelStatus(null) // 취소 상태 초기값
-                .createdBy(user.getUuid()) // 생성자 UUID
-                .createdIp(ipAddress) // 생성자 IP
-                .createdAt(LocalDateTime.now()) // 생성 시간
-                // expireDt (만료 시간) 설정:
-                // 현재 (결제 모듈 미연동): UNPAID 신청이 만료되지 않고 계속 유효하도록 매우 긴 시간(1년 후)으로 설정.
-                // 이렇게 설정하면 `unpaidActiveEnrollments` 계산 시 항상 포함되어 정원에 영향을 줌.
-                .expireDt(LocalDateTime.now().plusYears(1)) 
-                // TODO: [결제 모듈 연동 후] 위 .expireDt(LocalDateTime.now().plusYears(1)) 라인을 아래와 같이 변경 또는 유사하게 수정 필요.
-                // .expireDt(LocalDateTime.now().plusMinutes(30)) // 예: 30분 후 만료
-                // TODO: [결제 모듈 연동 후] 만료된 UNPAID 신청(status=APPLIED, payStatus=UNPAID, expireDt < now)을
-                // 주기적으로 EXPIRED 또는 CANCELED_UNPAID 등으로 변경하는 Batch Job 또는 스케줄러 필요.
+                .status("APPLIED") // 초기 상태
+                .payStatus("UNPAID") // 초기 결제 상태
+                .expireDt(LocalDateTime.now().plusYears(1)) // 임시 만료 기간 (추후 결제 모듈 연동 시 조정)
+                .renewalFlag(false)
+                .usesLocker(initialEnrollRequest.getUsesLocker())
+                .lockerAllocated(false) // 사물함 배정은 별도 로직 필요
+                .membershipType(membershipTypeEnum) // Set the enum
+                .finalAmount(calculatedFinalAmount) // Set the calculated final amount
+                .discountAppliedPercentage(discountPercentage) // Log the applied discount
+                // discountStatus defaults to PENDING in the entity
+                .createdBy(user.getUuid()) // 요청자 IP 대신 사용자 UUID로 변경 (기존 코드 확인 필요)
+                .createdIp(ipAddress) 
                 .build();
 
-        // TODO: [EnrollRequestDto 확장 필요] 라커 사용 여부(usesLocker), 갱신 여부(renewalFlag), 라커 선택 정보(lockerSelection) 등을 
-        // EnrollRequestDto에 추가하고, 여기서 newEnroll 객체에 해당 값을 설정하는 로직 필요.
-        // 예시: if (initialEnrollRequest.getUsesLocker() != null) newEnroll.setUsesLocker(initialEnrollRequest.getUsesLocker());
-        // 현재는 Enroll 엔티티의 @Builder.Default 또는 @ColumnDefault에 의해 기본값(대부분 false 또는 null)으로 처리됨.
+        Enroll savedEnroll = enrollRepository.save(enroll);
+        logger.info("Enrollment record created with ID: {} for user: {}, lesson: {}, membership: {}, finalAmount: {}", 
+            savedEnroll.getEnrollId(), user.getUuid(), lesson.getLessonId(), membershipTypeEnum, calculatedFinalAmount);
 
-        Enroll savedEnroll = enrollRepository.save(newEnroll);
-
-        // *** 정원 달성 시 강좌 상태 변경 ***
+        // 사물함 배정 로직 호출 (필요한 경우)
+        // if (savedEnroll.isUsesLocker()) { ... }
+        
+        // WebSocket으로 용량 업데이트 전송 (이전 로직 복원 및 사용)
         long finalPaidCount = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
         long finalUnpaidActiveCount = enrollRepository.countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(
             lesson.getLessonId(), "APPLIED", "UNPAID", LocalDateTime.now()
         );
-        long finalTotalEnrollments = finalPaidCount + finalUnpaidActiveCount;
 
-        // *** 실시간 정원 정보 업데이트 브로드캐스트 ***
-        try {
-            webSocketHandler.broadcastLessonCapacityUpdate(
-                lesson.getLessonId(),
-                lesson.getCapacity(),
-                (int) finalPaidCount,
-                (int) finalUnpaidActiveCount 
-            );
-            logger.debug("[WebSocket] Broadcasted capacity update for lesson {}", lesson.getLessonId());
-        } catch (Exception e) {
-            logger.warn("[WebSocket] Failed to broadcast capacity update for lesson {}: {}", 
-                       lesson.getLessonId(), e.getMessage());
+        if (webSocketHandler != null) {
+            try {
+                webSocketHandler.broadcastLessonCapacityUpdate(
+                    lesson.getLessonId(),
+                    lesson.getCapacity(), // Total capacity
+                    (int) finalPaidCount,
+                    (int) finalUnpaidActiveCount
+                );
+                logger.info("Sent capacity update via WebSocket for lessonId: {}, total: {}, paid: {}, unpaidActive: {}", 
+                    lesson.getLessonId(), lesson.getCapacity(), finalPaidCount, finalUnpaidActiveCount);
+            } catch (Exception e) {
+                logger.warn("[WebSocket] Failed to broadcast capacity update for lesson {}: {}", 
+                           lesson.getLessonId(), e.getMessage(), e); // Include exception for better diagnostics
+            }
         }
 
-        // *** 응답 반환 ***
-        return EnrollResponseDto.builder()
-            .enrollId(savedEnroll.getEnrollId())
-            .userId(user.getUuid())
-            .userName(user.getName())
-            .status(savedEnroll.getStatus())
-            .payStatus(savedEnroll.getPayStatus())
-            .createdAt(savedEnroll.getCreatedAt())
-            .expireDt(savedEnroll.getExpireDt())
-            .lessonId(lesson.getLessonId())
-            .lessonTitle(lesson.getTitle())
-            .lessonPrice(lesson.getPrice())
-            .usesLocker(savedEnroll.isUsesLocker())
-            .renewalFlag(savedEnroll.isRenewalFlag())
-            .cancelStatus(savedEnroll.getCancelStatus() != null ? savedEnroll.getCancelStatus().name() : null)
-            .cancelReason(savedEnroll.getCancelReason())
-            .build();
+        return convertToSwimmingEnrollResponseDto(savedEnroll);
     }
 
     @Override
@@ -778,6 +781,8 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 .lessonId(lesson != null ? lesson.getLessonId() : null)
                 .lessonTitle(lesson != null ? lesson.getTitle() : null)
                 .lessonPrice(lesson != null ? lesson.getPrice() : null)
+                .finalAmount(enroll.getFinalAmount())
+                .membershipType(enroll.getMembershipType() != null ? enroll.getMembershipType().getValue() : null)
                 .usesLocker(enroll.isUsesLocker())
                 .renewalFlag(enroll.isRenewalFlag())
                 .cancelStatus(enroll.getCancelStatus() != null ? enroll.getCancelStatus().name() : null)
@@ -906,6 +911,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 .applicationDate(enroll.getCreatedAt().atOffset(ZoneOffset.UTC))
                 .paymentExpireDt(enroll.getExpireDt() != null ? enroll.getExpireDt().atOffset(ZoneOffset.UTC) : null)
                 .usesLocker(enroll.isUsesLocker())
+                .membershipType(enroll.getMembershipType() != null ? enroll.getMembershipType().getValue() : null)
                 .renewalWindow(renewalWindowDto)
                 .isRenewal(enroll.isRenewalFlag())
                 .cancelStatus(enroll.getCancelStatus() != null ? enroll.getCancelStatus().name() : Enroll.CancelStatusType.NONE.name())
