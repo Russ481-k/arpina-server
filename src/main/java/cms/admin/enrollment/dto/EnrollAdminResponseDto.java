@@ -25,6 +25,7 @@ public class EnrollAdminResponseDto {
     private Long lessonId;
     private String lessonTitle;
     private PaymentInfoForEnrollAdmin payment; // Nested Payment Info
+    private String membershipType; // Added to display membership/discount type
     private String cancelStatus; // NONE, REQ, APPROVED, DENIED
     private String cancelReason;
     // private Integer remain_days_at_cancel; // 의미 재검토 필요, 일단 제외

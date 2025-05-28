@@ -85,6 +85,7 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
                 .lessonId(enroll.getLesson() != null ? enroll.getLesson().getLessonId() : null)
                 .lessonTitle(enroll.getLesson() != null ? enroll.getLesson().getTitle() : null)
                 .payment(paymentInfo)
+                .membershipType(enroll.getMembershipType() != null ? enroll.getMembershipType().getValue() : null)
                 .cancelStatus(enroll.getCancelStatus() != null ? enroll.getCancelStatus().name() : null)
                 .cancelReason(enroll.getCancelReason())
                 .build();
