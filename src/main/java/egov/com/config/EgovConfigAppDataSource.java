@@ -37,8 +37,8 @@ import io.github.cdimascio.dotenv.Dotenv;
  *
  */
 @Configuration
-public class EgovConfigAppDataSourcee {
-    private static final Logger logger = LoggerFactory.getLogger(EgovConfigAppDataSourcee.class);
+public class EgovConfigAppDataSource {
+    private static final Logger logger = LoggerFactory.getLogger(EgovConfigAppDataSource.class);
 
     @Autowired
     Environment env;
