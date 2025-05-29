@@ -1,5 +1,6 @@
 package cms.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.ContentNegotiationConfigurer;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
@@ -10,6 +11,8 @@ import org.springframework.lang.NonNull;
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
+    @Value("${cors.allowed-origins:http://localhost:3000}")
+    private String allowedOrigins;
     @Override
     public void configurePathMatch(@NonNull PathMatchConfigurer configurer) {
         configurer
@@ -26,15 +29,14 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
-        // Spring Boot CORS 설정을 Nginx에서 처리하도록 주석 처리
-        /*
+        // 환경변수를 통한 CORS 설정
         registry.addMapping("/**")
-            .allowedOrigins("*")
-            .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+            .allowedOriginPatterns(allowedOrigins)
+            .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH")
             .allowedHeaders("*")
+            .allowCredentials(true)
             .exposedHeaders("Authorization")
             .maxAge(3600);
-        */
     }
 } 
  

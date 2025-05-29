@@ -52,9 +52,8 @@ public class SecurityConfig {
 	@Bean
 	public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 		http
-			// .cors().configurationSource(corsConfigurationSource()) // 기존 설정 주석 처리
-			// .and()
-			.cors().disable() // Spring Security의 CORS 처리 비활성화
+			.cors().configurationSource(corsConfigurationSource()) // CORS 활성화
+			.and()
 			.csrf().disable()
 			.sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
 			.and()
@@ -140,7 +139,8 @@ public class SecurityConfig {
 	protected CorsConfigurationSource corsConfigurationSource() {
 		CorsConfiguration configuration = new CorsConfiguration();
 		
-		configuration.setAllowedOriginPatterns(Arrays.asList("*"));  // 개발 환경에서만 사용
+		// 개발환경용 Origin 설정
+		configuration.setAllowedOriginPatterns(Arrays.asList("http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:*"));
 		configuration.setAllowedMethods(Arrays.asList("HEAD", "POST", "GET", "DELETE", "PUT", "PATCH", "OPTIONS"));
 		configuration.setAllowedHeaders(Arrays.asList(
 			"Authorization", 
@@ -157,7 +157,7 @@ public class SecurityConfig {
 		configuration.setMaxAge(3600L);
 		
 		UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-		// source.registerCorsConfiguration("/**", configuration); // Nginx에서 처리하므로 주석 처리
+		source.registerCorsConfiguration("/**", configuration); // CORS 설정 활성화
 		return source;
 	}
 

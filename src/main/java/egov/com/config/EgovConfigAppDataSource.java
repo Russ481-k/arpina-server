@@ -5,16 +5,13 @@ import javax.sql.DataSource;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.boot.jdbc.DataSourceBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
-import org.springframework.core.env.Environment;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 
+import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import io.github.cdimascio.dotenv.Dotenv;
 
@@ -40,10 +37,11 @@ import io.github.cdimascio.dotenv.Dotenv;
 public class EgovConfigAppDataSource {
     private static final Logger logger = LoggerFactory.getLogger(EgovConfigAppDataSource.class);
 
-    @Autowired
-    Environment env;
-
     private String dbType;
+    private String dbUrl;
+    private String dbUsername;
+    private String dbPassword;
+    private String dbDriverClassName;
 
     @PostConstruct
     void init() {
@@ -54,20 +52,14 @@ public class EgovConfigAppDataSource {
                 .directory(".")
                 .load();
             
-            // Set system properties from .env
-            String dbUrl = dotenv.get("SPRING_DATASOURCE_URL");
-            String dbUsername = dotenv.get("SPRING_DATASOURCE_USERNAME");
-            String dbPassword = dotenv.get("SPRING_DATASOURCE_PASSWORD");
-            
-            logger.info("Setting system properties from .env");
-            System.setProperty("SPRING_DATASOURCE_URL", dbUrl);
-            System.setProperty("SPRING_DATASOURCE_USERNAME", dbUsername);
-            System.setProperty("SPRING_DATASOURCE_PASSWORD", dbPassword);
-            System.setProperty("SPRING_DATASOURCE_DRIVER_CLASS_NAME", "org.mariadb.jdbc.Driver");
-            
+            // Get database configuration from .env
+            this.dbUrl = dotenv.get("SPRING_DATASOURCE_URL");
+            this.dbUsername = dotenv.get("SPRING_DATASOURCE_USERNAME");
+            this.dbPassword = dotenv.get("SPRING_DATASOURCE_PASSWORD");
+            this.dbDriverClassName = "org.mariadb.jdbc.Driver";
             this.dbType = "mariadb";
             
-            logger.info("Database configuration loaded - URL: {}, Username: {}", dbUrl, dbUsername);
+            logger.info("Database configuration loaded - URL: {}, Username: {}", this.dbUrl, this.dbUsername);
         } catch (Exception e) {
             logger.error("Error loading environment variables", e);
             throw new RuntimeException("Failed to load environment variables", e);
@@ -88,17 +80,28 @@ public class EgovConfigAppDataSource {
     /**
      * Primary DataSource using HikariCP
      */
-    @Bean
+    @Bean(name = {"dataSource", "egov.dataSource", "egovDataSource"})
     @Primary
-    @ConfigurationProperties("spring.datasource.hikari")
     public DataSource dataSource() {
         logger.info("Creating DataSource with dbType: {}", dbType);
         if ("hsql".equals(dbType)) {
             return dataSourceHSQL();
         } else {
-            return DataSourceBuilder.create()
-                    .type(HikariDataSource.class)
-                    .build();
+            HikariConfig hikariConfig = new HikariConfig();
+            hikariConfig.setJdbcUrl(dbUrl);
+            hikariConfig.setUsername(dbUsername);
+            hikariConfig.setPassword(dbPassword);
+            hikariConfig.setDriverClassName(dbDriverClassName);
+            
+            // HikariCP 추가 설정
+            hikariConfig.setMaximumPoolSize(10);
+            hikariConfig.setMinimumIdle(2);
+            hikariConfig.setConnectionTimeout(30000);
+            hikariConfig.setIdleTimeout(600000);
+            hikariConfig.setMaxLifetime(1800000);
+            
+            logger.info("Creating HikariDataSource with URL: {}", dbUrl);
+            return new HikariDataSource(hikariConfig);
         }
     }
 } 

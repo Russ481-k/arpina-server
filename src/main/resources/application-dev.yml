@@ -241,8 +241,8 @@ nice:
     site-code: ${NICE_CHECKPLUS_SITE_CODE}
     site-password: ${NICE_CHECKPLUS_SITE_PASSWORD}
     base-callback-url: ${app.api.base-url}
-    frontend-redirect-success-url: ${NICE_CHECKPLUS_FRONTEND_REDIRECT_URL}
-    frontend-redirect-fail-url: ${NICE_CHECKPLUS_FRONTEND_REDIRECT_URL}
+    frontend-redirect-success-path: ${NICE_CHECKPLUS_FRONTEND_REDIRECT_PATH}
+    frontend-redirect-fail-path: ${NICE_CHECKPLUS_FRONTEND_REDIRECT_PATH}
 
 # KISPG Configurations (Dev Specific)
 kispg:
@@ -266,3 +266,5 @@ management:
     export:
       prometheus:
         enabled: true
+cors:
+  allowed-origins: ${GLOBALS_ALLOW_ORIGIN}

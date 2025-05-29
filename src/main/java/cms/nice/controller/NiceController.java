@@ -10,7 +10,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import javax.annotation.PostConstruct;
 import java.net.URI;
+import java.util.Collections;
 import java.util.Map;
 
 @RestController
@@ -21,16 +23,28 @@ public class NiceController {
 
     private final NiceService niceService;
 
-    @Value("${nice.checkplus.frontend-redirect-success-url}")
-    private String frontendSuccessUrl;
+    @Value("${cors.allowed-origins}")
+    private String allowedOrigins;
 
-    @Value("${nice.checkplus.frontend-redirect-fail-url}")
-    private String frontendFailUrl;
+    @Value("${nice.checkplus.frontend-redirect-success-path}")
+    private String frontendSuccessPath;
+
+    @Value("${nice.checkplus.frontend-redirect-fail-path}")
+    private String frontendFailPath;
+
+    private String frontendRedirectSuccessUrl;
+    private String frontendRedirectFailUrl;
 
     // tempReqSeqStore and tempResultStore are now managed by NiceService
 
     public NiceController(NiceService niceService) {
         this.niceService = niceService;
+    }
+
+    @PostConstruct
+    private void initializeUrls() {
+        this.frontendRedirectSuccessUrl = allowedOrigins + frontendSuccessPath;
+        this.frontendRedirectFailUrl = allowedOrigins + frontendFailPath;
     }
 
     @PostMapping("/initiate")
@@ -42,7 +56,7 @@ public class NiceController {
             return ResponseEntity.ok(responseDto);
         } catch (Exception e) {
             log.error("Error initiating NICE verification", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "본인인증 초기화 실패: " + e.getMessage()));
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Collections.singletonMap("error", "본인인증 초기화 실패: " + e.getMessage()));
         }
     }
 
@@ -67,7 +81,7 @@ public class NiceController {
                 }
             }
 
-            UriComponentsBuilder urlBuilder = UriComponentsBuilder.fromUriString(frontendSuccessUrl)
+            UriComponentsBuilder urlBuilder = UriComponentsBuilder.fromUriString(frontendRedirectSuccessUrl)
                                 .queryParam("status", "success")
                                 .queryParam("key", resultKey)
                                 .queryParam("joined", String.valueOf(isAlreadyJoined));
@@ -88,7 +102,7 @@ public class NiceController {
             return new ResponseEntity<>(headers, HttpStatus.FOUND);
         } catch (Exception e) {
             log.error("Exception in NICE successCallback. Initial reqSeqFromNice: {}", reqSeqFromNice, e);
-            String errorRedirectUrl = UriComponentsBuilder.fromUriString(frontendFailUrl)
+            String errorRedirectUrl = UriComponentsBuilder.fromUriString(frontendRedirectFailUrl)
                                         .queryParam("status", "fail")
                                         .queryParam("error", "processing_failed")
                                         .queryParam("detail", e.getMessage() != null ? e.getClass().getSimpleName() + ": " + e.getMessage() : e.getClass().getSimpleName())
@@ -110,7 +124,7 @@ public class NiceController {
             // The error code might be part of the DTO fetched by /result/{resultKey}
 
             // Construct redirect URL, possibly including the resultKey to fetch error details on FE
-            UriComponentsBuilder urlBuilder = UriComponentsBuilder.fromUriString(frontendFailUrl)
+            UriComponentsBuilder urlBuilder = UriComponentsBuilder.fromUriString(frontendRedirectFailUrl)
                                                 .queryParam("status", "fail")
                                                 .queryParam("key", resultKey);
             
@@ -125,7 +139,7 @@ public class NiceController {
             return new ResponseEntity<>(headers, HttpStatus.FOUND);
         } catch (Exception e) {
             log.error("Exception in NICE failCallback. Initial reqSeqFromNice: {}", reqSeqFromNice, e);
-            String errorRedirectUrl = UriComponentsBuilder.fromUriString(frontendFailUrl)
+            String errorRedirectUrl = UriComponentsBuilder.fromUriString(frontendRedirectFailUrl)
                                         .queryParam("status", "fail")
                                         .queryParam("error", "processing_failed_on_fail")
                                          .queryParam("detail", e.getMessage() != null ? e.getClass().getSimpleName() + ": " + e.getMessage() : e.getClass().getSimpleName())
@@ -141,7 +155,7 @@ public class NiceController {
         try {
             Object resultData = niceService.peekRawNiceData(resultKey);
             if (resultData == null) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "결과를 찾을 수 없거나 만료되었습니다."));
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Collections.singletonMap("error", "결과를 찾을 수 없거나 만료되었습니다."));
             }
 
             // If resultData is NiceUserDataDto, convert to NicePublicUserDataDto for exposure
@@ -166,7 +180,7 @@ public class NiceController {
             }
         } catch (Exception e) {
             log.error("Error retrieving NICE verification result for key {}: {}", resultKey, e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "결과 조회 처리 중 에러 발생: " + e.getMessage()));
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Collections.singletonMap("error", "결과 조회 처리 중 에러 발생: " + e.getMessage()));
         }
     }
     // isValidReqSeq method is removed as its logic is now within NiceService's consumeAndValidateReqSeq
