@@ -47,6 +47,7 @@ public class JwtTokenProvider {
         Claims claims = Jwts.claims().setSubject(user.getUsername());
         claims.put("userId", user.getUuid());
         claims.put("role", "ROLE_" + user.getRole().name());
+        claims.put("gender", user.getGender());
         claims.put(TOKEN_TYPE_CLAIM, TOKEN_TYPE_ACCESS);
 
         Date now = new Date();
@@ -91,6 +92,7 @@ public class JwtTokenProvider {
         logger.debug("Token claims parsed successfully");
         logger.debug("Subject: {}", claims.getSubject());
         logger.debug("User ID: {}", claims.get("userId"));
+        logger.debug("Gender from token: {}", claims.get("gender", String.class));
         
         String roleStr = claims.get("role", String.class);
         logger.info("[JwtTokenProvider] Original role string from token: '{}'", roleStr);
@@ -120,10 +122,11 @@ public class JwtTokenProvider {
                 .role(userRoleTypeEnum)
                 .status("ACTIVE")
                 .password("")
-                .email("")
-                .name("")
+                .email(claims.get("email", String.class))
+                .name(claims.get("name", String.class))
+                .gender(claims.get("gender", String.class))
                 .build();
-        logger.debug("Created UserDetails: {}", principal);
+        logger.debug("Created UserDetails: {}, with gender: {}", principal, ((User)principal).getGender());
 
         JwtAuthenticationToken authentication = new JwtAuthenticationToken(principal, token, authorities, token);
         logger.debug("Created JwtAuthenticationToken: {}", authentication);

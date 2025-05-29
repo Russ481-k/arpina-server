@@ -8,61 +8,84 @@ import org.springframework.http.HttpStatus;
 @RequiredArgsConstructor
 public enum ErrorCode {
 
-    // --- 공통 오류 코드 (C001 ~ C099) ---
-    INVALID_INPUT_VALUE("C001", "입력 값이 유효하지 않습니다."),
-    METHOD_NOT_ALLOWED("C002", "허용되지 않은 HTTP 메소드입니다."),
-    INTERNAL_SERVER_ERROR("C003", "서버 내부 오류가 발생했습니다. 관리자에게 문의해주세요."),
-    ACCESS_DENIED("C004", "요청한 리소스에 접근할 권한이 없습니다."),
-    RESOURCE_NOT_FOUND("C005", "요청한 리소스를 찾을 수 없습니다."),
-    AUTHENTICATION_FAILED("C006", "사용자 인증에 실패했습니다."),
-    REQUEST_TIMEOUT("C007", "요청 처리 시간이 초과되었습니다."),
+    // Common Errors (CM_xxxx)
+    INTERNAL_SERVER_ERROR("CM_0001", "서버 내부 오류가 발생했습니다. 관리자에게 문의해주세요.", HttpStatus.INTERNAL_SERVER_ERROR),
+    INVALID_INPUT_VALUE("CM_0002", "입력값이 유효하지 않습니다. 다시 확인해주세요.", HttpStatus.BAD_REQUEST),
+    ACCESS_DENIED("CM_0003", "요청에 대한 접근 권한이 없습니다.", HttpStatus.FORBIDDEN),
+    AUTHENTICATION_FAILED("CM_0004", "사용자 인증에 실패했습니다. 로그인 정보를 확인해주세요.", HttpStatus.UNAUTHORIZED),
+    RESOURCE_NOT_FOUND("CM_0005", "요청한 리소스를 찾을 수 없습니다.", HttpStatus.NOT_FOUND),
+    METHOD_NOT_ALLOWED("CM_0006", "허용되지 않은 HTTP 메소드입니다.", HttpStatus.METHOD_NOT_ALLOWED),
+    REQUEST_TIMEOUT("CM_0007", "요청 처리 시간이 초과되었습니다.", HttpStatus.REQUEST_TIMEOUT),
+    SERVICE_UNAVAILABLE("CM_0008", "현재 서비스를 사용할 수 없습니다. 잠시 후 다시 시도해주세요.", HttpStatus.SERVICE_UNAVAILABLE),
+    DATA_INTEGRITY_VIOLATION("CM_0009", "데이터 무결성 제약조건을 위반했습니다. 입력값을 확인해주세요.", HttpStatus.CONFLICT),
 
-    // --- 사용자 및 프로필 관련 오류 코드 (U001 ~ U099) ---
-    USER_NOT_FOUND("U001", "해당 사용자를 찾을 수 없습니다."),
-    DUPLICATE_USER_ID("U002", "이미 사용 중인 아이디입니다."),
-    PASSWORD_MISMATCH("U003", "기존 비밀번호가 일치하지 않습니다."),
-    NEW_PASSWORD_MISMATCH("U004", "새 비밀번호와 새 비밀번호 확인이 일치하지 않습니다."),
-    PASSWORD_POLICY_VIOLATION("U005", "비밀번호 정책을 만족하지 못합니다."),
-    PROFILE_UPDATE_FAILED("U006", "프로필 업데이트 중 오류가 발생했습니다."),
-    TEMP_PASSWORD_ISSUE_FAILED("U007", "임시 비밀번호 발급 중 오류가 발생했습니다."),
-    INVALID_CURRENT_PASSWORD("U008", "현재 비밀번호가 올바르지 않습니다."),
-    INVALID_USER_GENDER("U009", "유효하지 않은 사용자 성별 값입니다."),
+    // User Errors (US_xxxx)
+    USER_NOT_FOUND("US_0001", "해당 사용자를 찾을 수 없습니다.", HttpStatus.NOT_FOUND),
+    DUPLICATE_USERNAME("US_0002", "이미 사용 중인 사용자 ID입니다.", HttpStatus.CONFLICT), // username 중복은 DUPLICATE_USERNAME 사용
+    DUPLICATE_EMAIL("US_0003", "이미 사용 중인 이메일입니다.", HttpStatus.CONFLICT),    // email 중복은 DUPLICATE_EMAIL 사용
+    PASSWORD_MISMATCH("US_0004", "비밀번호가 일치하지 않습니다.", HttpStatus.BAD_REQUEST),
+    INVALID_PASSWORD_FORMAT("US_0005", "비밀번호 형식이 올바르지 않습니다.", HttpStatus.BAD_REQUEST),
+    ACCOUNT_LOCKED("US_0006", "계정이 잠겼습니다. 관리자에게 문의하세요.", HttpStatus.FORBIDDEN),
+    ACCOUNT_EXPIRED("US_0007", "계정이 만료되었습니다.", HttpStatus.FORBIDDEN),
+    ACCOUNT_DISABLED("US_0008", "비활성화된 계정입니다.", HttpStatus.FORBIDDEN),
+    INVALID_USER_GENDER("US_0009", "사용자의 성별 코드가 유효하지 않습니다.", HttpStatus.BAD_REQUEST),
+    DUPLICATE_DI("US_0010", "이미 해당 본인인증 정보로 가입된 계정이 존재합니다.", HttpStatus.CONFLICT),
+    INVALID_CURRENT_PASSWORD("US_0011", "현재 비밀번호가 올바르지 않습니다.", HttpStatus.BAD_REQUEST),
+    PROFILE_UPDATE_FAILED("US_0012", "프로필 업데이트 중 오류가 발생했습니다.", HttpStatus.INTERNAL_SERVER_ERROR),
+    TEMP_PASSWORD_ISSUE_FAILED("US_0013", "임시 비밀번호 발급 중 오류가 발생했습니다.", HttpStatus.INTERNAL_SERVER_ERROR),
 
-    // --- 수강신청 (Enrollment) 관련 오류 코드 (E001 ~ E099) ---
-    ENROLLMENT_NOT_FOUND("E001", "수강 신청 정보를 찾을 수 없습니다."),
-    LESSON_NOT_FOUND("E002", "강좌 정보를 찾을 수 없습니다."),
-    LESSON_NOT_OPEN_FOR_ENROLLMENT("E003", "현재 신청 가능한 강좌가 아닙니다."),
-    LESSON_CAPACITY_EXCEEDED("E004", "강좌의 정원이 초과되었습니다."),
-    DUPLICATE_ENROLLMENT_ATTEMPT("E005", "이미 해당 강좌에 대한 신청 또는 결제 내역이 존재합니다."),
-    MONTHLY_ENROLLMENT_LIMIT_EXCEEDED("E006", "한 달에 하나의 강좌만 신청할 수 있습니다."),
-    ENROLLMENT_PAYMENT_EXPIRED("E007", "결제 가능 시간이 만료되었습니다."),
-    LOCKER_NOT_AVAILABLE("E008", "현재 사용 가능한 라커가 없습니다."),
-    LOCKER_ASSIGNMENT_FAILED("E009", "라커 배정 중 오류가 발생했습니다."),
-    LOCKER_RELEASE_FAILED("E010", "라커 반납 처리 중 오류가 발생했습니다."),
-    ENROLLMENT_CANCELLATION_NOT_ALLOWED("E011", "수강 신청을 취소할 수 없는 상태입니다."),
-    ENROLLMENT_RENEWAL_NOT_ALLOWED("E012", "재수강(갱신)을 할 수 없는 상태입니다."),
-    USER_GENDER_REQUIRED_FOR_LOCKER("E013", "라커를 신청하거나 반납하려면 사용자의 성별 정보가 필요합니다."),
-    ALREADY_CANCELLED_ENROLLMENT("E014", "이미 취소 처리된 수강 신청입니다."),
-    LESSON_LOCKER_CAPACITY_EXCEEDED_FOR_GENDER("E015", "해당 성별의 강습 사물함 정원이 초과되었습니다."),
-    LOCKER_INVENTORY_NOT_FOUND("E016", "사물함 재고 정보를 찾을 수 없습니다."),
-    PAYMENT_PAGE_SLOT_UNAVAILABLE("E017", "현재 해당 강습의 결제 페이지에 접근할 수 있는 인원이 가득 찼습니다. 잠시 후 다시 시도해주세요."),
-    LESSON_CANNOT_BE_DELETED("E018", "해당 강습에 신청 내역이 존재하여 삭제할 수 없습니다."),
-    LESSON_FULL("E019", "현재 해당 강습의 결제 페이지 접근 슬롯이 가득 찼습니다."),
-    LOCKER_GENDER_REQUIRED("E020", "사물함 사용 시 사용자의 성별 정보가 필요합니다."),
-    DUPLICATE_ENROLLMENT("E021", "이미 해당 강습에 대한 유효한 신청 내역이 존재합니다."),
-    REGISTRATION_PERIOD_INVALID("E022", "등록 기간이 아닙니다."),
-    RENEWAL_PERIOD_INVALID("E023", "재수강 신청 기간이 아닙니다."),
-    ENROLLMENT_PREVIOUSLY_CANCELLED_BY_ADMIN("E024", "관리자에 의해 취소된 강습에 대해 재신청할 수 없습니다."),
+    // NICE Verification Errors (NV_xxxx)
+    NICE_VERIFICATION_FAILED("NV_0001", "NICE 본인인증에 실패했거나 인증 정보가 만료되었습니다.", HttpStatus.BAD_REQUEST),
+    NICE_VERIFICATION_MISSING_KEY("NV_0002", "NICE 본인인증 정보가 누락되었습니다. 본인인증을 다시 진행해주세요.", HttpStatus.BAD_REQUEST),
+    NICE_VERIFICATION_ERROR("NV_0003", "NICE 본인인증 중 오류가 발생했습니다.", HttpStatus.INTERNAL_SERVER_ERROR),
 
-    // --- 결제 (Payment) 관련 오류 코드 (P001 ~ P099) ---
-    PAYMENT_INFO_NOT_FOUND("P001", "결제 정보를 찾을 수 없습니다."),
-    PAYMENT_AMOUNT_MISMATCH("P002", "결제 요청 금액과 실제 금액이 일치하지 않습니다."),
-    PAYMENT_PROCESSING_FAILED("P003", "결제 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."),
-    PAYMENT_REFUND_FAILED("P004", "환불 처리 중 오류가 발생했습니다."),
-    ALREADY_PAID_ENROLLMENT("P005", "이미 결제가 완료된 수강 신청입니다."),
-    NOT_UNPAID_ENROLLMENT_STATUS("P006", "결제 대기 상태의 수강 신청이 아닙니다."),
-    PAYMENT_CANCEL_NOT_ALLOWED("P007", "결제를 취소할 수 없는 상태입니다.");
+    // Lesson Errors (LS_xxxx)
+    LESSON_NOT_FOUND("LS_0001", "강습 정보를 찾을 수 없습니다.", HttpStatus.NOT_FOUND),
+    LESSON_CAPACITY_EXCEEDED("LS_0002", "강습 정원이 초과되었습니다.", HttpStatus.BAD_REQUEST),
+    LESSON_ALREADY_ENROLLED("LS_0003", "이미 해당 강습에 등록되어 있습니다.", HttpStatus.CONFLICT),
+    INVALID_LESSON_STATUS("LS_0004", "강습 상태가 유효하지 않아 작업을 처리할 수 없습니다.", HttpStatus.BAD_REQUEST),
+    LESSON_REGISTRATION_PERIOD_INVALID("LS_0005", "강습 신청/변경 기간이 아닙니다.", HttpStatus.BAD_REQUEST),
+    LESSON_CANNOT_BE_DELETED("LS_0006", "해당 강습에 신청 내역이 존재하여 삭제할 수 없습니다.", HttpStatus.CONFLICT),
+
+    // Enrollment Errors (EN_xxxx)
+    ENROLLMENT_NOT_FOUND("EN_0001", "수강 신청 정보를 찾을 수 없습니다.", HttpStatus.NOT_FOUND),
+    ENROLLMENT_CANCELLATION_NOT_ALLOWED("EN_0002", "수강 신청 취소가 허용되지 않는 상태입니다.", HttpStatus.BAD_REQUEST),
+    ENROLLMENT_PAYMENT_EXPIRED("EN_0003", "수강 신청 결제 가능 시간이 만료되었습니다.", HttpStatus.BAD_REQUEST),
+    MONTHLY_ENROLLMENT_LIMIT_EXCEEDED("EN_0004", "월별 수강 신청 가능 횟수를 초과했습니다.", HttpStatus.BAD_REQUEST),
+    DUPLICATE_ENROLLMENT_ATTEMPT("EN_0005", "이미 해당 강습에 대한 신청(결제대기 또는 완료) 내역이 존재합니다.", HttpStatus.CONFLICT),
+    NOT_UNPAID_ENROLLMENT_STATUS("EN_0006", "결제 대기 상태의 수강 신청이 아닙니다.", HttpStatus.BAD_REQUEST),
+    PAYMENT_PAGE_SLOT_UNAVAILABLE("EN_0007", "정원 마감 또는 신청 가능한 슬롯이 없습니다.", HttpStatus.CONFLICT),
+    ALREADY_CANCELLED_ENROLLMENT("EN_0008", "이미 취소 처리 중이거나 완료된 신청입니다.", HttpStatus.CONFLICT),
+    RENEWAL_PERIOD_INVALID("EN_0009", "재수강 신청 기간이 아닙니다.", HttpStatus.BAD_REQUEST),
+    ENROLLMENT_PREVIOUSLY_CANCELLED_BY_ADMIN("EN_0010", "해당 강습에 대한 이전 신청이 관리자에 의해 취소된 내역이 있어 재신청할 수 없습니다.", HttpStatus.FORBIDDEN),
+    DUPLICATE_ENROLLMENT("EN_0011", "이미 해당 강습에 신청 내역이 존재합니다.", HttpStatus.CONFLICT),
+    REGISTRATION_PERIOD_INVALID("EN_0012", "신청 기간이 아닙니다.", HttpStatus.BAD_REQUEST),
+
+    // Payment Errors (PM_xxxx)
+    PAYMENT_INFO_NOT_FOUND("PM_0001", "결제 정보를 찾을 수 없습니다.", HttpStatus.NOT_FOUND),
+    PAYMENT_AMOUNT_MISMATCH("PM_0002", "결제 금액이 일치하지 않습니다.", HttpStatus.BAD_REQUEST),
+    PAYMENT_FAILED("PM_0003", "결제 처리 중 오류가 발생했습니다.", HttpStatus.INTERNAL_SERVER_ERROR),
+    REFUND_NOT_POSSIBLE("PM_0004", "환불이 불가능한 상태입니다.", HttpStatus.BAD_REQUEST),
+    INVALID_PAYMENT_STATUS_FOR_OPERATION("PM_0005", "현재 결제 상태에서는 해당 작업을 수행할 수 없습니다.", HttpStatus.BAD_REQUEST),
+    PAYMENT_WEBHOOK_INVALID_REQUEST("PM_0006", "잘못된 결제 웹훅 요청입니다.", HttpStatus.BAD_REQUEST),
+    PAYMENT_ALREADY_PROCESSED("PM_0007", "이미 처리된 결제입니다.", HttpStatus.CONFLICT),
+    PAYMENT_CANCEL_NOT_ALLOWED("PM_0008", "해당 결제는 현재 취소할 수 없는 상태입니다.", HttpStatus.BAD_REQUEST),
+    PAYMENT_REFUND_FAILED("PM_0009", "결제 환불 처리 중 오류가 발생했습니다.", HttpStatus.INTERNAL_SERVER_ERROR),
+
+    // Locker Errors (LK_xxxx)
+    LOCKER_NOT_AVAILABLE("LK_0001", "사용 가능한 사물함이 없습니다.", HttpStatus.CONFLICT),
+    LOCKER_INVENTORY_NOT_FOUND("LK_0002", "해당 성별의 사물함 재고 정보를 찾을 수 없습니다.", HttpStatus.NOT_FOUND),
+    LOCKER_ASSIGNMENT_FAILED("LK_0003", "사물함 배정에 실패했습니다.", HttpStatus.INTERNAL_SERVER_ERROR),
+    LOCKER_GENDER_REQUIRED("LK_0004", "사물함 사용 시 사용자의 성별 정보가 필요합니다.", HttpStatus.BAD_REQUEST),
+    LOCKER_ALREADY_ASSIGNED_TO_USER("LK_0005", "이미 해당 사용자에게 사물함이 배정되었습니다.", HttpStatus.CONFLICT),
+
+    // File Errors (FL_xxxx)
+    FILE_UPLOAD_FAILED("FL_0001", "파일 업로드에 실패했습니다.", HttpStatus.INTERNAL_SERVER_ERROR),
+    FILE_NOT_FOUND("FL_0002", "파일을 찾을 수 없습니다.", HttpStatus.NOT_FOUND),
+    INVALID_FILE_FORMAT("FL_0003", "지원하지 않는 파일 형식입니다.", HttpStatus.BAD_REQUEST),
+    FILE_SIZE_EXCEEDED("FL_0004", "파일 크기가 너무 큽니다.", HttpStatus.PAYLOAD_TOO_LARGE);
 
     private final String code;
     private final String defaultMessage;
+    private final HttpStatus httpStatus;
 } 

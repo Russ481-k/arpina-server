@@ -120,12 +120,21 @@ public class SwimmingUserController {
             throw new IllegalStateException("로그인이 필요한 서비스입니다. 인증 정보가 유효하지 않습니다.");
         }
         Object principal = authentication.getPrincipal();
+        
         if (principal instanceof User) {
             return (User) principal;
+        } else if (principal instanceof cms.user.dto.CustomUserDetails) { // Check for CustomUserDetails
+            return ((cms.user.dto.CustomUserDetails) principal).getUser(); // Get User from CustomUserDetails
         } else if (principal instanceof UserDetails) {
-            // Consider creating a User object from UserDetails if possible, or fetching from DB
-            // For now, this path indicates a configuration or setup issue if User is expected.
-            throw new IllegalStateException("인증 객체가 User 타입이 아닙니다. UserDetails 타입 변환 로직이 필요합니다: " + principal.getClass().getName());
+            // This case might still be problematic if a UserDetails implementation other than
+            // CustomUserDetails is used and doesn't directly provide the full User entity.
+            // For now, we log a warning and attempt to get username for potential further lookup,
+            // but ideally, the system should consistently use CustomUserDetails or a similar pattern.
+            // String username = ((UserDetails) principal).getUsername();
+            // logger.warn("Principal is UserDetails but not CustomUserDetails. Username: {}. Full User entity might be missing.", username);
+            // Consider fetching user from repository: userRepository.findByUsername(username).orElseThrow...
+            // This would require UserRepository to be injected into the controller.
+            throw new IllegalStateException("인증 객체가 User 또는 CustomUserDetails 타입이 아닙니다. 확인이 필요합니다: " + principal.getClass().getName());
         } else {
             throw new IllegalStateException("인증 객체 타입이 예상과 다릅니다: " + principal.getClass().getName());
         }

@@ -5,6 +5,7 @@ import cms.common.exception.CustomBaseException;
 import cms.common.exception.ErrorCode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -133,6 +134,44 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 ErrorCode.INVALID_INPUT_VALUE.getCode() 
         );
         return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+    }
+
+    // 데이터 무결성 위반 예외 처리 (예: 유니크 제약 조건 위반)
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrityViolationException(DataIntegrityViolationException ex, WebRequest request) {
+        log.warn("Data Integrity Violation: {}. URI: {}", ex.getMessage(), request.getDescription(false), ex);
+        String message = ErrorCode.DATA_INTEGRITY_VIOLATION.getDefaultMessage();
+        String errorCode = ErrorCode.DATA_INTEGRITY_VIOLATION.getCode();
+        HttpStatus status = HttpStatus.CONFLICT; // Default to 409 for data integrity issues, can be overridden
+
+        // 특정 데이터베이스 오류 메시지를 확인하여 이메일 중복인지 판단 (데이터베이스 종류에 따라 메시지가 다를 수 있음)
+        String lowerCaseExMessage = ex.getMostSpecificCause().getMessage().toLowerCase();
+        
+        // 데이터베이스 제약 조건 이름 또는 일반적인 키워드를 확인합니다.
+        // 예: user_email_uk, uk_user_email, idx_user_email_unique 등 (실제 제약 조건 이름으로 변경 필요)
+        if (lowerCaseExMessage.contains("email") && (lowerCaseExMessage.contains("unique") || lowerCaseExMessage.contains("duplicate") || lowerCaseExMessage.contains("constraint"))) {
+            // Assume it's a duplicate email if the message contains 'email' and typical unique constraint keywords
+            // Specific constraint names (e.g., 'user_email_uk', 'uk_user_email') are more reliable if known.
+            message = ErrorCode.DUPLICATE_EMAIL.getDefaultMessage();
+            errorCode = ErrorCode.DUPLICATE_EMAIL.getCode(); 
+            status = ErrorCode.DUPLICATE_EMAIL.getHttpStatus(); 
+        } else if (lowerCaseExMessage.contains("username") && (lowerCaseExMessage.contains("unique") || lowerCaseExMessage.contains("duplicate") || lowerCaseExMessage.contains("constraint"))) {
+            // Assume it's a duplicate username if the message contains 'username' and typical unique constraint keywords
+            // Specific constraint names (e.g., 'user_username_uk', 'uk_user_username') are more reliable if known.
+            message = ErrorCode.DUPLICATE_USERNAME.getDefaultMessage();
+            errorCode = ErrorCode.DUPLICATE_USERNAME.getCode(); 
+            status = ErrorCode.DUPLICATE_USERNAME.getHttpStatus();
+        }
+        // 다른 유니크 제약 조건에 대한 처리도 필요한 경우 여기에 추가합니다.
+
+        ErrorResponse errorResponse = new ErrorResponse(
+                status.value(),
+                status.getReasonPhrase(),
+                message,
+                request.getDescription(false).replace("uri=", ""),
+                errorCode
+        );
+        return new ResponseEntity<>(errorResponse, status);
     }
 
     // Fallback for any other unhandled exceptions: returns a generic 500 Internal Server Error

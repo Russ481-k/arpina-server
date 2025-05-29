@@ -232,19 +232,43 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
         enroll.setCancelApprovedAt(LocalDateTime.now());
 
         if (lockerWasAllocated) {
-            // 사용자 정보 및 성별 확인은 User 엔티티를 통해 안전하게 접근해야 함
             User user = enroll.getUser();
             if (user != null && user.getGender() != null && !user.getGender().trim().isEmpty()) {
-                lockerService.decrementUsedQuantity(user.getGender().toUpperCase());
-                enroll.setLockerAllocated(false);
+                String lockerGenderString; // Renamed for clarity
+                if ("0".equals(user.getGender())) {
+                    lockerGenderString = "FEMALE";
+                } else if ("1".equals(user.getGender())) {
+                    lockerGenderString = "MALE";
+                } else {
+                    logger.warn("Unknown gender code '{}' for user {} during admin cancellation. Cannot determine locker gender for decrement.", user.getGender(), user.getUuid());
+                    // Skip decrementing if gender is unknown, or throw an error if strict handling is required
+                    lockerGenderString = null; 
+                }
+
+                if (lockerGenderString != null) {
+                    try {
+                        logger.info("Attempting to decrement locker count due to admin cancellation. User-gender: {}, mapped-locker-gender: {} (User: {}, EnrollId: {})",
+                                    user.getGender(), lockerGenderString, user.getUuid(), enrollId);
+                        lockerService.decrementUsedQuantity(lockerGenderString);
+                        enroll.setLockerAllocated(false); // Mark locker as de-allocated
+                        logger.info("Locker decremented successfully for mapped-locker-gender: {} (User: {}, EnrollId: {})", lockerGenderString, user.getUuid(), enrollId);
+                    } catch (Exception e) {
+                        logger.error("Failed to decrement locker for user {} (mapped-locker-gender: {}) during admin cancellation of enrollId {}. Reason: {}", 
+                                     user.getUuid(), lockerGenderString, enrollId, e.getMessage(), e);
+                        // Potentially add to admin notes or a specific error state on enrollment if critical
+                    }
+                }
             } else {
-                logger.warn("Cannot decrement locker quantity for enrollId {} due to missing user or gender info.", enrollId);
+                logger.warn("Cannot decrement locker quantity for enrollId {} during admin cancellation due to missing user or gender info.", enrollId);
             }
         }
         enroll.setUsesLocker(false); // 사물함 사용 안함으로 변경
         enroll.setLockerPgToken(null);
 
         Enroll savedEnroll = enrollRepository.save(enroll);
+
+        // TODO: Trigger actual refund process if payStatus was PAID
+        // This might involve calling a payment gateway service
 
         return convertToEnrollAdminResponseDto(savedEnroll);
     }
@@ -341,26 +365,33 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
             if (user.getGender() == null || user.getGender().trim().isEmpty()) {
                 throw new BusinessRuleException(ErrorCode.LOCKER_GENDER_REQUIRED, "사물함 사용 시 사용자의 성별 정보가 필요합니다. 사용자 정보에 성별을 먼저 등록하거나, 임시 등록 시 성별을 지정해주세요.");
             }
+
+            String lockerGender;
+            if ("0".equals(user.getGender())) {
+                lockerGender = "FEMALE";
+            } else if ("1".equals(user.getGender())) {
+                lockerGender = "MALE";
+            } else {
+                logger.warn("Unknown gender code '{}' for user {} during temporary enrollment. Cannot determine locker gender.", user.getGender(), user.getUuid());
+                throw new BusinessRuleException(ErrorCode.INVALID_USER_GENDER, "사용자의 성별 코드가 유효하지 않습니다: " + user.getGender());
+            }
+
             try {
-                lockerService.incrementUsedQuantity(user.getGender().toUpperCase());
+                logger.info("Attempting to increment locker count for temp enrollment. User-gender: {}, mapped-locker-gender: {} (User: {})", 
+                            user.getGender(), lockerGender, user.getUuid());
+                lockerService.incrementUsedQuantity(lockerGender);
                 enroll.setLockerAllocated(true);
+                logger.info("Locker count incremented successfully for temp enrollment. Mapped-locker-gender: {}", lockerGender);
             } catch (BusinessRuleException e) {
-                // e.g., LockerInventoryFullException or similar
-                 logger.warn("임시 등록 중 사물함 할당 실패 (사용자: {}, 성별: {}): {}", user.getUuid(), user.getGender(), e.getMessage());
-                //  If strict, re-throw or handle: throw new BusinessRuleException(ErrorCode.LOCKER_ALLOCATION_FAILED, "사물함 할당에 실패했습니다: " + e.getMessage());
-                // For now, we'll allow enrollment without locker if allocation fails, but log it.
-                // The DTO's usesLocker should reflect the actual allocation status from lockerAllocated field.
-                enroll.setUsesLocker(false); // Mark as not using locker if allocation failed
-                enroll.setLockerAllocated(false);
-                // Optionally add a specific memo about locker failure
-                String existingMemo = enroll.getCancelReason() == null ? "" : enroll.getCancelReason() + "\n";
-                enroll.setCancelReason(existingMemo + "사물함 할당 실패: " + e.getMessage());
-            } catch (Exception e) {
-                logger.error("임시 등록 중 사물함 할당 시 예외 발생 (사용자: {}, 성별: {}): {}", user.getUuid(), user.getGender(), e.getMessage(), e);
+                logger.warn("임시 등록 중 사물함 할당 실패 (사용자: {}, user-gender: {}, mapped-locker-gender: {}): {}", 
+                            user.getUuid(), user.getGender(), lockerGender, e.getMessage());
                 enroll.setUsesLocker(false);
                 enroll.setLockerAllocated(false);
-                String existingMemo = enroll.getCancelReason() == null ? "" : enroll.getCancelReason() + "\n";
-                enroll.setCancelReason(existingMemo + "사물함 할 μόνο 알 수 없는 오류로 실패했습니다.");
+            } catch (Exception e) { // Catch broader exceptions during locker allocation
+                logger.error("임시 등록 중 사물함 할당 시 예외 발생 (사용자: {}, user-gender: {}, mapped-locker-gender: {}): {}", 
+                            user.getUuid(), user.getGender(), lockerGender, e.getMessage(), e);
+                enroll.setUsesLocker(false);
+                enroll.setLockerAllocated(false);
             }
         }
 

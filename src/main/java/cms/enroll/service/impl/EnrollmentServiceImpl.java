@@ -220,7 +220,9 @@ public class EnrollmentServiceImpl implements EnrollmentService {
      *   3. 결제가 성공적으로 완료되면 해당 Enroll 레코드의 payStatus를 'PAID'로, status를 상황에 맞게(예: 'ACTIVE') 업데이트하고, expireDt를 null 또는 매우 먼 미래로 변경하여 더 이상 만료되지 않도록 처리해야 합니다.
      *   4. 결제 실패 시 사용자에게 알리고, 신청은 UNPAID 상태로 두거나, 특정 횟수 실패 시 취소 처리할 수 있습니다.
      */
-    private EnrollResponseDto createInitialEnrollmentInternal(User user, EnrollRequestDto initialEnrollRequest, String ipAddress) {
+    @Transactional(isolation = Isolation.SERIALIZABLE)
+    protected EnrollResponseDto createInitialEnrollmentInternal(User user, EnrollRequestDto initialEnrollRequest, String ipAddress) {
+        logger.info("Starting initial enrollment process for user: {} with request: {}", user.getUuid(), initialEnrollRequest);
         // *** 비관적 잠금으로 동시성 문제 해결 ***
         Lesson lesson = lessonRepository.findByIdWithLock(initialEnrollRequest.getLessonId())
                 .orElseThrow(() -> new EntityNotFoundException("강습을 찾을 수 없습니다. ID: " + initialEnrollRequest.getLessonId()));
@@ -336,13 +338,28 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 // but as a safeguard:
                 throw new BusinessRuleException(ErrorCode.LOCKER_GENDER_REQUIRED, "사물함을 신청하려면 사용자의 성별 정보가 필요합니다.");
             }
+
+            // Convert user gender ("0" for Female, "1" for Male) to "FEMALE" or "MALE"
+            String lockerGender;
+            if ("0".equals(user.getGender())) {
+                lockerGender = "FEMALE";
+            } else if ("1".equals(user.getGender())) {
+                lockerGender = "MALE";
+            } else {
+                // Unknown gender code from user data, this should ideally not happen if data is clean
+                logger.warn("Unknown gender code '{}' for user {}. Cannot determine locker gender.", user.getGender(), user.getUuid());
+                throw new BusinessRuleException(ErrorCode.INVALID_USER_GENDER, "사용자의 성별 코드가 유효하지 않습니다: " + user.getGender());
+            }
+
             try {
-                logger.info("Attempting to increment locker count for gender: {} (User: {})", user.getGender().toUpperCase(), user.getUuid());
-                lockerService.incrementUsedQuantity(user.getGender().toUpperCase());
-                lockerSuccessfullyAllocated = true; // Mark as successfully allocated for this enrollment
-                logger.info("Locker count incremented successfully for gender: {}", user.getGender().toUpperCase());
+                logger.info("Attempting to increment locker count for user-gender: {}, mapped-locker-gender: {} (User: {})", 
+                            user.getGender(), lockerGender, user.getUuid());
+                lockerService.incrementUsedQuantity(lockerGender); // Use the converted gender
+                lockerSuccessfullyAllocated = true; 
+                logger.info("Locker count incremented successfully for mapped-locker-gender: {}", lockerGender);
             } catch (BusinessRuleException e) {
-                logger.warn("Failed to allocate locker for user {} (gender: {}) during initial enrollment. Reason: {}", user.getUuid(), user.getGender(), e.getMessage());
+                logger.warn("Failed to allocate locker for user {} (user-gender: {}, mapped-locker-gender: {}) during initial enrollment. Reason: {}", 
+                            user.getUuid(), user.getGender(), lockerGender, e.getMessage());
                 // If lockerService.incrementUsedQuantity throws (e.g., LOCKER_NOT_AVAILABLE),
                 // the enrollment should fail if a locker was mandatory or be allowed without a locker.
                 // For now, we re-throw, making locker allocation a hard requirement if usesLocker=true.
@@ -506,7 +523,30 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                     String userGender = enroll.getUser().getGender();
                     if (userGender != null && !userGender.trim().isEmpty()) {
                         logger.warn("Locker was allocated for an UNPAID enrollment (enrollId: {}) being deleted. Releasing.", enrollId);
-                        lockerService.decrementUsedQuantity(userGender.toUpperCase());
+                        String lockerGenderString; // Renamed for clarity
+                        if ("0".equals(userGender)) {
+                            lockerGenderString = "FEMALE";
+                        } else if ("1".equals(userGender)) {
+                            lockerGenderString = "MALE";
+                        } else {
+                            logger.warn("Unknown gender code '{}' for user with enrollId {} during UNPAID cancellation. Cannot determine locker gender for decrement.", userGender, enrollId);
+                            lockerGenderString = null;
+                        }
+                        if (lockerGenderString != null) {
+                            try {
+                                logger.info("Attempting to decrement locker count for UNPAID cancellation. User-gender: {}, mapped-locker-gender: {} (EnrollId: {})",
+                                            userGender, lockerGenderString, enrollId);
+                                lockerService.decrementUsedQuantity(lockerGenderString);
+                                logger.info("Locker decremented successfully for UNPAID cancellation. Mapped-locker-gender: {} (EnrollId: {})", lockerGenderString, enrollId);
+                            } catch (Exception e) {
+                                logger.error("Failed to decrement locker for UNPAID cancellation (EnrollId: {}, mapped-locker-gender: {}). Reason: {}", 
+                                             enrollId, lockerGenderString, e.getMessage(), e);
+                            }
+                        } else {
+                             logger.warn("Skipping locker decrement for UNPAID cancellation (EnrollId: {}) due to unknown gender code: {}", enrollId, userGender);
+                        }
+                    } else {
+                        logger.warn("Cannot decrement locker for UNPAID cancellation (EnrollId: {}) due to missing gender info.", enrollId);
                     }
                 }
                 enrollRepository.delete(enroll); // Delete the enrollment record
@@ -532,8 +572,29 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 if (enroll.isLockerAllocated()) {
                     String userGender = enroll.getUser().getGender();
                     if (userGender != null && !userGender.trim().isEmpty()) {
-                        lockerService.decrementUsedQuantity(userGender.toUpperCase());
-                        enroll.setLockerAllocated(false);
+                        String lockerGenderString; // Renamed for clarity
+                        if ("0".equals(userGender)) {
+                            lockerGenderString = "FEMALE";
+                        } else if ("1".equals(userGender)) {
+                            lockerGenderString = "MALE";
+                        } else {
+                            logger.warn("Unknown gender code '{}' for user with enrollId {} during PAID cancellation (before lesson start). Cannot determine locker gender for decrement.", userGender, enrollId);
+                            lockerGenderString = null;
+                        }
+                        if (lockerGenderString != null) {
+                            try {
+                                logger.info("Attempting to decrement locker count for PAID cancellation (before lesson start). User-gender: {}, mapped-locker-gender: {} (EnrollId: {})",
+                                            userGender, lockerGenderString, enrollId);
+                                lockerService.decrementUsedQuantity(lockerGenderString);
+                                enroll.setLockerAllocated(false);
+                                logger.info("Locker decremented successfully for PAID cancellation (before lesson start). Mapped-locker-gender: {} (EnrollId: {})", lockerGenderString, enrollId);
+                            } catch (Exception e) {
+                                logger.error("Failed to decrement locker for PAID cancellation (before lesson start) (EnrollId: {}, mapped-locker-gender: {}). Reason: {}", 
+                                             enrollId, lockerGenderString, e.getMessage(), e);
+                            }
+                        } else {
+                             logger.warn("Skipping locker decrement for PAID cancellation (before lesson start) (EnrollId: {}) due to unknown gender code: {}", enrollId, userGender);
+                        }
                      }
                 }
                 enroll.setUsesLocker(false); 
@@ -727,7 +788,28 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         if (lockerWasAllocated) {
              String userGender = enroll.getUser().getGender();
             if (userGender != null && !userGender.trim().isEmpty()) {
-                lockerService.decrementUsedQuantity(userGender.toUpperCase());
+                String lockerGenderString; // Renamed for clarity
+                if ("0".equals(userGender)) {
+                    lockerGenderString = "FEMALE";
+                } else if ("1".equals(userGender)) {
+                    lockerGenderString = "MALE";
+                } else {
+                    logger.warn("Unknown gender code '{}' for user with enrollId {} during admin approval of cancellation. Cannot determine locker gender for decrement.", userGender, enrollId);
+                    lockerGenderString = null;
+                }
+                if (lockerGenderString != null) {
+                    try {
+                        logger.info("Attempting to decrement locker count for admin-approved cancellation. User-gender: {}, mapped-locker-gender: {} (EnrollId: {})",
+                                    userGender, lockerGenderString, enrollId);
+                        lockerService.decrementUsedQuantity(lockerGenderString);
+                        logger.info("Locker decremented successfully for admin-approved cancellation. Mapped-locker-gender: {} (EnrollId: {})", lockerGenderString, enrollId);
+                    } catch (Exception e) {
+                        logger.error("Failed to decrement locker for admin-approved cancellation (EnrollId: {}, mapped-locker-gender: {}). Reason: {}", 
+                                     enrollId, lockerGenderString, e.getMessage(), e);
+                    }
+                } else {
+                     logger.warn("Skipping locker decrement for admin-approved cancellation (EnrollId: {}) due to unknown gender code: {}", enrollId, userGender);
+                }
             }
         }
         enroll.setUsesLocker(false);
