@@ -126,4 +126,23 @@ public interface EnrollRepository extends JpaRepository<Enroll, Long>, JpaSpecif
            "AND FUNCTION('MONTH', e.lesson.startDate) = FUNCTION('MONTH', :lessonMonthDate) " +
            "AND e.payStatus IN ('PAID', 'UNPAID') AND e.status NOT IN ('CANCELED', 'EXPIRED', 'CANCELED_UNPAID')")
     long countUserEnrollmentsInMonth(@Param("userUuid") String userUuid, @Param("lessonMonthDate") LocalDate lessonMonthDate);
+
+    @Query("SELECT COUNT(e) FROM Enroll e " +
+           "WHERE e.user.gender = :gender " +
+           "AND e.payStatus = :payStatus " +
+           "AND e.usesLocker = :usesLocker " +
+           "AND e.lockerAllocated = :lockerAllocated " +
+           "AND e.lesson.startDate <= :periodEnd " +
+           "AND e.lesson.endDate >= :periodStart")
+    long countActiveLockerCommitmentsForPeriod(
+            @Param("gender") String gender,
+            @Param("payStatus") String payStatus,
+            @Param("usesLocker") boolean usesLocker,
+            @Param("lockerAllocated") boolean lockerAllocated,
+            @Param("periodStart") LocalDate periodStart,
+            @Param("periodEnd") LocalDate periodEnd
+    );
+
+    // For ExpiredUnpaidEnrollmentCleanupJob
+    List<Enroll> findByPayStatusAndStatusAndExpireDtBefore(String payStatus, String status, LocalDateTime expireDt);
 } 

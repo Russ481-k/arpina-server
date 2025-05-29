@@ -178,65 +178,56 @@ public class KispgWebhookServiceImpl implements KispgWebhookService {
                 }
             }
 
-            if (!isRenewalLockerTransfer) { // Standard allocation (new enroll or renewal without previous locker to transfer)
+            // Adjusted standard allocation/confirmation path
+            if (!isRenewalLockerTransfer) {
                 if (enroll.isUsesLocker()) {
-                    // Allocate only if not already allocated by this PG transaction or if allocated by a different one (e.g. user changed mind)
-                    if (!enroll.isLockerAllocated() || !notification.getTid().equals(enroll.getLockerPgToken())) {
-                        if (user.getGender() == null || user.getGender().trim().isEmpty()) {
-                            logger.warn("[KISPG Webhook] User {} for enrollId {} wants locker, but gender is missing. Cannot allocate locker.", user.getUuid(), enrollId);
-                            enroll.setLockerAllocated(false);
-                            enroll.setLockerPgToken(null); 
-                        } else {
-                            try {
-                                // If a locker was allocated by a *different* PG transaction, and now this one is confirmed,
-                                // we should ensure the inventory count is correct.
-                                // However, /confirmPayment no longer touches inventory. This webhook is the authority.
-                                // So, if lockerAllocated is true but token is different, it implies an issue or prior state.
-                                // The safest is to ensure it's false before attempting increment.
-                                if (enroll.isLockerAllocated() && !notification.getTid().equals(enroll.getLockerPgToken())) {
-                                   logger.warn("[KISPG Webhook] EnrollId {} was marked lockerAllocated with a different pgToken ({}). Resetting before new allocation with pgToken {}.", enrollId, enroll.getLockerPgToken(), notification.getTid());
-                                   // No inventory change here, as the previous allocation might have been erroneous or from a flow that didn't complete.
-                                   // The increment below will handle the actual claim.
-                                   enroll.setLockerAllocated(false); 
-                                }
-
-                                lockerService.incrementUsedQuantity(user.getGender().toUpperCase());
-                                enroll.setLockerAllocated(true);
-                                enroll.setLockerPgToken(notification.getTid());
-                                logger.info("[KISPG Webhook] Locker allocated for user {} (gender: {}), enrollId: {}, pgToken: {}", 
-                                            user.getUuid(), user.getGender(), enrollId, notification.getTid());
-                            } catch (BusinessRuleException e) { // e.g., LOCKER_NOT_AVAILABLE
-                                logger.warn("[KISPG Webhook] Locker allocation failed for user {} (gender: {}), enrollId: {}. Reason: {}. pgToken: {}", 
-                                            user.getUuid(), user.getGender(), enrollId, e.getMessage(), notification.getTid());
-                                enroll.setLockerAllocated(false);
-                                enroll.setLockerPgToken(null);
-                            } catch (Exception e) {
-                                 logger.error("[KISPG Webhook] Unexpected error during locker allocation for enrollId: {}. Error: {}", enrollId, e.getMessage(), e);
-                                 enroll.setLockerAllocated(false);
-                                 enroll.setLockerPgToken(null);
-                            }
-                        }
-                    } else { // Locker already allocated by this specific pgToken
-                         logger.info("[KISPG Webhook] Locker already allocated for enrollId {} with pgToken {}. No action needed.", enrollId, notification.getTid());
+                    // Locker was requested during initial enrollment.
+                    // EnrollmentServiceImpl should have already attempted to allocate and set enroll.lockerAllocated.
+                    if (enroll.isLockerAllocated()) {
+                        // Locker was successfully allocated during initial enrollment.
+                        // Now, associate this successful payment transaction with the locker.
+                        enroll.setLockerPgToken(notification.getTid());
+                        logger.info("[KISPG Webhook] Confirmed locker allocation for enrollId: {} (already allocated during application). PG Token: {}", enrollId, notification.getTid());
+                    } else {
+                        // This case implies usesLocker=true, but lockerAllocated=false.
+                        // This means the initial attempt in EnrollmentServiceImpl to allocate a locker failed (e.g., no inventory, missing gender then).
+                        // We should not attempt to allocate it here again. The enrollment proceeds without a locker.
+                        logger.warn("[KISPG Webhook] User for enrollId {} wanted a locker (usesLocker=true), but it was not allocated during initial application (lockerAllocated=false). Payment successful, but no locker provided.", enrollId);
+                        // Ensure usesLocker is marked false if no locker is actually provided, despite initial request.
+                        // This might be controversial - does the user expect to be told earlier? EnrollmentServiceImpl should have failed if locker was mandatory.
+                        // If EnrollmentServiceImpl allows proceeding without locker even if requested and unavailable, then this is just a confirmation.
+                        // For safety, ensure usesLocker reflects reality if no locker is given.
+                        // enroll.setUsesLocker(false); // Optional: align usesLocker with reality if it couldn't be allocated.
                     }
-                } else { // User does not want locker (for new or renewal where transfer didn't apply)
-                    if (enroll.isLockerAllocated()) { // If one was previously allocated (e.g. /confirm indicated wantsLocker then user changed mind, or other edge cases)
-                        logger.info("[KISPG Webhook] User for enrollId {} does not want locker, but one was allocated (pgToken: {}). Decrementing.", enrollId, enroll.getLockerPgToken());
-                         if (user.getGender() != null && !user.getGender().trim().isEmpty()) {
+                } else { // User does NOT want locker (enroll.isUsesLocker() is false)
+                    if (enroll.isLockerAllocated()) {
+                        // This means a locker WAS allocated during initial application (e.g., usesLocker was true then),
+                        // but now (perhaps through a /payment/confirm step not detailed here, or if usesLocker could change post-application),
+                        // the final decision is NO locker. We MUST release the previously allocated one.
+                        logger.info("[KISPG Webhook] User for enrollId {} now indicates NO locker (usesLocker=false), but one was previously allocated. Releasing it.", enrollId);
+                        // User user = enroll.getUser(); // User should have been fetched earlier and is in scope
+                        if (user != null && user.getGender() != null && !user.getGender().trim().isEmpty()) {
                             try {
                                 lockerService.decrementUsedQuantity(user.getGender().toUpperCase());
+                                enroll.setLockerAllocated(false);
+                                enroll.setLockerPgToken(null);
+                                logger.info("[KISPG Webhook] Locker successfully released for enrollId {} due to usesLocker=false post-allocation.", enrollId);
                             } catch (Exception e) {
-                                logger.error("[KISPG Webhook] Error decrementing locker for enrollId {} during 'wantsLocker=false' case. Error: {}", enrollId, e.getMessage(), e);
+                                logger.error("[KISPG Webhook] Error decrementing locker for enrollId {} during 'usesLocker=false' case. Error: {}", enrollId, e.getMessage(), e);
+                                // Even if decrement fails, ensure flags are set.
+                                enroll.setLockerAllocated(false);
+                                enroll.setLockerPgToken(null);
                             }
-                         } else {
-                             logger.warn("[KISPG Webhook] User for enrollId {} does not want locker, one was allocated, but gender is missing. Cannot reliably decrement inventory count.", enrollId);
-                         }
-                        enroll.setLockerAllocated(false);
-                        enroll.setLockerPgToken(null);
+                        } else {
+                            logger.warn("[KISPG Webhook] User for enrollId {} indicated NO locker, one was allocated, but gender is missing. Cannot reliably decrement inventory. Flags set to no locker.", enrollId);
+                            enroll.setLockerAllocated(false);
+                            enroll.setLockerPgToken(null);
+                        }
                     }
+                    // If enroll.isUsesLocker() is false AND enroll.isLockerAllocated() is false, no action needed.
                 }
             }
-            // --- End of New Locker Allocation Logic ---
+            // --- End of Adjusted Locker Logic ---
 
             enrollRepository.save(enroll);
 
@@ -308,19 +299,56 @@ public class KispgWebhookServiceImpl implements KispgWebhookService {
             return "OK"; // KISPG expects "OK" or "SUCCESS" (check their docs for exact string)
 
         } else {
-            // **** PAYMENT FAILURE / OTHER STATUS ****
-            logger.warn("[KISPG Webhook] Payment failed or other status for moid: {}. ResultCode: {}, ResultMsg: {}", 
-                        notification.getMoid(), notification.getResultCode(), notification.getResultMsg());
-            
-            // Update Enroll status if it's still UNPAID.
-            // Don't change if it's already CANCELED, EXPIRED etc.
-            if ("UNPAID".equalsIgnoreCase(enroll.getPayStatus())) {
-                // Potentially map KISPG failure codes to a more specific CMS status if needed
-                // For now, just leaving it as UNPAID or logging the failure.
-                // enroll.setPayStatus("PAYMENT_FAILED"); // Or some other status
-                // enrollRepository.save(enroll);
-            }
+            // **** PAYMENT FAILURE or OTHER STATUS (e.g., REFUND notification from KISPG) ****
+            logger.warn("[KISPG Webhook] Payment FAILED or non-success status for moid: {} (enrollId: {}), tid: {}, resultCode: {}, resultMsg: {}", 
+                        notification.getMoid(), enrollId, notification.getTid(), notification.getResultCode(), notification.getResultMsg());
 
+            // Potential KISPG refund codes (these are examples, refer to KISPG docs)
+            // String KISPG_REFUND_SUCCESS_CODE = "2001"; // Example: Full refund success
+            // String KISPG_PARTIAL_REFUND_SUCCESS_CODE = "2002"; // Example: Partial refund success
+
+            // If it's a notification about a full refund or a definitive final failure for an enrollment that HAD a locker.
+            // This part needs to be robust based on actual KISPG non-success codes that imply the original transaction is void or fully reversed.
+            // Let's assume any non-KISPG_SUCCESS_CODE means the payment is not going through or is reversed for now.
+            // More specific handling based on resultCode would be better.
+
+            if (enroll.isLockerAllocated()) {
+                logger.info("[KISPG Webhook] Payment failed/reversed for enrollId: {} which had a locker allocated. Releasing locker.", enrollId);
+                User user = enroll.getUser(); // User should have been fetched earlier
+                if (user != null && user.getGender() != null && !user.getGender().trim().isEmpty()) {
+                    try {
+                        lockerService.decrementUsedQuantity(user.getGender().toUpperCase());
+                        enroll.setLockerAllocated(false);
+                        enroll.setLockerPgToken(null); 
+                        // Also update enroll status if this is a final failure
+                        // enroll.setStatus("FAILED"); // Or based on resultCode
+                        // enroll.setPayStatus("FAILED"); // Or "REFUNDED"
+                        logger.info("[KISPG Webhook] Locker released for enrollId {} due to payment failure/reversal.", enrollId);
+                    } catch (Exception e) {
+                        logger.error("[KISPG Webhook] Error decrementing locker for enrollId {} during payment failure/reversal. Error: {}", enrollId, e.getMessage(), e);
+                        // Even if decrement fails, ensure flags are set.
+                        enroll.setLockerAllocated(false);
+                        enroll.setLockerPgToken(null);
+                    }
+                } else {
+                    logger.warn("[KISPG Webhook] Payment failed/reversed for enrollId: {} which had lockerAllocated=true, but user/gender info is missing. Cannot release locker automatically.", enrollId);
+                    enroll.setLockerAllocated(false); // Still mark as not allocated
+                    enroll.setLockerPgToken(null);
+                }
+            }
+            
+            // Update enrollment status based on failure/refund type
+            // Example:
+            // if (KISPG_REFUND_SUCCESS_CODE.equals(notification.getResultCode())) {
+            //    enroll.setPayStatus("REFUNDED");
+            //    enroll.setStatus("CANCELED"); // Or appropriate status
+            // } else {
+            //    enroll.setPayStatus("FAILED"); // Generic failure
+            //    // enroll.setStatus("FAILED"); // Or keep as APPLIED if user can retry? Depends on flow.
+            // }
+
+
+            enrollRepository.save(enroll);
             // Create/Update Payment record with failure details
              Payment payment = paymentRepository.findByEnroll_EnrollId(enrollId)
                     .orElseGet(Payment::new);

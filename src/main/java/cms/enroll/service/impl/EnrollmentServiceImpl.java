@@ -320,35 +320,56 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         // Calculate final price
         int lessonPrice = lesson.getPrice();
         int discountPercentage = membershipTypeEnum.getDiscountPercentage();
-        double discountedLessonPrice = lessonPrice * (1 - (discountPercentage / 100.0));
+        int priceAfterMembershipDiscount = lessonPrice - (lessonPrice * discountPercentage / 100);
         
-        int calculatedFinalAmount = (int) Math.round(discountedLessonPrice); // Round to nearest integer
-
+        int lockerFee = 0;
         if (initialEnrollRequest.getUsesLocker()) {
-            calculatedFinalAmount += defaultLockerFee;
+            lockerFee = defaultLockerFee; // Use configured locker fee
         }
+        int finalAmount = priceAfterMembershipDiscount + lockerFee;
 
-        // Create Enroll entity
+        // *** START Real-time locker allocation and inventory increment ***
+        boolean lockerSuccessfullyAllocated = false;
+        if (initialEnrollRequest.getUsesLocker()) {
+            if (user.getGender() == null || user.getGender().trim().isEmpty()) {
+                // This case should ideally be prevented by frontend validation or earlier checks
+                // but as a safeguard:
+                throw new BusinessRuleException(ErrorCode.LOCKER_GENDER_REQUIRED, "사물함을 신청하려면 사용자의 성별 정보가 필요합니다.");
+            }
+            try {
+                logger.info("Attempting to increment locker count for gender: {} (User: {})", user.getGender().toUpperCase(), user.getUuid());
+                lockerService.incrementUsedQuantity(user.getGender().toUpperCase());
+                lockerSuccessfullyAllocated = true; // Mark as successfully allocated for this enrollment
+                logger.info("Locker count incremented successfully for gender: {}", user.getGender().toUpperCase());
+            } catch (BusinessRuleException e) {
+                logger.warn("Failed to allocate locker for user {} (gender: {}) during initial enrollment. Reason: {}", user.getUuid(), user.getGender(), e.getMessage());
+                // If lockerService.incrementUsedQuantity throws (e.g., LOCKER_NOT_AVAILABLE),
+                // the enrollment should fail if a locker was mandatory or be allowed without a locker.
+                // For now, we re-throw, making locker allocation a hard requirement if usesLocker=true.
+                // If it's optional even if requested, handle differently (e.g., set usesLocker=false and proceed).
+                throw e; 
+            }
+        }
+        // *** END Real-time locker allocation and inventory increment ***
+
         Enroll enroll = Enroll.builder()
                 .user(user)
                 .lesson(lesson)
-                .status("APPLIED") // 초기 상태
-                .payStatus("UNPAID") // 초기 결제 상태
-                .expireDt(LocalDateTime.now().plusYears(1)) // 임시 만료 기간 (추후 결제 모듈 연동 시 조정)
-                .renewalFlag(false)
-                .usesLocker(initialEnrollRequest.getUsesLocker())
-                .lockerAllocated(false) // 사물함 배정은 별도 로직 필요
-                .membershipType(membershipTypeEnum) // Set the enum
-                .finalAmount(calculatedFinalAmount) // Set the calculated final amount
-                .discountAppliedPercentage(discountPercentage) // Log the applied discount
-                // discountStatus defaults to PENDING in the entity
-                .createdBy(user.getUuid()) // 요청자 IP 대신 사용자 UUID로 변경 (기존 코드 확인 필요)
-                .createdIp(ipAddress) 
+                .status("APPLIED")
+                .payStatus("UNPAID")
+                .expireDt(LocalDateTime.now().plusMinutes(5))
+                .usesLocker(initialEnrollRequest.getUsesLocker()) 
+                .lockerAllocated(lockerSuccessfullyAllocated) // Set based on successful increment
+                .membershipType(membershipTypeEnum)
+                .finalAmount(finalAmount)
+                .discountAppliedPercentage(discountPercentage)
+                .createdBy(user.getUuid())
+                .createdIp(ipAddress)
                 .build();
 
         Enroll savedEnroll = enrollRepository.save(enroll);
         logger.info("Enrollment record created with ID: {} for user: {}, lesson: {}, membership: {}, finalAmount: {}", 
-            savedEnroll.getEnrollId(), user.getUuid(), lesson.getLessonId(), membershipTypeEnum, calculatedFinalAmount);
+            savedEnroll.getEnrollId(), user.getUuid(), lesson.getLessonId(), membershipTypeEnum, finalAmount);
 
         // 사물함 배정 로직 호출 (필요한 경우)
         // if (savedEnroll.isUsesLocker()) { ... }
