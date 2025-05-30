@@ -26,7 +26,7 @@ class ConfirmPaymentRequest {
 
 @Tag(name = "Payment API", description = "결제 관련 API (KISPG 연동 전용)")
 @RestController
-@RequestMapping("/api/v1/payment")
+@RequestMapping("/payment")
 @RequiredArgsConstructor
 public class PaymentController {
 

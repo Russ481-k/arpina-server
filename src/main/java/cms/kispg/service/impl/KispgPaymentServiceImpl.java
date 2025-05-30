@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 @Service
 @RequiredArgsConstructor
@@ -26,10 +27,11 @@ import java.time.LocalDateTime;
 public class KispgPaymentServiceImpl implements KispgPaymentService {
 
     private static final Logger logger = LoggerFactory.getLogger(KispgPaymentServiceImpl.class);
+    private static final DateTimeFormatter KISPG_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
     
     private final EnrollRepository enrollRepository;
 
-    @Value("${kispg.mid:kis000001m}")
+    @Value("${kispg.mid}")
     private String kispgMid;
 
     @Value("${kispg.merchantKey}")
@@ -81,11 +83,15 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
         String buyerEmail = currentUser.getEmail();
         String returnUrl = baseUrl + "/payment/kispg-return";
         String notifyUrl = baseUrl + "/api/v1/kispg/payment-notification";
+        
+        // ediDate 생성 - 프론트엔드와 동일한 값을 사용하기 위해 서버에서 생성
+        String ediDate = generateEdiDate();
 
-        // 5. 해시 생성
-        String requestHash = generateRequestHash(kispgMid, moid, String.valueOf(totalAmount));
+        // 5. 해시 생성 - KISPG 표준에 맞게 수정
+        String requestHash = generateRequestHash(kispgMid, ediDate, String.valueOf(totalAmount));
 
-        logger.info("Generated KISPG init params for enrollId: {}, moid: {}, amount: {}", enrollId, moid, totalAmount);
+        logger.info("Generated KISPG init params for enrollId: {}, moid: {}, amount: {}, ediDate: {}", 
+                enrollId, moid, totalAmount, ediDate);
 
         return KispgInitParamsDto.builder()
                 .mid(kispgMid)
@@ -97,6 +103,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
                 .buyerEmail(buyerEmail)
                 .returnUrl(returnUrl)
                 .notifyUrl(notifyUrl)
+                .ediDate(ediDate)
                 .requestHash(requestHash)
                 .build();
     }
@@ -116,10 +123,17 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
         return totalAmount;
     }
 
-    private String generateRequestHash(String mid, String moid, String amt) {
+    private String generateEdiDate() {
+        return LocalDateTime.now().format(KISPG_DATE_FORMATTER);
+    }
+
+    private String generateRequestHash(String mid, String ediDate, String amt) {
         try {
-            // KISPG 규격에 따른 해시 생성: mid + moid + amt + merchantKey
-            String hashData = mid + moid + amt + merchantKey;
+            // KISPG 규격에 따른 해시 생성: mid + ediDate + amt + merchantKey
+            String hashData = mid + ediDate + amt + merchantKey;
+            
+            logger.debug("Hash generation - mid: {}, ediDate: {}, amt: {}", mid, ediDate, amt);
+            
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             byte[] hashBytes = md.digest(hashData.getBytes());
             
@@ -128,7 +142,11 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
             for (byte b : hashBytes) {
                 sb.append(String.format("%02x", b));
             }
-            return sb.toString();
+            
+            String hash = sb.toString();
+            logger.debug("Generated hash: {}", hash);
+            
+            return hash;
         } catch (NoSuchAlgorithmException e) {
             logger.error("SHA-256 알고리즘을 찾을 수 없습니다", e);
             throw new RuntimeException("해시 생성 중 오류가 발생했습니다", e);

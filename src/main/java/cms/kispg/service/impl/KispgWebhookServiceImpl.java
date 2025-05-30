@@ -7,6 +7,7 @@ import cms.enroll.domain.Enroll;
 import cms.enroll.repository.EnrollRepository;
 import cms.kispg.dto.KispgNotificationRequest;
 import cms.kispg.service.KispgWebhookService;
+import cms.kispg.util.KispgSecurityUtil;
 import cms.locker.service.LockerService;
 import cms.payment.domain.Payment; // Assuming Payment entity exists
 import cms.payment.repository.PaymentRepository; // Assuming PaymentRepository exists
@@ -23,8 +24,7 @@ import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
-// Assuming a utility for KISPG specific security like hash validation
-// import cms.kispg.util.KispgSecurityUtil; 
+import java.util.Collections;
 
 @Service
 @RequiredArgsConstructor
@@ -35,12 +35,12 @@ public class KispgWebhookServiceImpl implements KispgWebhookService {
     private final EnrollRepository enrollRepository;
     private final PaymentRepository paymentRepository; // Assuming this is injected
     private final LockerService lockerService;
-    // private final KispgSecurityUtil kispgSecurityUtil; // Assuming this is injected
+    private final KispgSecurityUtil kispgSecurityUtil; // 해시 검증 유틸리티
 
     @Value("${kispg.merchantKey}") // Example: load merchantKey from properties
     private String merchantKey;
 
-    @Value("${kispg.allowedWebhookIps:}") // Example: load allowed IPs from properties, comma-separated
+    @Value("${cors.allowed-origins}") // Example: load allowed IPs from properties, comma-separated
     private String allowedWebhookIps;
     private List<String> allowedIpList;
     
@@ -57,7 +57,7 @@ public class KispgWebhookServiceImpl implements KispgWebhookService {
         if (allowedWebhookIps != null && !allowedWebhookIps.isEmpty()) {
             allowedIpList = Arrays.asList(allowedWebhookIps.split(","));
         } else {
-            allowedIpList = List.of(); // Empty list if not configured
+            allowedIpList = Collections.emptyList(); // Empty list if not configured
         }
     }
     
@@ -73,14 +73,13 @@ public class KispgWebhookServiceImpl implements KispgWebhookService {
             return "FAIL"; 
         }
 
-        // Hash validation (encData) - Placeholder for actual KISPG security util
-        // boolean isValidSignature = kispgSecurityUtil.verifyEncData(notification, merchantKey);
-        // if (!isValidSignature) {
-        //     logger.warn("[KISPG Webhook] Invalid signature (encData) for moid: {}. IP: {}", notification.getMoid(), clientIp);
-        //     return "FAIL";
-        // }
-        // For now, let's assume signature is valid if a util isn't fully integrated.
-        logger.info("[KISPG Webhook] Signature validation would be performed here for moid: {}", notification.getMoid());
+        // Hash validation (encData) - 실제 해시 검증 활성화
+        boolean isValidSignature = kispgSecurityUtil.verifyNotificationHash(notification);
+        if (!isValidSignature) {
+            logger.warn("[KISPG Webhook] Invalid signature (encData) for moid: {}. IP: {}", notification.getMoid(), clientIp);
+            return "FAIL";
+        }
+        logger.info("[KISPG Webhook] Signature validation successful for moid: {}", notification.getMoid());
 
 
         // 2. Parameter & Enrollment/Payment Record Check

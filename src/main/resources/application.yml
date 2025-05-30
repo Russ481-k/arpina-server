@@ -237,8 +237,8 @@ nice:
 
 # KISPG Configurations
 kispg:
-  merchantKey: ${KISPG_MERCHANT_KEY:YOUR_KISPG_MERCHANT_KEY_PLACEHOLDER} # IMPORTANT: Override in .env or profile-specific yml
-  allowedWebhookIps: ${KISPG_ALLOWED_WEBHOOK_IPS:} # Comma-separated KISPG IPs, primarily for prod. Example: "1.2.3.4,5.6.7.8"
+  mid: ${KISPG_MID_DEV}
+  merchantKey: ${KISPG_MERCHANT_KEY_DEV}
 
 # *** 성능 모니터링 설정 ***
 management:

@@ -15,5 +15,6 @@ public class KispgInitParamsDto {
     private String buyerEmail;  // 구매자 이메일
     private String returnUrl;   // 결제 후 리디렉션 URL
     private String notifyUrl;   // 결제 결과 통지 URL (Webhook)
+    private String ediDate;     // 전문 생성일시 (yyyyMMddHHmmss)
     private String requestHash; // 요청 해시값 (보안 검증용)
 } 
