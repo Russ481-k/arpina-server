@@ -100,18 +100,51 @@ public class MypagePaymentServiceImpl implements MypagePaymentService {
 
     private PaymentDto convertToPaymentDto(Payment payment) {
         if (payment == null) return null;
+        
         PaymentDto dto = new PaymentDto();
         dto.setPaymentId(payment.getId());
-        if (payment.getEnroll() != null) {
-            dto.setEnrollId(payment.getEnroll().getEnrollId());
-        }
-        
         dto.setAmount(payment.getPaidAmt() != null ? payment.getPaidAmt() : 0);
         
         if (payment.getPaidAt() != null) {
             dto.setPaidAt(payment.getPaidAt().atOffset(ZoneOffset.UTC));
         }
         dto.setStatus(payment.getStatus());
+        
+        // Enroll 정보 설정
+        Enroll enroll = payment.getEnroll();
+        if (enroll != null) {
+            dto.setEnrollId(enroll.getEnrollId());
+            dto.setUsesLocker(enroll.isUsesLocker());
+            dto.setFinalAmount(enroll.getFinalAmount());
+            dto.setDiscountPercentage(enroll.getDiscountAppliedPercentage());
+            
+            // 회원권 유형
+            if (enroll.getMembershipType() != null) {
+                dto.setMembershipType(enroll.getMembershipType().name());
+            }
+            
+            // 할인 유형 설정
+            if (enroll.getDiscountType() != null) {
+                dto.setDiscountType(enroll.getDiscountType());
+            }
+            
+            // Lesson 정보 설정
+            if (enroll.getLesson() != null) {
+                dto.setLessonTitle(enroll.getLesson().getTitle());
+                dto.setLessonStartDate(enroll.getLesson().getStartDate());
+                dto.setLessonEndDate(enroll.getLesson().getEndDate());
+                dto.setLessonTime(enroll.getLesson().getLessonTime());
+                dto.setInstructorName(enroll.getLesson().getInstructorName());
+                dto.setLocationName(enroll.getLesson().getLocationName());
+                dto.setLessonPrice(enroll.getLesson().getPrice());
+            }
+        }
+        
+        // Payment 필드에서 사물함 요금 설정
+        if (payment.getLockerAmount() != null) {
+            dto.setLockerFee(payment.getLockerAmount());
+        }
+        
         return dto;
     }
 } 
