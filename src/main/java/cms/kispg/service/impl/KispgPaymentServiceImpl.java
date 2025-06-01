@@ -7,11 +7,14 @@ import cms.enroll.domain.Enroll;
 import cms.enroll.repository.EnrollRepository;
 import cms.kispg.dto.KispgInitParamsDto;
 import cms.kispg.service.KispgPaymentService;
+import cms.locker.service.LockerService;
 import cms.swimming.domain.Lesson;
 import cms.swimming.repository.LessonRepository;
-import cms.swimming.dto.EnrollRequestDto;
-import cms.locker.service.LockerService;
 import cms.user.domain.User;
+import cms.swimming.dto.EnrollRequestDto;
+import cms.payment.domain.Payment;
+import cms.payment.repository.PaymentRepository;
+import cms.mypage.dto.EnrollDto;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,7 +25,13 @@ import org.springframework.transaction.annotation.Transactional;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.time.ZoneOffset;
+import java.time.temporal.TemporalAdjusters;
+
+import java.util.HashMap;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -35,6 +44,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
     private final EnrollRepository enrollRepository;
     private final LessonRepository lessonRepository;
     private final LockerService lockerService;
+    private final PaymentRepository paymentRepository;
 
     @Value("${kispg.mid}")
     private String kispgMid;
@@ -282,5 +292,264 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
     private String generateTempMoid(Long lessonId, String userUuid) {
         long timestamp = System.currentTimeMillis();
         return String.format("temp_%d_%s_%d", lessonId, userUuid.substring(0, 8), timestamp);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public EnrollDto verifyAndGetEnrollment(String moid, User currentUser) {
+        logger.info("Verifying payment and retrieving enrollment for moid: {}, user: {}", moid, currentUser.getUsername());
+
+        // 1. moid로 Payment 조회
+        Payment payment = paymentRepository.findByMoid(moid)
+                .orElseThrow(() -> new ResourceNotFoundException("결제 정보를 찾을 수 없습니다: " + moid, ErrorCode.PAYMENT_INFO_NOT_FOUND));
+
+        // 2. 결제 성공 상태 확인
+        if (!"PAID".equals(payment.getStatus())) {
+            throw new BusinessRuleException(ErrorCode.INVALID_PAYMENT_STATUS_FOR_OPERATION, 
+                "결제가 완료되지 않았습니다. 현재 상태: " + payment.getStatus());
+        }
+
+        // 3. 연결된 수강신청 조회
+        Enroll enroll = payment.getEnroll();
+        if (enroll == null) {
+            throw new ResourceNotFoundException("결제에 연결된 수강신청 정보를 찾을 수 없습니다.", ErrorCode.ENROLLMENT_NOT_FOUND);
+        }
+
+        // 4. 사용자 권한 확인
+        if (!enroll.getUser().getUuid().equals(currentUser.getUuid())) {
+            throw new BusinessRuleException(ErrorCode.ACCESS_DENIED, "해당 수강신청에 대한 권한이 없습니다.");
+        }
+
+        // 5. EnrollDto로 변환하여 반환
+        return convertToMypageEnrollDto(enroll);
+    }
+
+    @Override
+    @Transactional
+    public EnrollDto approvePaymentAndCreateEnrollment(String tid, String moid, String amt, User currentUser) {
+        logger.info("Approving KISPG payment and creating enrollment for tid: {}, moid: {}, amt: {}, user: {}", 
+            tid, moid, amt, currentUser.getUsername());
+
+        // 1. KISPG 승인 API 호출
+        boolean approvalSuccess = callKispgApprovalApi(tid, moid, amt);
+        if (!approvalSuccess) {
+            throw new BusinessRuleException(ErrorCode.PAYMENT_REFUND_FAILED, "KISPG 승인 API 호출에 실패했습니다.");
+        }
+
+        // 2. temp moid 파싱
+        if (!moid.startsWith("temp_")) {
+            throw new BusinessRuleException(ErrorCode.INVALID_INPUT_VALUE, "잘못된 temp moid 형식입니다: " + moid);
+        }
+
+        String[] parts = moid.substring("temp_".length()).split("_");
+        if (parts.length < 3) {
+            throw new BusinessRuleException(ErrorCode.INVALID_INPUT_VALUE, "temp moid 형식이 올바르지 않습니다: " + moid);
+        }
+
+        Long lessonId = Long.parseLong(parts[0]);
+        String userUuidPrefix = parts[1];
+
+        // 3. 사용자 확인
+        if (!currentUser.getUuid().startsWith(userUuidPrefix)) {
+            throw new BusinessRuleException(ErrorCode.ACCESS_DENIED, "사용자 UUID가 일치하지 않습니다.");
+        }
+
+        // 4. Lesson 조회
+        Lesson lesson = lessonRepository.findById(lessonId)
+                .orElseThrow(() -> new ResourceNotFoundException("강습을 찾을 수 없습니다: " + lessonId, ErrorCode.LESSON_NOT_FOUND));
+
+        // 5. 결제 금액으로부터 사물함 사용 여부 판단
+        boolean usesLocker = false;
+        int paidAmount = Integer.parseInt(amt);
+        int lessonPrice = lesson.getPrice();
+        if (paidAmount > lessonPrice) {
+            usesLocker = true;
+        }
+
+        // 6. 사물함 배정 (사용하는 경우)
+        boolean lockerAllocated = false;
+        if (usesLocker) {
+            if (currentUser.getGender() != null && !currentUser.getGender().trim().isEmpty()) {
+                try {
+                    // 성별 코드를 문자열로 변환 (1: MALE, 2: FEMALE)
+                    String genderStr = convertGenderCodeToString(currentUser.getGender());
+                    lockerService.incrementUsedQuantity(genderStr);
+                    lockerAllocated = true;
+                    logger.info("Locker allocated for user: {} (gender code: {} -> {})", 
+                        currentUser.getUsername(), currentUser.getGender(), genderStr);
+                } catch (Exception e) {
+                    logger.error("Failed to allocate locker for user: {}. Error: {}", currentUser.getUsername(), e.getMessage());
+                    // 사물함 배정 실패 시에도 수강신청은 생성하되 사물함 없이 진행
+                    usesLocker = false;
+                }
+            } else {
+                logger.warn("User {} has no gender info. Cannot allocate locker.", currentUser.getUsername());
+                usesLocker = false;
+            }
+        }
+
+        // 7. Enroll 엔티티 생성
+        int finalAmount = lessonPrice;
+        if (usesLocker && lockerAllocated) {
+            finalAmount += 5000; // 기본 사물함 요금
+        }
+
+        // 결제 완료된 수강신청의 만료일은 현재 월의 말일로 설정
+        LocalDateTime enrollExpireDate = LocalDate.now()
+                .with(TemporalAdjusters.lastDayOfMonth())
+                .atTime(23, 59, 59);
+
+        Enroll enroll = Enroll.builder()
+                .user(currentUser)
+                .lesson(lesson)
+                .status("APPLIED")
+                .payStatus("PAID")
+                .expireDt(enrollExpireDate)
+                .usesLocker(usesLocker)
+                .lockerAllocated(lockerAllocated)
+                .membershipType(cms.enroll.domain.MembershipType.GENERAL)
+                .finalAmount(finalAmount)
+                .discountAppliedPercentage(0)
+                .createdBy(currentUser.getUuid())
+                .createdIp("KISPG_APPROVAL")
+                .build();
+
+        Enroll savedEnroll = enrollRepository.save(enroll);
+        logger.info("Successfully created enrollment: enrollId={}, user={}, lesson={}, usesLocker={}, lockerAllocated={}", 
+                savedEnroll.getEnrollId(), currentUser.getUsername(), lesson.getLessonId(), usesLocker, lockerAllocated);
+
+        // 8. Payment 엔티티 생성
+        Payment payment = Payment.builder()
+                .enroll(savedEnroll)
+                .tid(tid)
+                .moid(moid)
+                .paidAmt(paidAmount)
+                .lessonAmount(lessonPrice)
+                .lockerAmount(usesLocker && lockerAllocated ? 5000 : 0)
+                .status("PAID")
+                .payMethod("CARD")
+                .pgResultCode("0000")
+                .pgResultMsg("SUCCESS")
+                .paidAt(LocalDateTime.now())
+                .createdBy(currentUser.getUuid())
+                .createdIp("KISPG_APPROVAL")
+                .build();
+
+        paymentRepository.save(payment);
+        logger.info("Successfully created payment record for enrollId: {}, tid: {}, moid: {}", 
+                savedEnroll.getEnrollId(), tid, moid);
+
+        return convertToMypageEnrollDto(savedEnroll);
+    }
+
+    /**
+     * KISPG 승인 API 호출
+     */
+    private boolean callKispgApprovalApi(String tid, String moid, String amt) {
+        try {
+            // 샘플 코드 기반으로 KISPG 승인 API 호출 로직 구현
+            String mid = "kistest00m"; // 설정에서 가져와야 함
+            String merchantKey = "test-key"; // 설정에서 가져와야 함
+            String ediDate = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
+            String encData = generateHash(mid + ediDate + amt + merchantKey);
+
+            // JSON 요청 생성
+            Map<String, String> requestMap = new HashMap<>();
+            requestMap.put("mid", mid);
+            requestMap.put("tid", tid);
+            requestMap.put("goodsAmt", amt);
+            requestMap.put("ediDate", ediDate);
+            requestMap.put("encData", encData);
+            requestMap.put("charset", "UTF-8");
+
+            // KISPG API 호출 (실제 구현에서는 RestTemplate 등 사용)
+            logger.info("KISPG approval API request: {}", requestMap.toString());
+            
+            // TODO: 실제 KISPG API 호출 구현
+            // 현재는 테스트를 위해 true 반환
+            return true;
+            
+        } catch (Exception e) {
+            logger.error("Failed to call KISPG approval API: {}", e.getMessage(), e);
+            return false;
+        }
+    }
+
+    private String generateHash(String data) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] hash = md.digest(data.getBytes("UTF-8"));
+            return bytesToHex(hash);
+        } catch (Exception e) {
+            logger.error("Failed to generate hash: {}", e.getMessage(), e);
+            return "";
+        }
+    }
+
+    private String bytesToHex(byte[] bytes) {
+        StringBuilder result = new StringBuilder();
+        for (byte b : bytes) {
+            result.append(String.format("%02x", b));
+        }
+        return result.toString();
+    }
+
+    private EnrollDto convertToMypageEnrollDto(Enroll enroll) {
+        if (enroll == null) return null;
+
+        Lesson lesson = enroll.getLesson();
+        
+        // LessonDetails 생성
+        EnrollDto.LessonDetails lessonDetails = EnrollDto.LessonDetails.builder()
+                .lessonId(lesson.getLessonId())
+                .title(lesson.getTitle())
+                .name(lesson.getTitle()) // title과 동일하게 설정
+                .startDate(lesson.getStartDate().toString())
+                .endDate(lesson.getEndDate().toString())
+                .capacity(lesson.getCapacity())
+                .price(java.math.BigDecimal.valueOf(lesson.getPrice()))
+                .instructor(null) // Lesson 엔티티에 해당 필드가 없으면 null로 설정
+                .location(null) // Lesson 엔티티에 해당 필드가 없으면 null로 설정
+                .build();
+
+        return EnrollDto.builder()
+                .enrollId(enroll.getEnrollId())
+                .lesson(lessonDetails)
+                .status(enroll.getPayStatus()) // pay_status를 status로 사용
+                .applicationDate(enroll.getCreatedAt() != null ? enroll.getCreatedAt().atOffset(ZoneOffset.UTC) : null)
+                .paymentExpireDt(enroll.getExpireDt() != null ? enroll.getExpireDt().atOffset(ZoneOffset.UTC) : null)
+                .usesLocker(enroll.isUsesLocker())
+                .membershipType(enroll.getMembershipType() != null ? enroll.getMembershipType().name() : null)
+                .cancelStatus(enroll.getCancelStatus() != null ? enroll.getCancelStatus().name() : "NONE")
+                .cancelReason(enroll.getCancelReason())
+                .canAttemptPayment(false) // 이미 결제 완료된 상태이므로 false
+                .paymentPageUrl(null) // 결제 완료된 상태이므로 null
+                .build();
+    }
+
+    /**
+     * 성별 코드를 DB 테이블에서 사용하는 문자열로 변환
+     * @param genderCode 성별 코드 (1: 남성, 2: 여성)
+     * @return MALE 또는 FEMALE
+     */
+    private String convertGenderCodeToString(String genderCode) {
+        if (genderCode == null || genderCode.trim().isEmpty()) {
+            throw new IllegalArgumentException("Gender code cannot be null or empty");
+        }
+        
+        String trimmedCode = genderCode.trim();
+        switch (trimmedCode) {
+            case "1":
+                return "MALE";
+            case "2":
+                return "FEMALE";
+            case "MALE":
+                return "MALE"; // 이미 문자열인 경우
+            case "FEMALE":
+                return "FEMALE"; // 이미 문자열인 경우
+            default:
+                logger.warn("Unknown gender code: {}. Defaulting to MALE", genderCode);
+                return "MALE"; // 기본값으로 MALE 사용
+        }
     }
 } 

@@ -65,7 +65,7 @@ public class MypagePaymentServiceImpl implements MypagePaymentService {
             throw new BusinessRuleException(ErrorCode.ACCESS_DENIED, HttpStatus.FORBIDDEN);
         }
 
-        if (!"SUCCESS".equalsIgnoreCase(payment.getStatus())) {
+        if (!"PAID".equalsIgnoreCase(payment.getStatus())) {
             throw new BusinessRuleException("성공 상태의 결제만 취소할 수 있습니다. 현재 상태: " + payment.getStatus(), ErrorCode.PAYMENT_CANCEL_NOT_ALLOWED);
         }
         
@@ -76,9 +76,9 @@ public class MypagePaymentServiceImpl implements MypagePaymentService {
         boolean refundInitiated;
         try {
             refundInitiated = paymentGatewayService.requestRefund(
-                payment.getPgToken(), 
-                payment.getMerchantUid(), 
-                payment.getAmount(),
+                payment.getTid(),
+                payment.getMoid(),
+                payment.getPaidAmt(),
                 "User requested cancellation via My Page"
             );
         } catch (Exception e) {
@@ -105,7 +105,9 @@ public class MypagePaymentServiceImpl implements MypagePaymentService {
         if (payment.getEnroll() != null) {
             dto.setEnrollId(payment.getEnroll().getEnrollId());
         }
-        dto.setAmount(payment.getAmount());
+        
+        dto.setAmount(payment.getPaidAmt() != null ? payment.getPaidAmt() : 0);
+        
         if (payment.getPaidAt() != null) {
             dto.setPaidAt(payment.getPaidAt().atOffset(ZoneOffset.UTC));
         }

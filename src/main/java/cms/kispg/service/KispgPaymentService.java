@@ -3,6 +3,7 @@ package cms.kispg.service;
 import cms.kispg.dto.KispgInitParamsDto;
 import cms.user.domain.User;
 import cms.swimming.dto.EnrollRequestDto;
+import cms.mypage.dto.EnrollDto;
 
 public interface KispgPaymentService {
     /**
@@ -15,4 +16,17 @@ public interface KispgPaymentService {
     KispgInitParamsDto generateInitParams(Long enrollId, User currentUser, String userIp);
 
     KispgInitParamsDto preparePaymentWithoutEnroll(EnrollRequestDto enrollRequest, User currentUser, String userIp);
+
+    /**
+     * MOID로 결제 상태를 검증하고 생성된 수강신청 정보를 조회합니다.
+     * @param moid 결제 주문번호 (KISPG에서 사용된 moid)
+     * @param currentUser 현재 사용자
+     * @return 생성된 수강신청 정보 (결제 성공 시)
+     */
+    EnrollDto verifyAndGetEnrollment(String moid, User currentUser);
+
+    /**
+     * KISPG 승인 API 호출 및 결제 처리
+     */
+    EnrollDto approvePaymentAndCreateEnrollment(String tid, String moid, String amt, User currentUser);
 } 

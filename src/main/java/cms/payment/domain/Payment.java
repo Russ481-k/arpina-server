@@ -26,32 +26,38 @@ public class Payment {
     @JoinColumn(name = "enroll_id", nullable = false)
     private Enroll enroll;
 
-    @Column(nullable = false)
-    private Integer amount;
+    @Column(nullable = false, length = 50)
+    private String status; // PAID | FAILED | CANCELED | PARTIAL_REFUNDED | REFUND_REQUESTED
 
-    @Column(name = "paid_at") // DTO used OffsetDateTime, using LocalDateTime for DB
+    @Column(name = "paid_at")
     private LocalDateTime paidAt;
 
-    @Column(nullable = false, length = 50)
-    private String status; // SUCCESS | CANCELED | PARTIAL | REFUND_REQUESTED (as per PaymentDto and refund flow)
-    
-    @Column(name = "pg_provider", length = 50)
-    private String pgProvider; // From CheckoutDto, good to store with payment
+    // KISPG specific fields
+    @Column(name = "moid", length = 255)
+    private String moid;
 
-    @Column(name = "pg_token", length = 255) // From /pay request, for verification/refunds
-    private String pgToken; 
-
-    @Column(name = "merchant_uid", length = 255) // From CheckoutDto, often used with PG
-    private String merchantUid;
-
-    // KISPG specific fields (as per kispg-payment-integration.md and Webhook implementation)
-    @Column(name = "tid", length = 100, unique = true) // KISPG Transaction ID, should be unique if it's a primary external ref
+    @Column(name = "tid", length = 100, unique = true)
     private String tid;
 
-    @Column(name = "paid_amt") // Actual amount confirmed by KISPG
+    @Column(name = "paid_amt") // Primary amount field
     private Integer paidAmt;
 
-    @Column(name = "pay_method", length = 50) // e.g., CARD, VBANK
+    // Payment breakdown
+    @Column(name = "lesson_amount")
+    private Integer lessonAmount;
+
+    @Column(name = "locker_amount")
+    private Integer lockerAmount;
+
+    // Refund related
+    @Column(name = "refunded_amt", columnDefinition = "INT DEFAULT 0")
+    private Integer refundedAmt = 0;
+
+    @Column(name = "refund_dt")
+    private LocalDateTime refundDt;
+
+    // Payment method info
+    @Column(name = "pay_method", length = 50)
     private String payMethod;
 
     @Column(name = "pg_result_code", length = 20)
@@ -60,21 +66,21 @@ public class Payment {
     @Column(name = "pg_result_msg", length = 255)
     private String pgResultMsg;
 
-    @Column(name = "lesson_amount") // 강습료 부분
-    private Integer lessonAmount;
+    // Audit fields
+    @Column(name = "CREATED_BY", length = 36)
+    private String createdBy;
 
-    @Column(name = "locker_amount") // 사물함 요금 부분
-    private Integer lockerAmount;
+    @Column(name = "CREATED_IP", length = 45)
+    private String createdIp;
 
-    @Column(name = "refunded_amt", columnDefinition = "INT DEFAULT 0")
-    private Integer refundedAmt = 0;
-
-    @Column(name = "refund_dt")
-    private LocalDateTime refundDt;
-
-    // Timestamps
     @Column(name = "CREATED_AT", nullable = false, updatable = false)
     private LocalDateTime createdAt;
+
+    @Column(name = "UPDATED_BY", length = 36)
+    private String updatedBy;
+
+    @Column(name = "UPDATED_IP", length = 45)
+    private String updatedIp;
 
     @Column(name = "UPDATED_AT", nullable = false)
     private LocalDateTime updatedAt;

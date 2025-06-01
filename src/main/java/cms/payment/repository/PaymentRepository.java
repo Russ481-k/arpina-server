@@ -13,10 +13,14 @@ public interface PaymentRepository extends JpaRepository<Payment, Long>, JpaSpec
     List<Payment> findByEnrollOrderByCreatedAtDesc(Enroll enroll);
     List<Payment> findByEnroll_User_UuidOrderByCreatedAtDesc(String userUuid); // Find by user UUID through enroll
     
-    // Methods needed by KispgWebhookServiceImpl
+    // KISPG specific methods
     Optional<Payment> findByTid(String tid);
     Optional<Payment> findByEnroll_EnrollId(Long enrollId);
-    Optional<Payment> findByMerchantUid(String merchantUid);
+    Optional<Payment> findByMoid(String moid);
     long countByEnrollEnrollId(Long enrollId);
+    
+    // Status-based queries
+    List<Payment> findByStatusOrderByCreatedAtDesc(String status);
+    List<Payment> findByEnroll_User_UuidAndStatusOrderByCreatedAtDesc(String userUuid, String status);
     // Add more custom query methods as needed
 } 

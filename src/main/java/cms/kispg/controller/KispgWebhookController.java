@@ -24,6 +24,21 @@ public class KispgWebhookController {
     @PostMapping(value = "/payment-notification", consumes = {MediaType.APPLICATION_FORM_URLENCODED_VALUE, MediaType.APPLICATION_JSON_VALUE})
     public ResponseEntity<String> handlePaymentNotification(KispgNotificationRequest notificationRequest, HttpServletRequest request) {
         String clientIp = getClientIp(request);
+        
+        // 웹훅 호출 감지를 위한 강화된 로깅
+        logger.info("=== [KISPG Webhook RECEIVED] ===");
+        logger.info("[KISPG Webhook] URL: {}", request.getRequestURL());
+        logger.info("[KISPG Webhook] Method: {}", request.getMethod());
+        logger.info("[KISPG Webhook] Content-Type: {}", request.getContentType());
+        logger.info("[KISPG Webhook] Client IP: {}", clientIp);
+        logger.info("[KISPG Webhook] User-Agent: {}", request.getHeader("User-Agent"));
+        logger.info("[KISPG Webhook] All Headers:");
+        java.util.Enumeration<String> headerNames = request.getHeaderNames();
+        while (headerNames.hasMoreElements()) {
+            String headerName = headerNames.nextElement();
+            logger.info("  {}: {}", headerName, request.getHeader(headerName));
+        }
+        
         logger.info("[KISPG Webhook] Received notification from IP: {}. Payload: {}", clientIp, notificationRequest.toString());
 
         // Basic validation: Check for essential fields like tid and moid

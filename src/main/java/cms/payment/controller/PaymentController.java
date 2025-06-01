@@ -28,11 +28,13 @@ public class PaymentController {
     private final KispgPaymentService kispgPaymentService;
 
     @GetMapping("/kispg-init-params/{enrollId}")
-    @Operation(summary = "KISPG 결제 초기화 파라미터 조회", description = "등록된 수강신청에 대한 KISPG 결제 파라미터를 조회합니다.")
+    @Operation(summary = "KISPG 결제 초기화 파라미터 조회 (DEPRECATED)", 
+               description = "등록된 수강신청에 대한 KISPG 결제 파라미터를 조회합니다. 새로운 플로우에서는 prepare-kispg-payment를 사용하세요.")
     @ApiResponses(value = {
         @ApiResponse(responseCode = "200", description = "결제 파라미터 조회 성공"),
         @ApiResponse(responseCode = "404", description = "수강신청 정보를 찾을 수 없음")
     })
+    @Deprecated
     public ResponseEntity<ApiResponseSchema<KispgInitParamsDto>> getKispgInitParams(
             @PathVariable Long enrollId,
             @AuthenticationPrincipal User currentUser,
@@ -63,6 +65,60 @@ public class PaymentController {
         return ResponseEntity.ok(ApiResponseSchema.success(initParams, "KISPG 결제가 준비되었습니다."));
     }
 
+    @PostMapping("/confirm")
+    @Operation(summary = "결제 확인", description = "프론트엔드에서 결제 완료를 서버에 알립니다.")
+    public ResponseEntity<Void> confirmPayment(@RequestBody PaymentConfirmRequest request) {
+        // 결제 확인 로직 (주로 로깅이나 추가 검증 용도)
+        // 실제 결제 처리는 KISPG 웹훅에서 처리됨
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/verify-and-get-enrollment")
+    @Operation(summary = "결제 검증 및 수강신청 조회", 
+               description = "MOID로 결제 상태를 검증하고 생성된 수강신청 정보를 조회합니다.")
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "결제 검증 및 수강신청 조회 성공"),
+        @ApiResponse(responseCode = "404", description = "결제 정보 또는 수강신청 정보를 찾을 수 없음"),
+        @ApiResponse(responseCode = "400", description = "결제가 완료되지 않았거나 유효하지 않은 상태")
+    })
+    @SecurityRequirement(name = "bearerAuth")
+    public ResponseEntity<ApiResponseSchema<cms.mypage.dto.EnrollDto>> verifyAndGetEnrollment(
+            @RequestBody VerifyPaymentRequest request,
+            @AuthenticationPrincipal User currentUser) {
+        
+        cms.mypage.dto.EnrollDto enrollDto = kispgPaymentService.verifyAndGetEnrollment(request.getMoid(), currentUser);
+        
+        return ResponseEntity.ok(ApiResponseSchema.success(enrollDto, "결제 검증 및 수강신청 조회가 완료되었습니다."));
+    }
+
+    @PostMapping("/approve-and-create-enrollment")
+    @Operation(summary = "KISPG 결제 승인 및 수강신청 생성", 
+               description = "KISPG 승인 API를 호출하고 temp moid로부터 수강신청을 생성합니다.")
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "승인 및 수강신청 생성 성공"),
+        @ApiResponse(responseCode = "400", description = "승인 실패 또는 잘못된 요청"),
+        @ApiResponse(responseCode = "409", description = "이미 처리된 결제 또는 비즈니스 규칙 위반")
+    })
+    @SecurityRequirement(name = "bearerAuth")
+    public ResponseEntity<ApiResponseSchema<cms.mypage.dto.EnrollDto>> approveAndCreateEnrollment(
+            @RequestBody ApprovePaymentRequest request,
+            @AuthenticationPrincipal User currentUser) {
+        
+        cms.mypage.dto.EnrollDto enrollDto = kispgPaymentService.approvePaymentAndCreateEnrollment(
+            request.getTid(), request.getMoid(), request.getAmt(), currentUser);
+        
+        return ResponseEntity.ok(ApiResponseSchema.success(enrollDto, "결제 승인 및 수강신청이 완료되었습니다."));
+    }
+
+    // DTO for verifyAndGetEnrollment request body
+    public static class VerifyPaymentRequest {
+        private String moid;
+        
+        // Getters and setters
+        public String getMoid() { return moid; }
+        public void setMoid(String moid) { this.moid = moid; }
+    }
+
     // DTO for confirmPayment request body
     public static class PaymentConfirmRequest {
         private Long enrollId;
@@ -75,12 +131,19 @@ public class PaymentController {
         public void setSuccess(boolean success) { this.success = success; }
     }
 
-    @PostMapping("/confirm")
-    @Operation(summary = "결제 확인", description = "프론트엔드에서 결제 완료를 서버에 알립니다.")
-    public ResponseEntity<Void> confirmPayment(@RequestBody PaymentConfirmRequest request) {
-        // 결제 확인 로직 (주로 로깅이나 추가 검증 용도)
-        // 실제 결제 처리는 KISPG 웹훅에서 처리됨
-        return ResponseEntity.ok().build();
+    // DTO for approveAndCreateEnrollment request body
+    public static class ApprovePaymentRequest {
+        private String tid;
+        private String moid;
+        private String amt;
+        
+        // Getters and setters
+        public String getTid() { return tid; }
+        public void setTid(String tid) { this.tid = tid; }
+        public String getMoid() { return moid; }
+        public void setMoid(String moid) { this.moid = moid; }
+        public String getAmt() { return amt; }
+        public void setAmt(String amt) { this.amt = amt; }
     }
 
     private String getClientIp(HttpServletRequest request) {

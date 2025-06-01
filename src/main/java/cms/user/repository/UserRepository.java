@@ -37,4 +37,8 @@ public interface UserRepository extends JpaRepository<User, String>, JpaSpecific
     Optional<User> findByUuid(String uuid);
 
     Optional<User> findByPhone(String phone);
+    
+    // UUID prefix로 사용자를 찾는 메서드 (웹훅 temp moid 처리용)
+    @Query("SELECT u FROM User u WHERE u.uuid LIKE :uuidPrefix%")
+    List<User> findByUuidStartingWith(@Param("uuidPrefix") String uuidPrefix);
 } 

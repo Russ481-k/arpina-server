@@ -40,10 +40,10 @@ public class PaymentAdminServiceImpl implements PaymentAdminService {
 
         return PaymentAdminDto.builder()
                 .paymentId(payment.getId())
-                .enrollId(enroll != null ? enroll.getEnrollId() : null)
-                .userId(user != null ? user.getUuid() : null)
-                .userName(user != null ? user.getName() : null)
-                .lessonTitle(lesson != null ? lesson.getTitle() : null)
+                .enrollId(enroll.getEnrollId())
+                .userId(enroll.getUser().getUsername())
+                .userName(enroll.getUser().getName())
+                .lessonTitle(enroll.getLesson().getTitle())
                 .tid(payment.getTid())
                 .paidAmt(payment.getPaidAmt())
                 .refundedAmt(payment.getRefundedAmt())
@@ -52,7 +52,7 @@ public class PaymentAdminServiceImpl implements PaymentAdminService {
                 .pgResultCode(payment.getPgResultCode())
                 .paidAt(payment.getPaidAt())
                 .lastRefundDt(payment.getRefundDt())
-                .pgProvider(payment.getPgProvider())
+                .pgProvider("KISPG") // Hardcode since we only use KISPG now
                 .build();
     }
 
