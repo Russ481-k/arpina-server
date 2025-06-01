@@ -48,6 +48,9 @@ public class JwtTokenProvider {
         claims.put("userId", user.getUuid());
         claims.put("role", "ROLE_" + user.getRole().name());
         claims.put("gender", user.getGender());
+        claims.put("name", user.getName());
+        claims.put("email", user.getEmail());
+        claims.put("phone", user.getPhone());
         claims.put(TOKEN_TYPE_CLAIM, TOKEN_TYPE_ACCESS);
 
         Date now = new Date();
@@ -93,6 +96,9 @@ public class JwtTokenProvider {
         logger.debug("Subject: {}", claims.getSubject());
         logger.debug("User ID: {}", claims.get("userId"));
         logger.debug("Gender from token: {}", claims.get("gender", String.class));
+        logger.debug("Name: {}", claims.get("name"));
+        logger.debug("Email: {}", claims.get("email"));
+        logger.debug("Phone: {}", claims.get("phone"));
         
         String roleStr = claims.get("role", String.class);
         logger.info("[JwtTokenProvider] Original role string from token: '{}'", roleStr);
@@ -125,8 +131,10 @@ public class JwtTokenProvider {
                 .email(claims.get("email", String.class))
                 .name(claims.get("name", String.class))
                 .gender(claims.get("gender", String.class))
+                .phone(claims.get("phone", String.class))
                 .build();
-        logger.debug("Created UserDetails: {}, with gender: {}", principal, ((User)principal).getGender());
+        logger.debug("Created UserDetails: {}, with gender: {}, name: '{}', email: '{}', phone: '{}'", 
+            principal, ((User)principal).getGender(), ((User)principal).getName(), ((User)principal).getEmail(), ((User)principal).getPhone());
 
         JwtAuthenticationToken authentication = new JwtAuthenticationToken(principal, token, authorities, token);
         logger.debug("Created JwtAuthenticationToken: {}", authentication);
@@ -166,6 +174,9 @@ public class JwtTokenProvider {
             logger.debug("Subject: {}", claims.getSubject());
             logger.debug("User ID: {}", claims.get("userId"));
             logger.debug("Role: {}", claims.get("role"));
+            logger.debug("Name: {}", claims.get("name"));
+            logger.debug("Email: {}", claims.get("email"));
+            logger.debug("Phone: {}", claims.get("phone"));
             logger.debug("Token type: {}", claims.get(TOKEN_TYPE_CLAIM));
             logger.debug("Issued at: {}", claims.getIssuedAt());
             logger.debug("Expiration: {}", claims.getExpiration());
@@ -179,7 +190,7 @@ public class JwtTokenProvider {
             
             // Validate required claims
             if (claims.get("userId") == null || claims.get("role") == null) {
-                logger.error("Missing required claims in token");
+                logger.error("Missing required claims in token (userId or role)");
                 throw new JwtException("토큰에 필수 정보가 없습니다.");
             }
             

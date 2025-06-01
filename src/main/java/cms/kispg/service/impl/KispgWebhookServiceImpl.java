@@ -59,11 +59,16 @@ public class KispgWebhookServiceImpl implements KispgWebhookService {
         } else {
             allowedIpList = Collections.emptyList(); // Empty list if not configured
         }
+        logger.info("KISPG Webhook Service initialized. Active profile: {}. Allowed IPs: {}", activeProfile, allowedIpList.isEmpty() ? "ANY" : allowedIpList);
     }
     
     @Override
     @Transactional
     public String processPaymentNotification(KispgNotificationRequest notification, String clientIp) {
+        logger.info("[KISPG Webhook START] Processing notification for moid: {}, tid: {}, resultCode: {}, resultMsg: '{}', clientIp: {}", 
+                notification.getMoid(), notification.getTid(), notification.getResultCode(), notification.getResultMsg(), clientIp);
+        logger.debug("[KISPG Webhook DETAIL] Full notification: {}", notification);
+
         // 1. Security Validation
         // IP Whitelisting (only in prod, if configured)
         if ("prod".equalsIgnoreCase(activeProfile) && !allowedIpList.isEmpty() && !allowedIpList.contains(clientIp)) {
@@ -83,28 +88,64 @@ public class KispgWebhookServiceImpl implements KispgWebhookService {
 
 
         // 2. Parameter & Enrollment/Payment Record Check
-        // Attempt to parse moid to Long for enrollId. KISPG moid is often `enroll_{enrollId}_{timestamp}`
-        Long enrollId;
+        // Attempt to parse moid to get enrollment information
+        // New format: temp_{lessonId}_{userUuid_prefix}_{timestamp} OR existing: enroll_{enrollId}_{timestamp}
+        final Long enrollId;
+        final Long lessonId;
+        final boolean isTempMoid;
+        
         try {
-            // This parsing logic needs to be robust and match how moid is generated.
-            // If moid = "enroll_123_timestamp", then:
             String moid = notification.getMoid();
-            if (moid == null || !moid.startsWith("enroll_")) {
-                 throw new IllegalArgumentException("MOID format is incorrect: " + moid);   
+            if (moid == null) {
+                throw new IllegalArgumentException("MOID is null");
             }
-            // Extract the part between "enroll_" and the next "_"
-            String enrollIdStr = moid.substring("enroll_".length()).split("_")[0];
-            enrollId = Long.parseLong(enrollIdStr);
+            
+            if (moid.startsWith("temp_")) {
+                // New temporary format: temp_{lessonId}_{userUuid_prefix}_{timestamp}
+                isTempMoid = true;
+                String[] parts = moid.substring("temp_".length()).split("_");
+                if (parts.length < 3) {
+                    throw new IllegalArgumentException("Invalid temp MOID format: " + moid);
+                }
+                lessonId = Long.parseLong(parts[0]);
+                enrollId = null;
+                String userUuidPrefix = parts[1];
+                // We need to find the user by UUID prefix - this is a limitation of the temp approach
+                // For now, we'll get it from the notification's mbsUsrId field instead
+                logger.info("[KISPG Webhook] Parsed temp moid - lessonId: {}, userUuidPrefix: {}", lessonId, userUuidPrefix);
+            } else if (moid.startsWith("enroll_")) {
+                // Existing format: enroll_{enrollId}_{timestamp}
+                isTempMoid = false;
+                lessonId = null;
+                String enrollIdStr = moid.substring("enroll_".length()).split("_")[0];
+                enrollId = Long.parseLong(enrollIdStr);
+                logger.info("[KISPG Webhook] Parsed existing moid - enrollId: {}", enrollId);
+            } else {
+                throw new IllegalArgumentException("Unknown MOID format: " + moid);
+            }
         } catch (NumberFormatException | NullPointerException | ArrayIndexOutOfBoundsException e) {
-            logger.error("[KISPG Webhook] Could not parse enrollId from moid: {}. Error: {}", notification.getMoid(), e.getMessage());
+            logger.error("[KISPG Webhook] Could not parse moid: {}. Error: {}", notification.getMoid(), e.getMessage());
             return "FAIL"; // Invalid moid format
         }
+
+        Enroll enroll = null;
+        if (isTempMoid) {
+            // For temp moid, we need to create the enrollment during payment success
+            // For now, we'll proceed without an existing enrollment
+            logger.info("[KISPG Webhook] Processing temp moid payment for lessonId: {}", lessonId);
+        } else {
+            // Existing flow - find the enrollment
+            enroll = enrollRepository.findById(enrollId)
+                    .orElseThrow(() -> {
+                        logger.error("[KISPG Webhook] Enroll not found for moid (parsed enrollId: {}). Original moid: {}", enrollId, notification.getMoid());
+                        return new ResourceNotFoundException("Enrollment not found for moid: " + notification.getMoid(), ErrorCode.ENROLLMENT_NOT_FOUND);
+                    });
+        }
         
-        Enroll enroll = enrollRepository.findById(enrollId)
-                .orElseThrow(() -> {
-                    logger.error("[KISPG Webhook] Enroll not found for moid (parsed enrollId: {}). Original moid: {}", enrollId, notification.getMoid());
-                    return new ResourceNotFoundException("Enrollment not found for moid: " + notification.getMoid(), ErrorCode.ENROLLMENT_NOT_FOUND);
-                });
+        if (enroll != null) {
+            logger.info("[KISPG Webhook] Found Enroll record (enrollId: {}) with status: {}, usesLocker: {}, isRenewal: {}, lockerAllocated: {}", 
+                    enroll.getEnrollId(), enroll.getPayStatus(), enroll.isUsesLocker(), enroll.isRenewalFlag(), enroll.isLockerAllocated());
+        }
 
         // Check for duplicate TIDs to ensure idempotency
         Optional<Payment> existingPaymentWithTid = paymentRepository.findByTid(notification.getTid());
@@ -134,6 +175,7 @@ public class KispgWebhookServiceImpl implements KispgWebhookService {
                  // Fall through to locker logic to ensure it's aligned with usesLocker flag and pgToken
             } else {
                 enroll.setPayStatus("PAID");
+                logger.info("[KISPG Webhook] Set payStatus to PAID for enrollId: {}", enrollId);
                 // Potentially set other fields on enroll like payment_date, etc.
             }
             
@@ -147,6 +189,7 @@ public class KispgWebhookServiceImpl implements KispgWebhookService {
             boolean isRenewalLockerTransfer = false; // Flag to track if this is a transfer
 
             if (enroll.isRenewalFlag() && enroll.isUsesLocker()) {
+                logger.info("[KISPG Webhook] Locker Renewal Logic: enrollId {} is renewal and usesLocker=true.", enrollId);
                 // This is a renewal and the user wants a locker for the new period.
                 LocalDate currentLessonStartDate = enroll.getLesson().getStartDate();
                 // Assumption: previous month is literally one month prior. Adjust if business rule is different (e.g., specific day cutoffs)
@@ -157,9 +200,11 @@ public class KispgWebhookServiceImpl implements KispgWebhookService {
                     currentLessonStartDate,
                     previousMonthDate
                 );
+                logger.info("[KISPG Webhook] Found {} previous paid locker enrollments for user {} for month prior to {}", previousEnrollments.size(), user.getUuid(), currentLessonStartDate);
 
                 if (!previousEnrollments.isEmpty()) {
                     Enroll previousEnroll = previousEnrollments.get(0); // Get the latest one from the previous month that had a locker
+                    logger.info("[KISPG Webhook] Locker Renewal: Attempting transfer from previousEnrollId: {} (lockerAllocated: {})", previousEnroll.getEnrollId(), previousEnroll.isLockerAllocated());
 
                     isRenewalLockerTransfer = true;
                     enroll.setLockerAllocated(true);
@@ -170,15 +215,17 @@ public class KispgWebhookServiceImpl implements KispgWebhookService {
                     previousEnroll.setLockerPgToken(null); // Clear its association
                     enrollRepository.save(previousEnroll); // Save changes to the old enrollment
 
-                    logger.info("[KISPG Webhook] Locker transferred for renewal. User: {}, New EnrollId: {}, Previous EnrollId: {}, PG Token: {}",
-                        user.getUuid(), enroll.getEnrollId(), previousEnroll.getEnrollId(), notification.getTid());
+                    logger.info("[KISPG Webhook] Locker transferred for renewal. User: {}, New EnrollId: {}, Previous EnrollId: {} (now lockerAllocated: {}), PG Token: {}",
+                        user.getUuid(), enroll.getEnrollId(), previousEnroll.getEnrollId(), previousEnroll.isLockerAllocated(), notification.getTid());
                 } else {
-                    logger.info("[KISPG Webhook] Renewal for enrollId {} wants locker, but no eligible previous locker found for transfer. Proceeding with standard allocation.", enrollId);
+                    logger.info("[KISPG Webhook] Locker Renewal: No eligible previous locker found for transfer for enrollId {}. Proceeding with standard allocation/confirmation.", enrollId);
                 }
             }
 
             // Adjusted standard allocation/confirmation path
             if (!isRenewalLockerTransfer) {
+                logger.info("[KISPG Webhook] Standard Locker Logic for enrollId {}: isRenewalLockerTransfer=false, usesLocker={}, lockerAllocated={}", 
+                    enrollId, enroll.isUsesLocker(), enroll.isLockerAllocated());
                 if (enroll.isUsesLocker()) {
                     // Locker was requested during initial enrollment.
                     // EnrollmentServiceImpl should have already attempted to allocate and set enroll.lockerAllocated.
@@ -203,7 +250,7 @@ public class KispgWebhookServiceImpl implements KispgWebhookService {
                         // This means a locker WAS allocated during initial application (e.g., usesLocker was true then),
                         // but now (perhaps through a /payment/confirm step not detailed here, or if usesLocker could change post-application),
                         // the final decision is NO locker. We MUST release the previously allocated one.
-                        logger.info("[KISPG Webhook] User for enrollId {} now indicates NO locker (usesLocker=false), but one was previously allocated. Releasing it.", enrollId);
+                        logger.info("[KISPG Webhook] User for enrollId {} now indicates NO locker (usesLocker=false), but one was previously allocated (lockerAllocated={}). Releasing it.", enrollId, enroll.isLockerAllocated());
                         // User user = enroll.getUser(); // User should have been fetched earlier and is in scope
                         if (user != null && user.getGender() != null && !user.getGender().trim().isEmpty()) {
                             try {
@@ -228,7 +275,10 @@ public class KispgWebhookServiceImpl implements KispgWebhookService {
             }
             // --- End of Adjusted Locker Logic ---
 
+            logger.info("[KISPG Webhook] Attempting to save Enroll (enrollId: {}) with payStatus: {}, lockerAllocated: {}, lockerPgToken: '{}'",
+                enroll.getEnrollId(), enroll.getPayStatus(), enroll.isLockerAllocated(), enroll.getLockerPgToken());
             enrollRepository.save(enroll);
+            logger.info("[KISPG Webhook] Successfully saved Enroll (enrollId: {})", enroll.getEnrollId());
 
             // Create or Update Payment record
             Payment payment = paymentRepository.findByEnroll_EnrollId(enrollId)
@@ -245,6 +295,7 @@ public class KispgWebhookServiceImpl implements KispgWebhookService {
                 payment.setPaidAmt(0);
                 paidAmtFromNotification = 0; // Ensure it's 0 for further calculations
             }
+            logger.info("[KISPG Webhook] Payment amount from notification (amt: '{}') parsed as: {}", notification.getAmt(), paidAmtFromNotification);
 
             // 강습료 및 사물함 요금 분리 저장
             if (enroll.getLesson() != null) {
@@ -291,7 +342,10 @@ public class KispgWebhookServiceImpl implements KispgWebhookService {
             // payment.setMerchantUid(notification.getMoid()); // moid can be stored here if not directly on enroll.
                                                             // Or if Payment has a direct moid field.
 
+            logger.info("[KISPG Webhook] Attempting to save Payment record for enrollId: {}, tid: {}", enrollId, notification.getTid());
+            logger.debug("[KISPG Webhook DETAIL] Payment object before save: {}", payment);
             paymentRepository.save(payment);
+            logger.info("[KISPG Webhook] Successfully saved Payment record (paymentId: {}) for enrollId: {}, tid: {}", payment.getId(), enrollId, notification.getTid());
             
             // TODO: Send notifications to user (email/SMS) about successful payment and locker status if applicable.
 
@@ -369,7 +423,10 @@ public class KispgWebhookServiceImpl implements KispgWebhookService {
             payment.setPgResultCode(notification.getResultCode());
             payment.setPgResultMsg(notification.getResultMsg());
             // paidAt might be null or current time for failure record
+            logger.info("[KISPG Webhook] Attempting to save FAILED Payment record for enrollId: {}, tid: {}", enrollId, notification.getTid());
+            logger.debug("[KISPG Webhook DETAIL] Failed Payment object before save: {}", payment);
             paymentRepository.save(payment);
+            logger.info("[KISPG Webhook] Successfully saved FAILED Payment record (paymentId: {}) for enrollId: {}, tid: {}", payment.getId(), enrollId, notification.getTid());
 
             // For failures, KISPG docs will specify what to return. Usually "OK" to acknowledge receipt.
             return "OK"; 

@@ -83,7 +83,7 @@ public class SecurityConfig {
 			"/api/v1/cms/schedule/public**",
 			"/api/v1/cms/schedule/**",
 			"/api/v1/cms/file/public/**",
-			"/api/v1/swimming/**",
+			"/api/v1/swimming/lessons/**",
 			"/api/v1/nice/checkplus/**"
 		);
 		for (String pattern : permitAllAntPatterns) {

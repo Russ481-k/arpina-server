@@ -17,4 +17,11 @@ public class KispgInitParamsDto {
     private String notifyUrl;   // 결제 결과 통지 URL (Webhook)
     private String ediDate;     // 전문 생성일시 (yyyyMMddHHmmss)
     private String requestHash; // 요청 해시값 (보안 검증용)
+
+    // Fields added based on user request for detailed payment information
+    private String goodsSplAmt; // 공급가액 (VAT 제외 금액)
+    private String goodsVat;    // 부가세액
+    private String userIp;      // 사용자 IP 주소 (선택 사항)
+    private String mbsUsrId;    // 가맹점 고객 ID (선택 사항)
+    private String mbsReserved1; // 가맹점 예약필드1 (예: enrollId)
 } 

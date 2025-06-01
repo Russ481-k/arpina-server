@@ -64,12 +64,12 @@ public class NiceService {
 
     public Map<String, String> initiateVerification(String serviceType) {
         CPClient niceCheck = new CPClient();
-        String requestNumber = niceCheck.getRequestNO(siteCode);
+        String requestNumber = niceCheck.getRequestNO(siteCode); 
         log.info("[NICE] Generated reqSeq: {} for serviceType: {}", requestNumber, serviceType);
         storeReqSeqWithServiceType(requestNumber, serviceType);
 
-        String authType = "";
-        String customize = "";
+        String authType = ""; 
+        String customize = ""; 
         String returnUrl = baseCallbackUrl + "/api/v1/nice/checkplus/success";
         String errorUrl = baseCallbackUrl + "/api/v1/nice/checkplus/fail";
 
@@ -92,7 +92,7 @@ public class NiceService {
 
         Map<String, String> response = new HashMap<>();
         response.put("encodeData", encodeData);
-        response.put("reqSeq", requestNumber);
+        response.put("reqSeq", requestNumber); 
         log.info("[NICE] Initiated verification for reqSeq: {}, serviceType: {}", requestNumber, serviceType);
         return response;
     }
@@ -143,21 +143,21 @@ public class NiceService {
             case "REGISTER":
                 log.info("[NICE] Processing REGISTER for reqSeq: {}", reqSeq);
                 NiceUserDataDto registerUserData = NiceUserDataDto.builder()
-                        .reqSeq(reqSeq)
-                        .resSeq((String) parsedData.get("RES_SEQ"))
-                        .authType((String) parsedData.get("AUTH_TYPE"))
+                .reqSeq(reqSeq)
+                .resSeq((String) parsedData.get("RES_SEQ"))
+                .authType((String) parsedData.get("AUTH_TYPE"))
                         .name(nameFromNice)
-                        .utf8Name(utf8Name)
-                        .birthDate((String) parsedData.get("BIRTHDATE"))
-                        .gender((String) parsedData.get("GENDER"))
-                        .nationalInfo((String) parsedData.get("NATIONALINFO"))
-                        .di(di)
-                        .ci((String) parsedData.get("CI"))
-                        .mobileCo((String) parsedData.get("MOBILE_CO"))
-                        .mobileNo((String) parsedData.get("MOBILE_NO"))
+                .utf8Name(utf8Name)
+                .birthDate((String) parsedData.get("BIRTHDATE"))
+                .gender((String) parsedData.get("GENDER"))
+                .nationalInfo((String) parsedData.get("NATIONALINFO"))
+                .di(di)
+                .ci((String) parsedData.get("CI"))
+                .mobileCo((String) parsedData.get("MOBILE_CO"))
+                .mobileNo((String) parsedData.get("MOBILE_NO"))
                         .alreadyJoined(userOptional.isPresent())
                         .existingUsername(userOptional.map(User::getUsername).orElse(null))
-                        .build();
+                .build();
                 callbackResult = NiceCallbackResultDto.successForRegister(serviceType, registerUserData);
                 break;
 
@@ -226,7 +226,7 @@ public class NiceService {
                 callbackResult = NiceCallbackResultDto.error(serviceType, "INVALID_SERVICE_TYPE", "알 수 없는 서비스 요청 유형입니다.", nameFromNice);
                 break;
         }
-
+        
         String resultKey = UUID.randomUUID().toString();
         long expiryTime = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(RESULT_EXPIRY_MINUTES);
         tempResultStore.put(resultKey, new CacheEntry(callbackResult, expiryTime));

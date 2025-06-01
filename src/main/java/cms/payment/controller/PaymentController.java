@@ -1,67 +1,96 @@
 package cms.payment.controller;
 
-import cms.payment.dto.PaymentPageDetailsDto;
-import cms.payment.service.PaymentService;
-import cms.user.domain.User; // Spring Security의 @AuthenticationPrincipal 사용 가정
+import cms.common.dto.ApiResponseSchema;
+import cms.kispg.dto.KispgInitParamsDto;
+import cms.kispg.service.KispgPaymentService;
+import cms.user.domain.User;
+import cms.swimming.dto.EnrollRequestDto;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
-import cms.kispg.dto.KispgInitParamsDto;
-import cms.kispg.service.KispgPaymentService;
 
-// DTO for confirmPayment request body
-class ConfirmPaymentRequest {
-    private boolean wantsLocker;
-    private String pgToken; // KISPG에서 전달받는 tid 등
+import javax.servlet.http.HttpServletRequest;
+import javax.validation.Valid;
 
-    public boolean isWantsLocker() { return wantsLocker; }
-    public void setWantsLocker(boolean wantsLocker) { this.wantsLocker = wantsLocker; }
-    public String getPgToken() { return pgToken; }
-    public void setPgToken(String pgToken) { this.pgToken = pgToken; }
-}
-
-@Tag(name = "Payment API", description = "결제 관련 API (KISPG 연동 전용)")
 @RestController
 @RequestMapping("/payment")
 @RequiredArgsConstructor
+@Tag(name = "Payment", description = "결제 관련 API")
 public class PaymentController {
 
-    private final PaymentService paymentService;
-    private final KispgPaymentService kispgPaymentService; // KispgPaymentService 주입
+    private final KispgPaymentService kispgPaymentService;
 
-    @Operation(summary = "KISPG 결제 페이지 상세 정보 조회",
-               description = "enrollId로 KISPG 결제 페이지에 필요한 CMS 내부 상세 정보(강습명, 금액, 라커 옵션, 사용자 성별, 결제 만료 시각 등)를 조회합니다.")
-    @GetMapping("/details/{enrollId}")
-    public ResponseEntity<PaymentPageDetailsDto> getPaymentPageDetails(
-            @Parameter(description = "수강 신청 ID", required = true) @PathVariable Long enrollId,
-            @AuthenticationPrincipal User currentUser) { // Spring Security를 통해 현재 사용자 정보 주입
-        // currentUser가 null일 경우 또는 권한 없을 시 PaymentServiceImpl에서 ACCESS_DENIED 예외 처리
-        PaymentPageDetailsDto detailsDto = paymentService.getPaymentPageDetails(enrollId, currentUser);
-        return ResponseEntity.ok(detailsDto);
-    }
-
-    @Operation(summary = "KISPG 결제 초기화 파라미터 조회",
-               description = "enrollId로 KISPG 결제창 호출에 필요한 파라미터를 조회합니다. (해시 포함)")
     @GetMapping("/kispg-init-params/{enrollId}")
-    public ResponseEntity<KispgInitParamsDto> getKispgInitParams(
-            @Parameter(description = "수강 신청 ID", required = true) @PathVariable Long enrollId,
-            @AuthenticationPrincipal User currentUser) {
-        KispgInitParamsDto initParamsDto = kispgPaymentService.generateInitParams(enrollId, currentUser);
-        return ResponseEntity.ok(initParamsDto);
+    @Operation(summary = "KISPG 결제 초기화 파라미터 조회", description = "등록된 수강신청에 대한 KISPG 결제 파라미터를 조회합니다.")
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "결제 파라미터 조회 성공"),
+        @ApiResponse(responseCode = "404", description = "수강신청 정보를 찾을 수 없음")
+    })
+    public ResponseEntity<ApiResponseSchema<KispgInitParamsDto>> getKispgInitParams(
+            @PathVariable Long enrollId,
+            @AuthenticationPrincipal User currentUser,
+            HttpServletRequest request) {
+        
+        String userIp = getClientIp(request);
+        KispgInitParamsDto initParams = kispgPaymentService.generateInitParams(enrollId, currentUser, userIp);
+        
+        return ResponseEntity.ok(ApiResponseSchema.success(initParams, "KISPG 결제 파라미터가 성공적으로 생성되었습니다."));
     }
-    
-    @Operation(summary = "KISPG 결제 후 최종 확인 및 사물함 선택 반영",
-               description = "KISPG 결제 후 사용자가 돌아왔을 때 호출됩니다. 사용자의 최종 사물함 선택 여부를 반영하고, UX를 관리합니다. 실제 결제 확정은 Webhook을 통합니다.")
-    @PostMapping("/confirm/{enrollId}")
-    public ResponseEntity<Void> confirmPayment(
-            @Parameter(description = "수강 신청 ID", required = true) @PathVariable Long enrollId,
-            @RequestBody ConfirmPaymentRequest request,
-            @AuthenticationPrincipal User currentUser) {
-        paymentService.confirmPayment(enrollId, currentUser, request.isWantsLocker(), request.getPgToken());
+
+    @PostMapping("/prepare-kispg-payment")
+    @Operation(summary = "KISPG 결제 준비", description = "수강신청 정보를 바탕으로 KISPG 결제 파라미터를 생성합니다. 실제 등록은 결제 완료 후 이루어집니다.")
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "결제 준비 성공"),
+        @ApiResponse(responseCode = "400", description = "잘못된 요청"),
+        @ApiResponse(responseCode = "409", description = "정원 초과 등 비즈니스 규칙 위반")
+    })
+    @SecurityRequirement(name = "bearerAuth")
+    public ResponseEntity<ApiResponseSchema<KispgInitParamsDto>> prepareKispgPayment(
+            @Valid @RequestBody EnrollRequestDto enrollRequest,
+            @AuthenticationPrincipal User currentUser,
+            HttpServletRequest request) {
+        
+        String userIp = getClientIp(request);
+        KispgInitParamsDto initParams = kispgPaymentService.preparePaymentWithoutEnroll(enrollRequest, currentUser, userIp);
+        
+        return ResponseEntity.ok(ApiResponseSchema.success(initParams, "KISPG 결제가 준비되었습니다."));
+    }
+
+    // DTO for confirmPayment request body
+    public static class PaymentConfirmRequest {
+        private Long enrollId;
+        private boolean success;
+        
+        // Getters and setters
+        public Long getEnrollId() { return enrollId; }
+        public void setEnrollId(Long enrollId) { this.enrollId = enrollId; }
+        public boolean isSuccess() { return success; }
+        public void setSuccess(boolean success) { this.success = success; }
+    }
+
+    @PostMapping("/confirm")
+    @Operation(summary = "결제 확인", description = "프론트엔드에서 결제 완료를 서버에 알립니다.")
+    public ResponseEntity<Void> confirmPayment(@RequestBody PaymentConfirmRequest request) {
+        // 결제 확인 로직 (주로 로깅이나 추가 검증 용도)
+        // 실제 결제 처리는 KISPG 웹훅에서 처리됨
         return ResponseEntity.ok().build();
+    }
+
+    private String getClientIp(HttpServletRequest request) {
+        String remoteAddr = "";
+        if (request != null) {
+            remoteAddr = request.getHeader("X-FORWARDED-FOR");
+            if (remoteAddr == null || "".equals(remoteAddr)) {
+                remoteAddr = request.getRemoteAddr();
+            }
+        }
+        return remoteAddr;
     }
 } 
