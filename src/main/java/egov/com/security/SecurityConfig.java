@@ -3,6 +3,8 @@ package egov.com.security;
 import egov.com.jwt.JwtAuthenticationEntryPoint;
 import egov.com.jwt.JwtRequestFilter;
 import lombok.RequiredArgsConstructor;
+
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.servlet.MultipartConfigFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -54,7 +56,9 @@ public class SecurityConfig {
 	private final JwtRequestFilter jwtRequestFilter;
 	private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
 	private final RequestMatcher permitAllRequestMatcher;
-
+	
+	@Value("${cors.allowed-origins:https://arpina-cms-bnxm.vercel.app}")
+	private String corsAllowedOrigins;
 	@Bean
 	public static RequestMatcher permitAllRequestMatcherBean() {
 		List<RequestMatcher> matchers = new ArrayList<>();
@@ -99,8 +103,8 @@ public class SecurityConfig {
 	@Bean
 	public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 		http
-			.cors().configurationSource(corsConfigurationSource())
-			.and()
+			// .cors().configurationSource(corsConfigurationSource())
+			// .and()
 			.csrf().disable()
 			.sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
 			.and()
@@ -155,7 +159,8 @@ public class SecurityConfig {
 		CorsConfiguration configuration = new CorsConfiguration();
 		
 		// 개발환경용 Origin 설정
-		configuration.setAllowedOriginPatterns(Arrays.asList("http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:*"));
+		String[] origins = corsAllowedOrigins.split(",");
+		configuration.setAllowedOriginPatterns(Arrays.asList(origins));
 		configuration.setAllowedMethods(Arrays.asList("HEAD", "POST", "GET", "DELETE", "PUT", "PATCH", "OPTIONS"));
 		configuration.setAllowedHeaders(Arrays.asList(
 			"Authorization", 

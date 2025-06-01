@@ -11,7 +11,7 @@ import org.springframework.lang.NonNull;
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
-    @Value("${cors.allowed-origins:http://localhost:3000}")
+    @Value("${cors.allowed-origins}")
     private String allowedOrigins;
     @Override
     public void configurePathMatch(@NonNull PathMatchConfigurer configurer) {
@@ -30,13 +30,13 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         // 환경변수를 통한 CORS 설정
-        registry.addMapping("/**")
-            .allowedOriginPatterns(allowedOrigins)
-            .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH")
-            .allowedHeaders("*")
-            .allowCredentials(true)
-            .exposedHeaders("Authorization")
-            .maxAge(3600);
+        // registry.addMapping("/**")
+        //     .allowedOriginPatterns(allowedOrigins)
+        //     .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH")
+        //     .allowedHeaders("*")
+        //     .allowCredentials(true)
+        //     .exposedHeaders("Authorization")
+        //     .maxAge(3600);
     }
 } 
  

@@ -336,21 +336,47 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
             throw new BusinessRuleException(ErrorCode.PAYMENT_REFUND_FAILED, "KISPG 승인 API 호출에 실패했습니다.");
         }
 
-        // 2. temp moid 파싱
-        if (!moid.startsWith("temp_")) {
-            throw new BusinessRuleException(ErrorCode.INVALID_INPUT_VALUE, "잘못된 temp moid 형식입니다: " + moid);
+        // 2. moid 파싱 - 두 가지 형식 지원: temp_ 또는 enroll_
+        Long lessonId;
+        String userUuidPrefix;
+        Enroll existingEnrollForUpdate = null; // enroll_ 형식에서 재사용할 기존 Enroll
+        
+        if (moid.startsWith("temp_")) {
+            // 새로운 temp_ 형식: temp_lessonId_userUuidPrefix_timestamp
+            String[] parts = moid.substring("temp_".length()).split("_");
+            if (parts.length < 3) {
+                throw new BusinessRuleException(ErrorCode.INVALID_INPUT_VALUE, "temp moid 형식이 올바르지 않습니다: " + moid);
+            }
+            lessonId = Long.parseLong(parts[0]);
+            userUuidPrefix = parts[1];
+        } else if (moid.startsWith("enroll_")) {
+            // 기존 enroll_ 형식: enroll_enrollId_timestamp
+            String[] parts = moid.substring("enroll_".length()).split("_");
+            if (parts.length < 2) {
+                throw new BusinessRuleException(ErrorCode.INVALID_INPUT_VALUE, "enroll moid 형식이 올바르지 않습니다: " + moid);
+            }
+            Long enrollId = Long.parseLong(parts[0]);
+            
+            // enroll_id로 기존 Enroll 조회하여 lesson_id 가져오기
+            existingEnrollForUpdate = enrollRepository.findById(enrollId)
+                    .orElseThrow(() -> new ResourceNotFoundException("수강신청을 찾을 수 없습니다: " + enrollId, ErrorCode.ENROLLMENT_NOT_FOUND));
+            
+            // 기존 Enroll의 사용자 권한 확인
+            if (!existingEnrollForUpdate.getUser().getUuid().equals(currentUser.getUuid())) {
+                throw new BusinessRuleException(ErrorCode.ACCESS_DENIED, "해당 수강신청에 대한 권한이 없습니다.");
+            }
+            
+            lessonId = existingEnrollForUpdate.getLesson().getLessonId();
+            userUuidPrefix = null;
+            
+            logger.info("Found existing enrollment: enrollId={}, lessonId={}, user={}", 
+                    enrollId, lessonId, currentUser.getUsername());
+        } else {
+            throw new BusinessRuleException(ErrorCode.INVALID_INPUT_VALUE, "지원되지 않는 moid 형식입니다: " + moid);
         }
 
-        String[] parts = moid.substring("temp_".length()).split("_");
-        if (parts.length < 3) {
-            throw new BusinessRuleException(ErrorCode.INVALID_INPUT_VALUE, "temp moid 형식이 올바르지 않습니다: " + moid);
-        }
-
-        Long lessonId = Long.parseLong(parts[0]);
-        String userUuidPrefix = parts[1];
-
-        // 3. 사용자 확인
-        if (!currentUser.getUuid().startsWith(userUuidPrefix)) {
+        // 3. 사용자 확인 (temp_ 형식인 경우에만)
+        if (userUuidPrefix != null && !currentUser.getUuid().startsWith(userUuidPrefix)) {
             throw new BusinessRuleException(ErrorCode.ACCESS_DENIED, "사용자 UUID가 일치하지 않습니다.");
         }
 
@@ -388,7 +414,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
             }
         }
 
-        // 7. Enroll 엔티티 생성
+        // 7. 최종 금액 계산
         int finalAmount = lessonPrice;
         if (usesLocker && lockerAllocated) {
             finalAmount += 5000; // 기본 사물함 요금
@@ -399,26 +425,56 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
                 .with(TemporalAdjusters.lastDayOfMonth())
                 .atTime(23, 59, 59);
 
-        Enroll enroll = Enroll.builder()
-                .user(currentUser)
-                .lesson(lesson)
-                .status("APPLIED")
-                .payStatus("PAID")
-                .expireDt(enrollExpireDate)
-                .usesLocker(usesLocker)
-                .lockerAllocated(lockerAllocated)
-                .membershipType(cms.enroll.domain.MembershipType.GENERAL)
-                .finalAmount(finalAmount)
-                .discountAppliedPercentage(0)
-                .createdBy(currentUser.getUuid())
-                .createdIp("KISPG_APPROVAL")
-                .build();
+        Enroll savedEnroll;
+        
+        if (moid.startsWith("enroll_")) {
+            // 8-A. 기존 Enroll 업데이트 (enroll_ 형식)
+            String[] parts = moid.substring("enroll_".length()).split("_");
+            Long enrollId = Long.parseLong(parts[0]);
+            
+            // 결제 상태 확인 - 이미 결제된 경우 처리 방지
+            if ("PAID".equals(existingEnrollForUpdate.getPayStatus())) {
+                logger.warn("Enrollment {} is already paid. Current status: {}", enrollId, existingEnrollForUpdate.getPayStatus());
+                // 이미 결제된 경우에도 기존 정보 반환 (중복 결제 방지)
+                return convertToMypageEnrollDto(existingEnrollForUpdate);
+            }
+            
+            // 기존 Enroll 업데이트
+            existingEnrollForUpdate.setPayStatus("PAID");
+            existingEnrollForUpdate.setExpireDt(enrollExpireDate);
+            existingEnrollForUpdate.setUsesLocker(usesLocker);
+            existingEnrollForUpdate.setLockerAllocated(lockerAllocated);
+            existingEnrollForUpdate.setFinalAmount(finalAmount);
+            existingEnrollForUpdate.setUpdatedAt(LocalDateTime.now());
+            existingEnrollForUpdate.setUpdatedBy(currentUser.getUuid());
+            
+            savedEnroll = enrollRepository.save(existingEnrollForUpdate);
+            logger.info("Successfully updated existing enrollment: enrollId={}, user={}, lesson={}, usesLocker={}, lockerAllocated={}", 
+                    savedEnroll.getEnrollId(), currentUser.getUsername(), lesson.getLessonId(), usesLocker, lockerAllocated);
+            
+        } else {
+            // 8-B. 새로운 Enroll 생성 (temp_ 형식)
+            savedEnroll = Enroll.builder()
+                    .user(currentUser)
+                    .lesson(lesson)
+                    .status("APPLIED")
+                    .payStatus("PAID")
+                    .expireDt(enrollExpireDate)
+                    .usesLocker(usesLocker)
+                    .lockerAllocated(lockerAllocated)
+                    .membershipType(cms.enroll.domain.MembershipType.GENERAL)
+                    .finalAmount(finalAmount)
+                    .discountAppliedPercentage(0)
+                    .createdBy(currentUser.getUuid())
+                    .createdIp("KISPG_APPROVAL")
+                    .build();
 
-        Enroll savedEnroll = enrollRepository.save(enroll);
-        logger.info("Successfully created enrollment: enrollId={}, user={}, lesson={}, usesLocker={}, lockerAllocated={}", 
-                savedEnroll.getEnrollId(), currentUser.getUsername(), lesson.getLessonId(), usesLocker, lockerAllocated);
+            savedEnroll = enrollRepository.save(savedEnroll);
+            logger.info("Successfully created new enrollment: enrollId={}, user={}, lesson={}, usesLocker={}, lockerAllocated={}", 
+                    savedEnroll.getEnrollId(), currentUser.getUsername(), lesson.getLessonId(), usesLocker, lockerAllocated);
+        }
 
-        // 8. Payment 엔티티 생성
+        // 9. Payment 엔티티 생성
         Payment payment = Payment.builder()
                 .enroll(savedEnroll)
                 .tid(tid)

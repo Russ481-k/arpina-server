@@ -250,8 +250,8 @@ nice:
 
 # KISPG Configurations (Dev Specific)
 kispg:
-  mid: ${KISPG_MID_DEV}
-  merchantKey: ${KISPG_MERCHANT_KEY_DEV}
+  mid: ${KISPG_MID}
+  merchantKey: ${KISPG_MERCHANT_KEY}
 
 # *** 성능 모니터링 설정 ***
 management:
@@ -271,4 +271,4 @@ management:
       prometheus:
         enabled: true
 cors:
-  allowed-origins: ${GLOBALS_ALLOW_ORIGIN}
+  allowed-origins: ${GLOBALS_ALLOW_ORIGIN:https://arpina-cms-bnxm.vercel.app}
