@@ -151,6 +151,10 @@ public class User implements UserDetails {
         return "ACTIVE".equals(status);
     }
 
+    public void setIsTemporary(boolean isTemporary) {
+        this.isTemporary = isTemporary;
+    }
+
     public void update(String name, String email, String password) {
         this.name = name;
         this.email = email;

@@ -22,10 +22,15 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.security.web.util.matcher.OrRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 
 import cms.auth.service.CustomUserDetailsService;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 import javax.servlet.MultipartConfigElement;
 
@@ -48,49 +53,59 @@ public class SecurityConfig {
 	private final CustomUserDetailsService userDetailsService;
 	private final JwtRequestFilter jwtRequestFilter;
 	private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
+	private final RequestMatcher permitAllRequestMatcher;
+
+	@Bean
+	public static RequestMatcher permitAllRequestMatcherBean() {
+		List<RequestMatcher> matchers = new ArrayList<>();
+
+		matchers.add(new AntPathRequestMatcher("/**", HttpMethod.OPTIONS.toString()));
+
+		List<String> permitAllAntPatterns = Arrays.asList(
+			"/login/**",
+			"/swagger-ui/**",
+			"/v3/api-docs/**",
+			"/swagger-resources/**",
+			"/webjars/**",
+			"/nice/checkplus/**",
+			"/api/v1/v3/api-docs/**",
+			"/api/v1/auth/**",
+			"/api/v1/cms/menu/public",
+			"/api/v1/cms/menu/public/**/page-details",
+			"/api/v1/cms/template/public",
+			"/api/v1/cms/template",
+			"/api/v1/cms/bbs/article",
+			"/api/v1/cms/bbs/article/**",
+			"/api/v1/cms/bbs/article/board/**",
+			"/api/v1/cms/bbs",
+			"/api/v1/cms/bbs/**",
+			"/api/v1/cms/bbs/master",
+			"/api/v1/cms/schedule/public**",
+			"/api/v1/cms/schedule/**",
+			"/api/v1/cms/file/public/**",
+			"/api/v1/swimming/**",
+			"/api/v1/nice/checkplus/**"
+		);
+		for (String pattern : permitAllAntPatterns) {
+			matchers.add(new AntPathRequestMatcher(pattern));
+		}
+
+		matchers.add(new AntPathRequestMatcher("/api/v1/cms/enterprises", HttpMethod.GET.toString()));
+		matchers.add(new AntPathRequestMatcher("/api/v1/cms/enterprises/{id}", HttpMethod.GET.toString()));
+
+		return new OrRequestMatcher(matchers);
+	}
 
 	@Bean
 	public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 		http
-			.cors().configurationSource(corsConfigurationSource()) // CORS 활성화
+			.cors().configurationSource(corsConfigurationSource())
 			.and()
 			.csrf().disable()
 			.sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
 			.and()
-			.authorizeHttpRequests()
-				// 우선 순위가 높은 수영 API 규칙 (모든 HTTP 메서드 허용)
-				.antMatchers("/api/v1/swimming/**").permitAll()
-				.antMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-				.antMatchers(HttpMethod.GET, "/api/v1/cms/enterprises", "/api/v1/cms/enterprises/{id}").permitAll()
-				.antMatchers(
-					"/login/**",
-					"/swagger-ui/**",
-					"/v3/api-docs/**",
-					"/swagger-resources/**",
-					"/webjars/**",
-					"/api/v1/v3/api-docs/**",
-					"/api/v1/auth/login",
-					"/api/v1/auth/register",
-					"/api/v1/auth/logout",
-					"/api/v1/auth/verify",
-					"/api/v1/auth/signup",
-					"/api/v1/auth/check-username/**",
-					"/api/v1/cms/menu/public",
-					"/api/v1/cms/menu/public/**/page-details",
-					"/api/v1/cms/template/public",
-					"/api/v1/cms/template",
-					"/api/v1/cms/bbs/article",
-					"/api/v1/cms/bbs/article/**",
-					"/api/v1/cms/bbs/article/board/**",
-					"/api/v1/cms/bbs",
-					"/api/v1/cms/bbs/**",
-					"/api/v1/cms/bbs/master",
-					"/api/v1/cms/schedule/public**",
-					"/api/v1/cms/schedule/**",
-					"/api/v1/cms/file/public/**",
-					"/api/v1/swimming/**",
-					"/api/v1/nice/checkplus/**"
-				).permitAll()
+			.authorizeHttpRequests(authz -> authz
+				.requestMatchers(this.permitAllRequestMatcher).permitAll()
 				.antMatchers(
 					HttpMethod.POST, "/api/v1/cms/enterprises"
 				).hasRole("ADMIN")
@@ -110,7 +125,7 @@ public class SecurityConfig {
 				).authenticated()
 				.antMatchers("/api/v1/mypage/**").hasRole("USER")
 				.anyRequest().authenticated()
-			.and()
+			)
 			.addFilterBefore(jwtRequestFilter, UsernamePasswordAuthenticationFilter.class)
 			.exceptionHandling()
 				.authenticationEntryPoint(jwtAuthenticationEntryPoint);

@@ -21,7 +21,7 @@ import java.util.Map;
 
 @Tag(name = "CMS - Payment Management", description = "결제 및 환불 내역 관리 API (관리자용)")
 @RestController
-@RequestMapping("/api/v1/cms/payments")
+@RequestMapping("/cms/payments")
 @RequiredArgsConstructor
 @PreAuthorize("hasAnyRole('ADMIN', 'SYSTEM_ADMIN')")
 public class PaymentAdminController {

@@ -286,7 +286,7 @@ public class AuthServiceImpl implements AuthService {
 
         NiceUserDataDto niceData;
         try {
-            niceData = niceService.getVerifiedFullNiceDataAndConsume(request.getNiceResultKey());
+            niceData = niceService.getVerifiedNiceUserDataForRegister(request.getNiceResultKey());
             if (niceData == null) {
                 log.warn("[AuthService] NICE verification failed or data not found for key: {}", request.getNiceResultKey());
                 throw new NiceVerificationException("NICE 본인인증에 실패했거나 인증 정보가 만료되었습니다. 다시 시도해주세요.");

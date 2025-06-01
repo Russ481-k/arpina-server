@@ -18,7 +18,7 @@ import javax.validation.Valid;
 
 @Tag(name = "CMS - User Admin", description = "사용자 관련 관리 API (메모 등)")
 @RestController
-@RequestMapping("/api/v1/cms/users")
+@RequestMapping("/cms/users")
 @RequiredArgsConstructor
 @PreAuthorize("hasAnyRole('ADMIN', 'SYSTEM_ADMIN')")
 public class UserAdminController {

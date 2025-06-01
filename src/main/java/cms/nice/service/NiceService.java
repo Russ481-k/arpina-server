@@ -1,27 +1,35 @@
 package cms.nice.service;
 
 import NiceID.Check.CPClient;
+import cms.common.service.EmailService;
+import cms.common.exception.EmailSendingException;
+import cms.nice.dto.NiceCallbackResultDto;
 import cms.nice.dto.NiceErrorDataDto;
+import cms.nice.dto.NiceReqSeqDataDto;
 import cms.nice.dto.NiceUserDataDto;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
+import cms.user.domain.User;
+import cms.user.repository.UserRepository;
+import lombok.RequiredArgsConstructor;
+import org.apache.commons.lang3.RandomStringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
-// Import UserRepository and User
-import cms.user.repository.UserRepository;
-import cms.user.domain.User;
-import org.springframework.beans.factory.annotation.Autowired; // For constructor injection, or use @RequiredArgsConstructor
-
 @Service
+@RequiredArgsConstructor
 public class NiceService {
 
     private static final Logger log = LoggerFactory.getLogger(NiceService.class);
@@ -33,9 +41,18 @@ public class NiceService {
     private String sitePassword;
 
     @Value("${nice.checkplus.base-callback-url}")
-    private String baseCallbackUrl; // This might need adjustment if API base path changes
+    private String baseCallbackUrl;
 
-    // CacheEntry for storing data with expiry
+    private final Map<String, CacheEntry> tempReqSeqStore = new ConcurrentHashMap<>();
+    private final Map<String, CacheEntry> tempResultStore = new ConcurrentHashMap<>();
+    private static final long REQ_SEQ_EXPIRY_MINUTES = 10;
+    private static final long RESULT_EXPIRY_MINUTES = 10;
+    private static final int TEMP_PASSWORD_LENGTH = 12;
+
+    private final UserRepository userRepository;
+    private final EmailService emailService;
+    private final PasswordEncoder passwordEncoder;
+
     private static class CacheEntry {
         Object data;
         long expiryTime;
@@ -45,30 +62,16 @@ public class NiceService {
         }
     }
 
-    // Stores for REQ_SEQ and NICE results, moved from NiceController
-    private final Map<String, CacheEntry> tempReqSeqStore = new ConcurrentHashMap<>();
-    private final Map<String, CacheEntry> tempResultStore = new ConcurrentHashMap<>();
-    private static final long REQ_SEQ_EXPIRY_MINUTES = 10;
-    private static final long RESULT_EXPIRY_MINUTES = 10;
-
-    private final UserRepository userRepository; // Inject UserRepository
-
-    @Autowired // Constructor injection
-    public NiceService(UserRepository userRepository) {
-        this.userRepository = userRepository;
-    }
-
-    public Map<String, String> initiateVerification() {
+    public Map<String, String> initiateVerification(String serviceType) {
         CPClient niceCheck = new CPClient();
-        String requestNumber = niceCheck.getRequestNO(siteCode); 
-        log.info("[NICE] Generated reqSeq: {}", requestNumber);
-        storeReqSeq(requestNumber); // Store REQ_SEQ with expiry
+        String requestNumber = niceCheck.getRequestNO(siteCode);
+        log.info("[NICE] Generated reqSeq: {} for serviceType: {}", requestNumber, serviceType);
+        storeReqSeqWithServiceType(requestNumber, serviceType);
 
-        String authType = ""; 
-        String customize = ""; 
-        // Ensure callback URLs are correctly formed, especially if base path for controller changes
-        String returnUrl = baseCallbackUrl + "/api/v1/nice/checkplus/success"; // Example: http://localhost:8080/api/v1/nice/checkplus/success
-        String errorUrl = baseCallbackUrl + "/api/v1/nice/checkplus/fail";   // Example: http://localhost:8080/api/v1/nice/checkplus/fail
+        String authType = "";
+        String customize = "";
+        String returnUrl = baseCallbackUrl + "/api/v1/nice/checkplus/success";
+        String errorUrl = baseCallbackUrl + "/api/v1/nice/checkplus/fail";
 
         String plainData = "7:REQ_SEQ" + requestNumber.getBytes().length + ":" + requestNumber +
                            "8:SITECODE" + siteCode.getBytes().length + ":" + siteCode +
@@ -89,11 +92,12 @@ public class NiceService {
 
         Map<String, String> response = new HashMap<>();
         response.put("encodeData", encodeData);
-        response.put("reqSeq", requestNumber); 
-        log.info("[NICE] Initiated verification for reqSeq: {}", requestNumber);
+        response.put("reqSeq", requestNumber);
+        log.info("[NICE] Initiated verification for reqSeq: {}, serviceType: {}", requestNumber, serviceType);
         return response;
     }
 
+    @Transactional
     public String storeSuccessData(String encodeData) {
         CPClient niceCheck = new CPClient();
         String plainData;
@@ -107,10 +111,14 @@ public class NiceService {
 
         String reqSeq = (String) parsedData.get("REQ_SEQ");
         log.info("[NICE] storeSuccessData - Received reqSeq from NICE: {}", reqSeq);
-        if (!consumeAndValidateReqSeq(reqSeq)) {
+
+        NiceReqSeqDataDto reqSeqData = consumeAndValidateReqSeq(reqSeq);
+        if (reqSeqData == null) {
             log.warn("[NICE] storeSuccessData - Invalid or expired reqSeq: {}", reqSeq);
             throw new RuntimeException("유효하지 않거나 만료된 NICE 요청 순서 번호입니다.");
         }
+        String serviceType = reqSeqData.getServiceType();
+        log.info("[NICE] storeSuccessData - Successfully validated reqSeq: {} for serviceType: {}", reqSeq, serviceType);
 
         String utf8Name = null;
         try {
@@ -121,43 +129,108 @@ public class NiceService {
         } catch (UnsupportedEncodingException e) {
             log.error("[NICE] UTF-8 Name decoding failed for reqSeq: {}", reqSeq, e);
         }
-        String name = (String) parsedData.get("NAME");
-        if (utf8Name == null) utf8Name = name;
+        String nameFromNice = (utf8Name != null && !utf8Name.isEmpty()) ? utf8Name : (String) parsedData.get("NAME");
         String di = (String) parsedData.get("DI");
 
-        // Check if user already exists with this DI
-        boolean alreadyJoined = false;
-        String existingUsername = null;
+        NiceCallbackResultDto callbackResult;
+
+        Optional<User> userOptional = Optional.empty();
         if (di != null && !di.isEmpty()) {
-            User existingUser = userRepository.findByDi(di).orElse(null);
-            if (existingUser != null) {
-                alreadyJoined = true;
-                existingUsername = existingUser.getUsername();
-                log.info("[NICE] User with DI {} already exists. Username: {}", di, existingUsername);
-            }
+            userOptional = userRepository.findByDi(di);
         }
 
-        NiceUserDataDto userData = NiceUserDataDto.builder()
-                .reqSeq(reqSeq)
-                .resSeq((String) parsedData.get("RES_SEQ"))
-                .authType((String) parsedData.get("AUTH_TYPE"))
-                .name(name)
-                .utf8Name(utf8Name)
-                .birthDate((String) parsedData.get("BIRTHDATE"))
-                .gender((String) parsedData.get("GENDER"))
-                .nationalInfo((String) parsedData.get("NATIONALINFO"))
-                .di(di)
-                .ci((String) parsedData.get("CI"))
-                .mobileCo((String) parsedData.get("MOBILE_CO"))
-                .mobileNo((String) parsedData.get("MOBILE_NO"))
-                .alreadyJoined(alreadyJoined) // Set the flag
-                .existingUsername(existingUsername) // Set the existing username
-                .build();
-        
+        switch (serviceType) {
+            case "REGISTER":
+                log.info("[NICE] Processing REGISTER for reqSeq: {}", reqSeq);
+                NiceUserDataDto registerUserData = NiceUserDataDto.builder()
+                        .reqSeq(reqSeq)
+                        .resSeq((String) parsedData.get("RES_SEQ"))
+                        .authType((String) parsedData.get("AUTH_TYPE"))
+                        .name(nameFromNice)
+                        .utf8Name(utf8Name)
+                        .birthDate((String) parsedData.get("BIRTHDATE"))
+                        .gender((String) parsedData.get("GENDER"))
+                        .nationalInfo((String) parsedData.get("NATIONALINFO"))
+                        .di(di)
+                        .ci((String) parsedData.get("CI"))
+                        .mobileCo((String) parsedData.get("MOBILE_CO"))
+                        .mobileNo((String) parsedData.get("MOBILE_NO"))
+                        .alreadyJoined(userOptional.isPresent())
+                        .existingUsername(userOptional.map(User::getUsername).orElse(null))
+                        .build();
+                callbackResult = NiceCallbackResultDto.successForRegister(serviceType, registerUserData);
+                break;
+
+            case "FIND_ID":
+                log.info("[NICE] Processing FIND_ID for reqSeq: {}", reqSeq);
+                if (userOptional.isPresent()) {
+                    User foundUser = userOptional.get();
+                    if (foundUser.getEmail() != null && !foundUser.getEmail().isEmpty()) {
+                        try {
+                            emailService.sendUserIdEmail(foundUser.getEmail(), foundUser.getUsername(), foundUser.getName());
+                            log.info("[NICE] FIND_ID - User ID email sent to: {} for user: {}", foundUser.getEmail(), foundUser.getUsername());
+                            callbackResult = NiceCallbackResultDto.idFound(serviceType, foundUser.getEmail(), nameFromNice);
+                        } catch (Exception e) {
+                            log.error("[NICE] FIND_ID - Failed to send User ID email to: {}", foundUser.getEmail(), e);
+                            callbackResult = NiceCallbackResultDto.error(serviceType, "EMAIL_SEND_FAILED", "아이디 안내 메일 발송에 실패했습니다. 관리자에게 문의해주세요.", nameFromNice);
+                        }
+                    } else {
+                        log.warn("[NICE] FIND_ID - User {} has no email address. Cannot send ID.", foundUser.getUsername());
+                        callbackResult = NiceCallbackResultDto.error(serviceType, "NO_EMAIL", "사용자에게 이메일 주소가 등록되어 있지 않아 아이디를 발송할 수 없습니다.", nameFromNice);
+                    }
+                } else {
+                    log.info("[NICE] FIND_ID - No user found for DI: {}", di);
+                    callbackResult = NiceCallbackResultDto.accountNotFound(serviceType, nameFromNice);
+                }
+                break;
+
+            case "RESET_PASSWORD":
+                log.info("[NICE] Processing RESET_PASSWORD for reqSeq: {}", reqSeq);
+                if (userOptional.isPresent()) {
+                    User userToReset = userOptional.get();
+                    if (userToReset.getEmail() != null && !userToReset.getEmail().isEmpty()) {
+                        String tempPassword = RandomStringUtils.randomAlphanumeric(TEMP_PASSWORD_LENGTH);
+                        try {
+                            log.info("[NICE] RESET_PASSWORD - Email for user {} before sending: '[{}]', length: {}",
+                                     userToReset.getUsername(),
+                                     userToReset.getEmail(),
+                                     userToReset.getEmail().length());
+
+                            userToReset.setPassword(passwordEncoder.encode(tempPassword));
+                            userToReset.setIsTemporary(true);
+                            userToReset.setResetTokenExpiry(LocalDateTime.now().plusHours(1));
+                            userRepository.save(userToReset);
+                            
+                            emailService.sendTemporaryPasswordEmail(userToReset.getEmail(), tempPassword, userToReset.getName());
+                            log.info("[NICE] RESET_PASSWORD - Temporary password email sent to: {} for user: {}", userToReset.getEmail(), userToReset.getUsername());
+                            callbackResult = NiceCallbackResultDto.passwordResetSent(serviceType, userToReset.getEmail(), nameFromNice);
+                        } catch (EmailSendingException e) {
+                            log.error("[NICE] RESET_PASSWORD - Failed to send temporary password for user: {}. ErrorCode: {}, Message: {}", userToReset.getUsername(), e.getErrorCode(), e.getMessage(), e);
+                            callbackResult = NiceCallbackResultDto.error(serviceType, e.getErrorCode(), e.getMessage(), nameFromNice);
+                        } catch (Exception e) {
+                            log.error("[NICE] RESET_PASSWORD - Failed to process password reset for user: {}", userToReset.getUsername(), e);
+                            callbackResult = NiceCallbackResultDto.error(serviceType, "PASSWORD_RESET_PROCESS_FAILED", "비밀번호 재설정 처리 중 오류가 발생했습니다. 관리자에게 문의해주세요.", nameFromNice);
+                        }
+                    } else {
+                        log.warn("[NICE] RESET_PASSWORD - User {} has no email address. Cannot send temporary password.", userToReset.getUsername());
+                        callbackResult = NiceCallbackResultDto.error(serviceType, "NO_EMAIL", "사용자에게 이메일 주소가 등록되어 있지 않아 임시 비밀번호를 발송할 수 없습니다.", nameFromNice);
+                    }
+                } else {
+                    log.info("[NICE] RESET_PASSWORD - No user found for DI: {}", di);
+                    callbackResult = NiceCallbackResultDto.accountNotFound(serviceType, nameFromNice);
+                }
+                break;
+
+            default:
+                log.warn("[NICE] Unknown serviceType: {} for reqSeq: {}", serviceType, reqSeq);
+                callbackResult = NiceCallbackResultDto.error(serviceType, "INVALID_SERVICE_TYPE", "알 수 없는 서비스 요청 유형입니다.", nameFromNice);
+                break;
+        }
+
         String resultKey = UUID.randomUUID().toString();
         long expiryTime = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(RESULT_EXPIRY_MINUTES);
-        tempResultStore.put(resultKey, new CacheEntry(userData, expiryTime));
-        log.info("[NICE] Stored SUCCESS data with resultKey: {}, reqSeq: {}, expiry: {} ({} mins)", resultKey, reqSeq, expiryTime, RESULT_EXPIRY_MINUTES);
+        tempResultStore.put(resultKey, new CacheEntry(callbackResult, expiryTime));
+        log.info("[NICE] Stored callback result for serviceType: {} with resultKey: {}, expiry: {} ({} mins)", serviceType, resultKey, expiryTime, RESULT_EXPIRY_MINUTES);
         return resultKey;
     }
 
@@ -174,8 +247,13 @@ public class NiceService {
         String reqSeq = (String) parsedData.get("REQ_SEQ");
         log.info("[NICE] storeErrorData - Received reqSeq from NICE: {}", reqSeq);
 
-        if (!consumeAndValidateReqSeq(reqSeq)) {
-            log.warn("[NICE] storeErrorData - Invalid or expired reqSeq: {}. Storing error data anyway.", reqSeq);
+        NiceReqSeqDataDto reqSeqData = getReqSeqData(reqSeq);
+        String serviceType = "UNKNOWN";
+        if (reqSeqData != null) {
+            serviceType = reqSeqData.getServiceType();
+            log.info("[NICE] storeErrorData - reqSeq: {} has serviceType: {}. Storing error data.", reqSeq, serviceType);
+        } else {
+            log.warn("[NICE] storeErrorData - reqSeq not found or expired: {}. Error data will be stored without serviceType context.", reqSeq);
         }
 
         NiceErrorDataDto errorDataDto = NiceErrorDataDto.builder()
@@ -183,55 +261,53 @@ public class NiceService {
                 .errorCode((String) parsedData.get("ERR_CODE"))
                 .authType((String) parsedData.get("AUTH_TYPE"))
                 .message("NICE 본인인증 실패 (ERR_CODE: " + parsedData.get("ERR_CODE") + ")")
+                .serviceType(serviceType)
                 .build();
 
         String resultKey = UUID.randomUUID().toString();
         long expiryTime = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(RESULT_EXPIRY_MINUTES);
         tempResultStore.put(resultKey, new CacheEntry(errorDataDto, expiryTime));
-        log.info("[NICE] Stored ERROR data with resultKey: {}, reqSeq: {}, errorCode: {}, expiry: {} ({} mins)", resultKey, reqSeq, errorDataDto.getErrorCode(), expiryTime, RESULT_EXPIRY_MINUTES);
+        log.info("[NICE] Stored ERROR data with resultKey: {}, reqSeq: {}, errorCode: {}, serviceType: {}, expiry: {} ({} mins)",
+                resultKey, reqSeq, errorDataDto.getErrorCode(), serviceType, expiryTime, RESULT_EXPIRY_MINUTES);
         return resultKey;
     }
 
-    // Renamed and modified to return Full NiceUserDataDto for internal services like Auth
-    public NiceUserDataDto getVerifiedFullNiceDataAndConsume(String resultKey) {
-        log.info("[NICE] Attempting to getVerifiedFullNiceDataAndConsume for resultKey: {}", resultKey);
-        log.info("[NICE] Current tempResultStore size: {}. Does it contain key '{}': {}",
-                tempResultStore.size(), resultKey, tempResultStore.containsKey(resultKey));
-
-        if (tempResultStore.isEmpty()) {
-            log.warn("[NICE] tempResultStore is EMPTY when trying to get key: {}", resultKey);
-        } else {
-            log.info("[NICE] Keys currently in tempResultStore: {}", tempResultStore.keySet());
-        }
-
+    public NiceUserDataDto getVerifiedNiceUserDataForRegister(String resultKey) {
+        log.info("[NICE] Attempting to getVerifiedNiceUserDataForRegister for resultKey: {}", resultKey);
         CacheEntry cachedResult = tempResultStore.get(resultKey);
 
         if (cachedResult == null) {
-            log.warn("[NICE] No cache entry found for resultKey: {} using get(). Double checking with containsKey: {}", resultKey, tempResultStore.containsKey(resultKey));
+            log.warn("[NICE] No cache entry found for resultKey: {}", resultKey);
             throw new RuntimeException("NICE 인증 결과를 찾을 수 없거나 만료되었습니다.");
         }
 
         if (System.currentTimeMillis() > cachedResult.expiryTime) {
-            log.warn("[NICE] Cache entry expired for resultKey: {}. Current time: {}, Expiry time: {}", resultKey, System.currentTimeMillis(), cachedResult.expiryTime);
-            tempResultStore.remove(resultKey); // Clean up expired
-            log.info("[NICE] Removed expired entry for resultKey: {}. tempResultStore size after removal: {}", resultKey, tempResultStore.size());
+            log.warn("[NICE] Cache entry expired for resultKey: {}", resultKey);
+            tempResultStore.remove(resultKey);
             throw new RuntimeException("NICE 인증 결과가 만료되었습니다.");
         }
 
-        Object data = cachedResult.data; // Get data before removing
-        tempResultStore.remove(resultKey); // Consume the key
-        log.info("[NICE] Successfully retrieved and consumed data for resultKey: {}. tempResultStore size after removal: {}", resultKey, tempResultStore.size());
-
-        if (data instanceof NiceUserDataDto) {
+        Object data = cachedResult.data;
+        if (data instanceof NiceCallbackResultDto) {
+            NiceCallbackResultDto callbackResult = (NiceCallbackResultDto) data;
+            if ("REGISTER".equals(callbackResult.getServiceType()) && callbackResult.getUserData() != null) {
+                tempResultStore.remove(resultKey);
+                log.info("[NICE] Successfully retrieved and consumed REGISTER data for resultKey: {}", resultKey);
+                return callbackResult.getUserData();
+            } else {
+                 log.error("[NICE] Cached data for resultKey: {} is NiceCallbackResultDto but not for REGISTER or userData is null. ServiceType: {}", resultKey, callbackResult.getServiceType());
+                throw new RuntimeException("NICE 인증 결과가 회원가입 성공 데이터가 아닙니다.");
+            }
+        } else if (data instanceof NiceUserDataDto) {
+            tempResultStore.remove(resultKey);
+            log.warn("[NICE] Directly consumed NiceUserDataDto for resultKey: {} (should be wrapped in NiceCallbackResultDto for REGISTER)", resultKey);
             return (NiceUserDataDto) data;
-        } else {
-            log.error("[NICE] Cached data for resultKey: {} is not of type NiceUserDataDto. Actual type: {}", resultKey, data != null ? data.getClass().getName() : "null");
-            throw new RuntimeException("NICE 인증 결과가 성공 데이터가 아닙니다. (잘못된 데이터 타입)");
         }
+        log.error("[NICE] Cached data for resultKey: {} is not expected type for REGISTER. Actual type: {}", resultKey, data != null ? data.getClass().getName() : "null");
+        throw new RuntimeException("NICE 인증 결과 데이터 타입 오류입니다.");
     }
     
-    // This method is for peeking at the data, typically by NiceController, without consuming it.
-    public Object peekRawNiceData(String resultKey) { // Renamed from getRawNiceDataAndConsume
+    public Object peekRawNiceData(String resultKey) {
         log.info("[NICE] Attempting to peekRawNiceData for resultKey: {}", resultKey);
         CacheEntry cachedResult = tempResultStore.get(resultKey);
         if (cachedResult == null) {
@@ -239,11 +315,9 @@ public class NiceService {
             return null; 
         }
         if (System.currentTimeMillis() > cachedResult.expiryTime) {
-            log.warn("[NICE] peekRawNiceData - Cache entry expired for resultKey: {}. (Entry will be removed by actual consumer or cleanup)", resultKey);
-            // Do not remove here, let the consumer or a dedicated cleanup task handle it.
-            return null; // Or throw an exception if expired data shouldn't be peeked
+            log.warn("[NICE] peekRawNiceData - Cache entry expired for resultKey: {}.", resultKey);
+            return null; 
         }
-        // DO NOT CONSUME (remove) the key here. Consumption happens in getVerifiedFullNiceDataAndConsume.
         log.info("[NICE] peekRawNiceData - Successfully retrieved data for resultKey: {} (without consuming)", resultKey);
         return cachedResult.data;
     }
@@ -262,36 +336,53 @@ public class NiceService {
         }
     }
 
-    private void storeReqSeq(String reqSeq) {
+    private void storeReqSeqWithServiceType(String reqSeq, String serviceType) {
         long expiryTime = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(REQ_SEQ_EXPIRY_MINUTES);
-        tempReqSeqStore.put(reqSeq, new CacheEntry(null, expiryTime));
-        log.info("[NICE] Stored reqSeq: {} with expiry: {} ({} mins)", reqSeq, expiryTime, REQ_SEQ_EXPIRY_MINUTES);
+        NiceReqSeqDataDto dataToStore = new NiceReqSeqDataDto(reqSeq, serviceType, System.currentTimeMillis());
+        tempReqSeqStore.put(reqSeq, new CacheEntry(dataToStore, expiryTime));
+        log.info("[NICE] Stored reqSeq: {} with serviceType: {}, expiry: {} ({} mins)", reqSeq, serviceType, expiryTime, REQ_SEQ_EXPIRY_MINUTES);
     }
 
-    public boolean consumeAndValidateReqSeq(String reqSeq) {
-        log.info("[NICE] consumeAndValidateReqSeq - Attempting to validate reqSeq: {}", reqSeq);
-        log.info("[NICE] Current tempReqSeqStore size: {}. Does it contain reqSeq '{}': {}",
-                tempReqSeqStore.size(), reqSeq, tempReqSeqStore.containsKey(reqSeq));
-        if (tempReqSeqStore.isEmpty()) {
-            log.warn("[NICE] tempReqSeqStore is EMPTY when trying to validate reqSeq: {}", reqSeq);
-        } else {
-            log.info("[NICE] Keys currently in tempReqSeqStore: {}", tempReqSeqStore.keySet());
-        }
-
+    public NiceReqSeqDataDto consumeAndValidateReqSeq(String reqSeq) {
+        log.info("[NICE] Attempting to consumeAndValidateReqSeq: {}", reqSeq);
         CacheEntry entry = tempReqSeqStore.get(reqSeq);
-
         if (entry == null) {
             log.warn("[NICE] consumeAndValidateReqSeq - reqSeq not found or already consumed: {}", reqSeq);
-            return false;
+            return null;
         }
         if (System.currentTimeMillis() > entry.expiryTime) {
             log.warn("[NICE] consumeAndValidateReqSeq - reqSeq expired: {}", reqSeq);
             tempReqSeqStore.remove(reqSeq);
-            return false;
+            return null;
         }
-        tempReqSeqStore.remove(reqSeq); // 성공적으로 검증 후 사용된 sCPRequest 삭제
+        tempReqSeqStore.remove(reqSeq); 
         log.info("[NICE] consumeAndValidateReqSeq - Successfully validated and consumed reqSeq: {}. tempReqSeqStore size after removal: {}",
                 reqSeq, tempReqSeqStore.size());
-        return true;
+        if (entry.data instanceof NiceReqSeqDataDto) {
+            return (NiceReqSeqDataDto) entry.data;
+        } else {
+            log.warn("[NICE] consumeAndValidateReqSeq - Data in tempReqSeqStore for reqSeq: {} is not of type NiceReqSeqDataDto. Actual type: {}. Returning null.", 
+                reqSeq, entry.data != null ? entry.data.getClass().getName() : "null");
+            return null;
+        }
+    }
+
+    private NiceReqSeqDataDto getReqSeqData(String reqSeq) {
+        CacheEntry entry = tempReqSeqStore.get(reqSeq);
+        if (entry == null) {
+            log.warn("[NICE] getReqSeqData - reqSeq not found: {}", reqSeq);
+            return null;
+        }
+        if (System.currentTimeMillis() > entry.expiryTime) {
+            log.warn("[NICE] getReqSeqData - reqSeq expired: {}", reqSeq);
+            return null;
+        }
+        if (entry.data instanceof NiceReqSeqDataDto) {
+            return (NiceReqSeqDataDto) entry.data;
+        } else {
+            log.warn("[NICE] getReqSeqData - Data in tempReqSeqStore for reqSeq: {} is not of type NiceReqSeqDataDto. Actual type: {}. Returning null.", 
+                reqSeq, entry.data != null ? entry.data.getClass().getName() : "null");
+            return null;
+        }
     }
 } 

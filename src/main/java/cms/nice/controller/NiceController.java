@@ -15,8 +15,14 @@ import java.net.URI;
 import java.util.Collections;
 import java.util.Map;
 
+// DTO for request body
+import cms.nice.dto.NiceInitiateRequestDto;
+import cms.nice.dto.NiceCallbackResultDto;
+import cms.nice.dto.NiceErrorDataDto;
+import cms.nice.dto.NiceUserDataDto;
+
 @RestController
-@RequestMapping("/nice/checkplus") // Ensure base path is consistent or configured
+@RequestMapping("/nice/checkplus") // API 경로를 /api/v1 하위로 변경 고려
 public class NiceController {
 
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(NiceController.class);
@@ -43,60 +49,85 @@ public class NiceController {
 
     @PostConstruct
     private void initializeUrls() {
+        // allowedOrigins가 http://localhost:3000과 같이 /로 끝나지 않는다고 가정
+        // frontendSuccessPath, frontendFailPath가 /signup-result 와 같이 /로 시작한다고 가정
         this.frontendRedirectSuccessUrl = allowedOrigins + frontendSuccessPath;
         this.frontendRedirectFailUrl = allowedOrigins + frontendFailPath;
+        log.info("NICE Success Redirect URL initialized to: {}", frontendRedirectSuccessUrl);
+        log.info("NICE Fail Redirect URL initialized to: {}", frontendRedirectFailUrl);
     }
 
     @PostMapping("/initiate")
-    public ResponseEntity<?> initiateVerification() {
+    public ResponseEntity<?> initiateVerification(@RequestBody NiceInitiateRequestDto requestDto) {
         try {
-            Map<String, String> initData = niceService.initiateVerification();
+            if (requestDto == null || requestDto.getServiceType() == null || requestDto.getServiceType().isEmpty()) {
+                return ResponseEntity.badRequest().body(Collections.singletonMap("error", "serviceType is required."));
+            }
+            // Validate serviceType (optional, can be done in service layer too)
+            String serviceType = requestDto.getServiceType().toUpperCase();
+            if (!serviceType.equals("REGISTER") && !serviceType.equals("FIND_ID") && !serviceType.equals("RESET_PASSWORD")) {
+                return ResponseEntity.badRequest().body(Collections.singletonMap("error", "Invalid serviceType. Allowed values: REGISTER, FIND_ID, RESET_PASSWORD"));
+            }
+
+            Map<String, String> initData = niceService.initiateVerification(serviceType);
             // reqSeq is now stored and managed by NiceService
             NiceInitiateResponseDto responseDto = new NiceInitiateResponseDto(initData.get("encodeData"), initData.get("reqSeq"));
             return ResponseEntity.ok(responseDto);
         } catch (Exception e) {
-            log.error("Error initiating NICE verification", e);
+            log.error("Error initiating NICE verification for serviceType: {}", requestDto != null ? requestDto.getServiceType() : "null", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Collections.singletonMap("error", "본인인증 초기화 실패: " + e.getMessage()));
         }
     }
 
     @RequestMapping(value = "/success", method = {RequestMethod.GET, RequestMethod.POST})
     public ResponseEntity<Void> successCallback(@RequestParam("EncodeData") String encodeData) {
-        String reqSeqFromNice = null; // For logging purposes in case of error before validation
+        String reqSeqFromNice = null;
+        String resultKey = null;
         try {
-            reqSeqFromNice = niceService.getReqSeqFromEncodedData(encodeData); // Still useful for logging if needed
-            // Actual reqSeq validation is now handled within niceService.storeSuccessData
-            String resultKey = niceService.storeSuccessData(encodeData);
+            reqSeqFromNice = niceService.getReqSeqFromEncodedData(encodeData);
+            resultKey = niceService.storeSuccessData(encodeData);
 
-            // Check if the user is already joined
-            Object rawData = niceService.peekRawNiceData(resultKey);
-            boolean isAlreadyJoined = false;
-            String existingUsername = null;
+            Object rawResult = niceService.peekRawNiceData(resultKey);
+            UriComponentsBuilder urlBuilder = UriComponentsBuilder.fromUriString(frontendRedirectSuccessUrl);
+            urlBuilder.queryParam("key", resultKey);
 
-            if (rawData instanceof cms.nice.dto.NiceUserDataDto) {
-                cms.nice.dto.NiceUserDataDto niceUserData = (cms.nice.dto.NiceUserDataDto) rawData;
-                isAlreadyJoined = niceUserData.isAlreadyJoined();
-                if (isAlreadyJoined) {
-                    existingUsername = niceUserData.getExistingUsername();
+            if (rawResult instanceof NiceCallbackResultDto) {
+                NiceCallbackResultDto callbackResult = (NiceCallbackResultDto) rawResult;
+                urlBuilder.queryParam("status", callbackResult.getStatus());
+                urlBuilder.queryParam("serviceType", callbackResult.getServiceType());
+                if (callbackResult.getMessage() != null) {
+                    urlBuilder.queryParam("message", callbackResult.getMessage());
                 }
-            }
+                if (callbackResult.getErrorCode() != null) {
+                    urlBuilder.queryParam("errorCode", callbackResult.getErrorCode());
+                }
+                if (callbackResult.getUserEmail() != null) {
+                    urlBuilder.queryParam("email", callbackResult.getUserEmail());
+                }
+                if (callbackResult.getIdentifiedName() != null) {
+                    urlBuilder.queryParam("name", callbackResult.getIdentifiedName());
+                }
 
-            UriComponentsBuilder urlBuilder = UriComponentsBuilder.fromUriString(frontendRedirectSuccessUrl)
-                                .queryParam("status", "success")
-                                .queryParam("key", resultKey)
-                                .queryParam("joined", String.valueOf(isAlreadyJoined));
-            
-            // Only add username and error code if we have a duplicate user
-            if (isAlreadyJoined && existingUsername != null) {
-                urlBuilder.queryParam("username", existingUsername)
-                          .queryParam("nice_error_code", "DUPLICATE_DI");
-                    log.info("[NICE] User with DI already joined. Redirecting with joined=true and error_code=DUPLICATE_DI. Username: {}", existingUsername);
+                if ("REGISTER".equals(callbackResult.getServiceType()) && callbackResult.getUserData() != null) {
+                    NiceUserDataDto userData = callbackResult.getUserData();
+                    urlBuilder.queryParam("joined", String.valueOf(userData.isAlreadyJoined()));
+                    if (userData.isAlreadyJoined() && userData.getExistingUsername() != null) {
+                        urlBuilder.queryParam("username", userData.getExistingUsername());
+                        log.info("[NICE] REGISTER - User with DI already joined. Username: {}", userData.getExistingUsername());
+                    } else {
+                        log.info("[NICE] REGISTER - New user identified.");
+                    }
+                }
+                log.info("[NICE] Success callback processed. Redirecting with params from NiceCallbackResultDto. ServiceType: {}, Status: {}", 
+                    callbackResult.getServiceType(), callbackResult.getStatus());
+
             } else {
-                log.info("[NICE] New user. Redirecting for signup.");
+                log.warn("[NICE] Success callback rawResult is not NiceCallbackResultDto. Type: {}. Redirecting with generic success.", 
+                    rawResult != null ? rawResult.getClass().getName() : "null");
+                urlBuilder.queryParam("status", "success");
             }
 
             String redirectUrl = urlBuilder.toUriString();
-
             HttpHeaders headers = new HttpHeaders();
             headers.setLocation(URI.create(redirectUrl));
             return new ResponseEntity<>(headers, HttpStatus.FOUND);
@@ -115,24 +146,33 @@ public class NiceController {
 
     @RequestMapping(value = "/fail", method = {RequestMethod.GET, RequestMethod.POST})
     public ResponseEntity<Void> failCallback(@RequestParam("EncodeData") String encodeData) {
-        String reqSeqFromNice = null; // For logging
+        String reqSeqFromNice = null;
+        String resultKey = null;
         try {
             reqSeqFromNice = niceService.getReqSeqFromEncodedData(encodeData);
-            // Actual reqSeq validation is now handled within niceService.storeErrorData
-            String resultKey = niceService.storeErrorData(encodeData);
-            // Error details are now encapsulated within the object stored by resultKey if needed
-            // The error code might be part of the DTO fetched by /result/{resultKey}
+            resultKey = niceService.storeErrorData(encodeData);
 
-            // Construct redirect URL, possibly including the resultKey to fetch error details on FE
             UriComponentsBuilder urlBuilder = UriComponentsBuilder.fromUriString(frontendRedirectFailUrl)
-                                                .queryParam("status", "fail")
                                                 .queryParam("key", resultKey);
-            
-            // Optionally, decode error code here if needed for immediate redirect query param, 
-            // but generally better to fetch details via resultKey to keep this clean.
-            // Object errorDetails = niceService.getRawNiceDataAndConsume(resultKey); // This would consume it too early if FE needs it.
-            // For now, just pass the key.
 
+            Object rawError = niceService.peekRawNiceData(resultKey);
+            if (rawError instanceof NiceErrorDataDto) {
+                NiceErrorDataDto errorData = (NiceErrorDataDto) rawError;
+                urlBuilder.queryParam("status", "fail");
+                urlBuilder.queryParam("errorCode", errorData.getErrorCode());
+                urlBuilder.queryParam("message", errorData.getMessage());
+                if (errorData.getServiceType() != null) {
+                    urlBuilder.queryParam("serviceType", errorData.getServiceType());
+                }
+                log.info("[NICE] Fail callback processed. Redirecting with params from NiceErrorDataDto. ErrorCode: {}, ServiceType: {}", 
+                    errorData.getErrorCode(), errorData.getServiceType());
+            } else {
+                log.warn("[NICE] Fail callback rawError is not NiceErrorDataDto. Type: {}. Redirecting with generic fail.", 
+                    rawError != null ? rawError.getClass().getName() : "null");
+                urlBuilder.queryParam("status", "fail");
+                urlBuilder.queryParam("error", "unknown_error_type");
+            }
+                                         
             String redirectUrl = urlBuilder.toUriString();                           
             HttpHeaders headers = new HttpHeaders();
             headers.setLocation(URI.create(redirectUrl));
@@ -158,26 +198,7 @@ public class NiceController {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Collections.singletonMap("error", "결과를 찾을 수 없거나 만료되었습니다."));
             }
 
-            // If resultData is NiceUserDataDto, convert to NicePublicUserDataDto for exposure
-            if (resultData instanceof cms.nice.dto.NiceUserDataDto) {
-                cms.nice.dto.NiceUserDataDto fullUserData = (cms.nice.dto.NiceUserDataDto) resultData;
-                NicePublicUserDataDto publicData = NicePublicUserDataDto.builder()
-                        .reqSeq(fullUserData.getReqSeq())
-                        .resSeq(fullUserData.getResSeq())
-                        .authType(fullUserData.getAuthType())
-                        .name(fullUserData.getUtf8Name() != null ? fullUserData.getUtf8Name() : fullUserData.getName())
-                        .utf8Name(fullUserData.getUtf8Name())
-                        .birthDate(fullUserData.getBirthDate())
-                        .gender(fullUserData.getGender())
-                        .nationalInfo(fullUserData.getNationalInfo())
-                        .mobileCo(fullUserData.getMobileCo())
-                        .mobileNo(fullUserData.getMobileNo())
-                        .build();
-                return ResponseEntity.ok(publicData);
-            } else {
-                // If it's NiceErrorDataDto or other types, return as is.
-                return ResponseEntity.ok(resultData);
-            }
+            return ResponseEntity.ok(resultData);
         } catch (Exception e) {
             log.error("Error retrieving NICE verification result for key {}: {}", resultKey, e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Collections.singletonMap("error", "결과 조회 처리 중 에러 발생: " + e.getMessage()));

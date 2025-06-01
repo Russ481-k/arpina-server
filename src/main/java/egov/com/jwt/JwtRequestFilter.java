@@ -20,16 +20,31 @@ import java.time.format.DateTimeFormatter;
 import org.springframework.security.core.Authentication;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 
 @Component
 public class JwtRequestFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider jwtTokenProvider;
+    private final RequestMatcher permitAllRequestMatcher;
     private static final Logger log = LoggerFactory.getLogger(JwtRequestFilter.class);
 
     @Autowired
-    public JwtRequestFilter(JwtTokenProvider jwtTokenProvider) {
+    public JwtRequestFilter(JwtTokenProvider jwtTokenProvider, RequestMatcher permitAllRequestMatcher) {
         this.jwtTokenProvider = jwtTokenProvider;
+        this.permitAllRequestMatcher = permitAllRequestMatcher;
+    }
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) throws ServletException {
+        String requestURI = request.getRequestURI();
+        boolean shouldNotFilter = permitAllRequestMatcher.matches(request);
+        if (shouldNotFilter) {
+            log.info("[JwtRequestFilter] Skipping filter for permitAll path: {} (matches() returned true)", requestURI);
+        } else {
+            log.info("[JwtRequestFilter] NOT skipping filter for path: {} (matches() returned false)", requestURI);
+        }
+        return shouldNotFilter;
     }
 
     @Override
@@ -37,29 +52,32 @@ public class JwtRequestFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         
         String requestURI = request.getRequestURI();
-        log.debug("=== JwtRequestFilter Start for URI: {} ===", requestURI);
+        log.info("[JwtRequestFilter] ACTUALLY FILTERING URI: {} (shouldNotFilter must have returned false)", requestURI);
         
         final String requestTokenHeader = request.getHeader("Authorization");
         
         if (requestTokenHeader != null && requestTokenHeader.startsWith("Bearer ")) {
             String token = requestTokenHeader.substring(7).trim();
-            log.debug("Extracted token from header");
+            log.debug("Extracted token from header for URI: {}", requestURI);
             
             try {
-                log.debug("Validating token...");
+                log.debug("Validating token for URI: {}...", requestURI);
                 if (jwtTokenProvider.validateToken(token)) {
-                    log.debug("Token validation successful, creating authentication...");
+                    log.debug("Token validation successful for URI: {}, creating authentication...", requestURI);
                     Authentication authentication = jwtTokenProvider.getAuthentication(token);
                     if (authentication != null) {
-                        log.debug("Authentication created successfully for user: {}", authentication.getName());
+                        log.debug("Authentication created successfully for user: {} on URI: {}", authentication.getName(), requestURI);
                         SecurityContextHolder.getContext().setAuthentication(authentication);
-                        log.debug("Security context updated with authentication");
+                        log.debug("Security context updated with authentication for URI: {}", requestURI);
                     } else {
-                        log.warn("Failed to create authentication object for token");
+                        log.warn("Failed to create authentication object for token on URI: {}", requestURI);
+                        SecurityContextHolder.clearContext(); 
                     }
                 } else {
-                    log.warn("Token validation failed for URI: {}", requestURI);
+                    log.warn("Token validation failed (validateToken returned false) for URI: {}", requestURI);
                     SecurityContextHolder.clearContext();
+                    sendErrorResponse(response, "유효하지 않은 토큰입니다.");
+                    return;
                 }
             } catch (ExpiredJwtException e) {
                 log.warn("Token expired for URI: {} - Expiration: {}", requestURI, e.getClaims().getExpiration());
@@ -73,7 +91,7 @@ public class JwtRequestFilter extends OncePerRequestFilter {
                 return;
             }
         } else {
-            log.debug("No Bearer token found in Authorization header or header is missing.");
+            log.debug("No Bearer token found for (presumably) authenticated path URI: {}. Passing to next filter.", requestURI);
         }
         
         log.debug("Proceeding with filter chain for URI: {}", requestURI);
@@ -86,11 +104,13 @@ public class JwtRequestFilter extends OncePerRequestFilter {
         response.setContentType("application/json");
         response.setCharacterEncoding("UTF-8");
         
+        String timestamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+        
         String errorResponse = String.format(
             "{\"status\":%d,\"message\":\"%s\",\"timestamp\":\"%s\"}",
             HttpServletResponse.SC_UNAUTHORIZED,
             message,
-            LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+            timestamp
         );
         
         log.debug("Sending error response: {}", errorResponse);
