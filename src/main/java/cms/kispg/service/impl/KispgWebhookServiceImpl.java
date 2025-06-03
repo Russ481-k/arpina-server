@@ -312,8 +312,8 @@ public class KispgWebhookServiceImpl implements KispgWebhookService {
             logger.info("[KISPG Webhook] Successfully saved Enroll (enrollId: {})", enroll.getEnrollId());
 
             // Create or Update Payment record
-            Payment payment = paymentRepository.findByEnroll_EnrollId(enroll.getEnrollId())
-                    .orElseGet(Payment::new); // 변경: orElseGet(Payment::new) 사용
+            List<Payment> paymentsSuccess = paymentRepository.findByEnroll_EnrollIdOrderByCreatedAtDesc(enroll.getEnrollId());
+            Payment payment = paymentsSuccess.isEmpty() ? new Payment() : paymentsSuccess.get(0);
             
             payment.setEnroll(enroll);
             payment.setTid(notification.getTid());
@@ -449,30 +449,31 @@ public class KispgWebhookServiceImpl implements KispgWebhookService {
 
             enrollRepository.save(enroll);
             // Create/Update Payment record with failure details
-             Payment payment = paymentRepository.findByEnroll_EnrollId(enroll.getEnrollId())
-                    .orElseGet(Payment::new);
-            payment.setEnroll(enroll); // Link to enroll
-            payment.setTid(notification.getTid()); // Store TID even for failures for reference
+            List<Payment> paymentsFailure = paymentRepository.findByEnroll_EnrollIdOrderByCreatedAtDesc(enroll.getEnrollId());
+            Payment paymentOnFailure = paymentsFailure.isEmpty() ? new Payment() : paymentsFailure.get(0);
+
+            paymentOnFailure.setEnroll(enroll); // Link to enroll
+            paymentOnFailure.setTid(notification.getTid()); // Store TID even for failures for reference
              try {
-                payment.setPaidAmt(0); // Failed, so paid amount is 0
+                paymentOnFailure.setPaidAmt(0); // Failed, so paid amount is 0
                 if (notification.getAmt() != null) { // Log intended amount if available
                     logger.info("[KISPG Webhook] Failed payment intended amount for moid {}: {}", notification.getMoid(), notification.getAmt());
                 }
             } catch (NumberFormatException e) {
                 logger.error("[KISPG Webhook] Could not parse 'amt' during failure processing: {}", notification.getAmt());
             }
-            payment.setLessonAmount(0); // 실패 시 강습료/사물함료 0
-            payment.setLockerAmount(0);
-            payment.setStatus("FAILED"); // Or map KISPG codes to more specific failure statuses
-            payment.setPayMethod(notification.getPayMethod());
-            payment.setPgResultCode(notification.getResultCode());
-            payment.setPgResultMsg(notification.getResultMsg());
-            payment.setMoid(notification.getMoid()); // moid 저장 추가
+            paymentOnFailure.setLessonAmount(0); // 실패 시 강습료/사물함료 0
+            paymentOnFailure.setLockerAmount(0);
+            paymentOnFailure.setStatus("FAILED"); // Or map KISPG codes to more specific failure statuses
+            paymentOnFailure.setPayMethod(notification.getPayMethod());
+            paymentOnFailure.setPgResultCode(notification.getResultCode());
+            paymentOnFailure.setPgResultMsg(notification.getResultMsg());
+            paymentOnFailure.setMoid(notification.getMoid()); // moid 저장 추가
             // paidAt might be null or current time for failure record
             logger.info("[KISPG Webhook] Attempting to save FAILED Payment record for enrollId: {}, tid: {}", enroll.getEnrollId(), notification.getTid());
-            logger.debug("[KISPG Webhook DETAIL] Failed Payment object before save: {}", payment);
-            paymentRepository.save(payment);
-            logger.info("[KISPG Webhook] Successfully saved FAILED Payment record (paymentId: {}) for enrollId: {}, tid: {}", payment.getId(), enroll.getEnrollId(), notification.getTid());
+            logger.debug("[KISPG Webhook DETAIL] Failed Payment object before save: {}", paymentOnFailure);
+            paymentRepository.save(paymentOnFailure);
+            logger.info("[KISPG Webhook] Successfully saved FAILED Payment record (paymentId: {}) for enrollId: {}, tid: {}", paymentOnFailure.getId(), enroll.getEnrollId(), notification.getTid());
 
             // For failures, KISPG docs will specify what to return. Usually "OK" to acknowledge receipt.
             return "OK"; 

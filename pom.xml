@@ -516,6 +516,7 @@
 						<artifactId>spring-boot-maven-plugin</artifactId>
 						<configuration>
 							<mainClass>cms.CmsApplication</mainClass>
+							<includeSystemScope>true</includeSystemScope>
 							<jvmArguments>-Dspring.profiles.active=dev</jvmArguments>
 						</configuration>
 					</plugin>
@@ -535,6 +536,7 @@
 						<artifactId>spring-boot-maven-plugin</artifactId>
 						<configuration>
 							<mainClass>cms.CmsApplication</mainClass>
+							<includeSystemScope>true</includeSystemScope>
 							<jvmArguments>-Dspring.profiles.active=prod</jvmArguments>
 						</configuration>
 					</plugin>
@@ -605,6 +607,7 @@
             	<configuration>
                 	<executable>true</executable>
                 	<mainClass>cms.CmsApplication</mainClass>
+                	<includeSystemScope>true</includeSystemScope>
                 	<excludes>
 						<exclude>
 							<groupId>org.projectlombok</groupId>

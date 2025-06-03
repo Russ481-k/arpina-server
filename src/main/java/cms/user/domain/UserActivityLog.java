@@ -26,7 +26,7 @@ public class UserActivityLog {
     @Column(name = "user_uuid", nullable = false)
     private String userUuid;
 
-    @Column(name = "group_id", nullable = false)
+    @Column(name = "group_id", nullable = true)
     private String groupId;
 
     @Column(name = "organization_id", nullable = false)
@@ -66,7 +66,7 @@ public class UserActivityLog {
     private User user;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "group_id", referencedColumnName = "uuid", insertable = false, updatable = false)
+    @JoinColumn(name = "group_id", referencedColumnName = "uuid", insertable = false, updatable = false, foreignKey = @ForeignKey(value = ConstraintMode.NO_CONSTRAINT))
     private Group group;
 
     @ManyToOne(fetch = FetchType.LAZY)

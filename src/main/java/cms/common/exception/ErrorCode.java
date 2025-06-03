@@ -71,6 +71,7 @@ public enum ErrorCode {
     PAYMENT_ALREADY_PROCESSED("PM_0007", "이미 처리된 결제입니다.", HttpStatus.CONFLICT),
     PAYMENT_CANCEL_NOT_ALLOWED("PM_0008", "해당 결제는 현재 취소할 수 없는 상태입니다.", HttpStatus.BAD_REQUEST),
     PAYMENT_REFUND_FAILED("PM_0009", "결제 환불 처리 중 오류가 발생했습니다.", HttpStatus.INTERNAL_SERVER_ERROR),
+    PAYMENT_GATEWAY_APPROVAL_FAILED("PM_0010", "결제 게이트웨이 승인에 실패했습니다.", HttpStatus.BAD_REQUEST),
 
     // Locker Errors (LK_xxxx)
     LOCKER_NOT_AVAILABLE("LK_0001", "사용 가능한 사물함이 없습니다.", HttpStatus.CONFLICT),

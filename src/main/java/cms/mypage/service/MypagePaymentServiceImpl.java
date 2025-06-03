@@ -115,7 +115,7 @@ public class MypagePaymentServiceImpl implements MypagePaymentService {
         if (enroll != null) {
             dto.setEnrollId(enroll.getEnrollId());
             dto.setUsesLocker(enroll.isUsesLocker());
-            dto.setFinalAmount(enroll.getFinalAmount());
+            dto.setFinalAmount(payment.getPaidAmt() != null ? payment.getPaidAmt() : (enroll.getFinalAmount() != null ? enroll.getFinalAmount() : 0) );
             dto.setDiscountPercentage(enroll.getDiscountAppliedPercentage());
             
             // 회원권 유형

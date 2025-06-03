@@ -4,6 +4,7 @@ import cms.kispg.dto.KispgInitParamsDto;
 import cms.user.domain.User;
 import cms.swimming.dto.EnrollRequestDto;
 import cms.mypage.dto.EnrollDto;
+import cms.kispg.dto.PaymentApprovalRequestDto;
 
 public interface KispgPaymentService {
     /**
@@ -28,5 +29,5 @@ public interface KispgPaymentService {
     /**
      * KISPG 승인 API 호출 및 결제 처리
      */
-    EnrollDto approvePaymentAndCreateEnrollment(String tid, String moid, String amt, User currentUser);
+    EnrollDto approvePaymentAndCreateEnrollment(PaymentApprovalRequestDto approvalRequest, User currentUser);
 } 

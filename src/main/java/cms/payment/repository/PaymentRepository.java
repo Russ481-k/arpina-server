@@ -15,7 +15,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long>, JpaSpec
     
     // KISPG specific methods
     Optional<Payment> findByTid(String tid);
-    Optional<Payment> findByEnroll_EnrollId(Long enrollId);
+    List<Payment> findByEnroll_EnrollIdOrderByCreatedAtDesc(Long enrollId);
     Optional<Payment> findByMoid(String moid);
     long countByEnrollEnrollId(Long enrollId);
     

@@ -4,6 +4,7 @@ import cms.common.exception.BusinessRuleException;
 import cms.common.exception.ErrorCode;
 import cms.common.exception.ResourceNotFoundException;
 import cms.enroll.domain.Enroll;
+import cms.enroll.domain.MembershipType;
 import cms.enroll.repository.EnrollRepository;
 import cms.kispg.dto.KispgInitParamsDto;
 import cms.kispg.service.KispgPaymentService;
@@ -15,12 +16,20 @@ import cms.swimming.dto.EnrollRequestDto;
 import cms.payment.domain.Payment;
 import cms.payment.repository.PaymentRepository;
 import cms.mypage.dto.EnrollDto;
+import cms.kispg.dto.PaymentApprovalRequestDto;
+import cms.kispg.dto.KispgPaymentResultDto;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -32,6 +41,10 @@ import java.time.temporal.TemporalAdjusters;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.List;
+import java.util.Arrays;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Service
 @RequiredArgsConstructor
@@ -152,8 +165,8 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
     @Override
     @Transactional(readOnly = true)
     public KispgInitParamsDto preparePaymentWithoutEnroll(EnrollRequestDto enrollRequest, User currentUser, String userIp) {
-        logger.info("Preparing KISPG payment for user: {} without creating enrollment record. LessonId: {}, usesLocker: {}", 
-                currentUser.getUsername(), enrollRequest.getLessonId(), enrollRequest.getUsesLocker());
+        logger.info("Preparing KISPG payment for user: {} without creating enrollment record. LessonId: {}, usesLocker: {}, membershipType: {}", 
+                currentUser.getUsername(), enrollRequest.getLessonId(), enrollRequest.getUsesLocker(), enrollRequest.getMembershipType());
 
         // 1. Lesson 조회 및 검증
         Lesson lesson = lessonRepository.findById(enrollRequest.getLessonId())
@@ -194,9 +207,28 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
         }
 
         // 6. 결제 금액 계산
-        int totalAmount = lesson.getPrice();
+        int lessonPrice = lesson.getPrice();
+        int totalAmount = lessonPrice; // 기본 강습료로 시작
+
+        // 멤버십 할인 적용
+        if (enrollRequest.getMembershipType() != null && !enrollRequest.getMembershipType().isEmpty()) {
+            try {
+                MembershipType membership = MembershipType.fromValue(enrollRequest.getMembershipType());
+                if (membership != null && membership.getDiscountPercentage() > 0) {
+                    int discountPercentage = membership.getDiscountPercentage();
+                    int discountedLessonPrice = lessonPrice - (lessonPrice * discountPercentage / 100);
+                    totalAmount = discountedLessonPrice; // 할인된 강습료로 업데이트
+                    logger.info("Applied discount: {}% for membership type: {}. Original lesson price: {}, Discounted lesson price: {}",
+                                discountPercentage, enrollRequest.getMembershipType(), lessonPrice, discountedLessonPrice);
+                }
+            } catch (IllegalArgumentException e) {
+                logger.warn("Invalid membership type '{}' received in enrollRequest. No discount applied. Error: {}", enrollRequest.getMembershipType(), e.getMessage());
+                // 유효하지 않은 멤버십 타입이면 할인은 적용되지 않고, totalAmount는 lessonPrice로 유지됩니다.
+            }
+        }
+
         if (enrollRequest.getUsesLocker()) {
-            totalAmount += lockerFee;
+            totalAmount += lockerFee; // 사물함 비용 추가
         }
 
         // 7. KISPG 파라미터 생성 (임시 moid 생성)
@@ -251,10 +283,20 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
 
     private int calculateTotalAmount(Enroll enroll) {
         int lessonPrice = enroll.getLesson().getPrice();
+        int totalAmount = lessonPrice; // 기본 강습료로 시작
+
+        MembershipType membership = enroll.getMembershipType();
+        if (membership != null && membership.getDiscountPercentage() > 0) {
+            int discountPercentage = membership.getDiscountPercentage();
+            int discountedLessonPrice = lessonPrice - (lessonPrice * discountPercentage / 100);
+            totalAmount = discountedLessonPrice; // 할인된 강습료로 업데이트
+            logger.info("Applied discount: {}% for membership type: {}. Original lesson price: {}, Discounted lesson price: {} for enrollId: {}",
+                        discountPercentage, membership.getValue(), lessonPrice, discountedLessonPrice, enroll.getEnrollId());
+        }
+
         // 사물함 선택 시 추가 요금 (현재 usesLocker 상태 기반)
-        int totalAmount = lessonPrice;
         if (enroll.isUsesLocker()) {
-            totalAmount += lockerFee;
+            totalAmount += lockerFee; // 사물함 비용 추가
         }
         return totalAmount;
     }
@@ -326,17 +368,28 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
 
     @Override
     @Transactional
-    public EnrollDto approvePaymentAndCreateEnrollment(String tid, String moid, String amt, User currentUser) {
-        logger.info("Approving KISPG payment and creating enrollment for tid: {}, moid: {}, amt: {}, user: {}", 
-            tid, moid, amt, currentUser.getUsername());
+    public EnrollDto approvePaymentAndCreateEnrollment(PaymentApprovalRequestDto approvalRequest, User currentUser) {
+        KispgPaymentResultDto kispgResult = approvalRequest.getKispgPaymentResult();
+        String moid = approvalRequest.getMoid(); // System's MOID
 
-        // 1. KISPG 승인 API 호출
-        boolean approvalSuccess = callKispgApprovalApi(tid, moid, amt);
-        if (!approvalSuccess) {
-            throw new BusinessRuleException(ErrorCode.PAYMENT_REFUND_FAILED, "KISPG 승인 API 호출에 실패했습니다.");
+        // Log incoming request details
+        logger.info("Approving KISPG payment and creating enrollment. MOID: {}, User: {}", 
+            moid, currentUser.getUsername());
+        if (kispgResult != null) {
+            logger.info("KISPG Result Details - TID: {}, KISPG MOID (ordNo): {}, Amt: {}, ResultCd: {}, ResultMsg: {}, PayMethod: {}, EdiDate: {}",
+                kispgResult.getTid(), kispgResult.getOrdNo(), kispgResult.getAmt(), kispgResult.getResultCd(),
+                kispgResult.getResultMsg(), kispgResult.getPayMethod(), kispgResult.getEdiDate());
+        } else {
+            // This case should ideally be validated at the controller or by DTO validation
+            logger.error("KispgPaymentResultDto is null for MOID: {}", moid);
+            throw new BusinessRuleException(ErrorCode.INVALID_INPUT_VALUE, "KISPG 결제 결과가 누락되었습니다.");
         }
+        
+        // Use KISPG's TID and AMT for the approval call, but our system's MOID for internal logic.
+        String kispgTid = kispgResult.getTid();
+        String kispgAmt = kispgResult.getAmt();
 
-        // 2. moid 파싱 - 두 가지 형식 지원: temp_ 또는 enroll_
+        // 1. moid 파싱 - 두 가지 형식 지원: temp_ 또는 enroll_
         Long lessonId;
         String userUuidPrefix;
         Enroll existingEnrollForUpdate = null; // enroll_ 형식에서 재사용할 기존 Enroll
@@ -375,24 +428,66 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
             throw new BusinessRuleException(ErrorCode.INVALID_INPUT_VALUE, "지원되지 않는 moid 형식입니다: " + moid);
         }
 
-        // 3. 사용자 확인 (temp_ 형식인 경우에만)
+        // 2. 사용자 확인 (temp_ 형식인 경우에만)
         if (userUuidPrefix != null && !currentUser.getUuid().startsWith(userUuidPrefix)) {
             throw new BusinessRuleException(ErrorCode.ACCESS_DENIED, "사용자 UUID가 일치하지 않습니다.");
         }
 
-        // 4. Lesson 조회
+        // 3. Lesson 조회
         Lesson lesson = lessonRepository.findById(lessonId)
                 .orElseThrow(() -> new ResourceNotFoundException("강습을 찾을 수 없습니다: " + lessonId, ErrorCode.LESSON_NOT_FOUND));
 
-        // 5. 결제 금액으로부터 사물함 사용 여부 판단
+        // ========== 중복 신청 체크 (결제 승인 전에 먼저 확인) ==========
+        if (moid.startsWith("temp_")) {
+            // temp_ 형식인 경우에만 중복 체크 (enroll_ 형식은 이미 기존 enrollment 업데이트이므로 제외)
+            logger.info("🔍 중복 신청 체크 시작: user={}, lesson={}", currentUser.getUuid(), lessonId);
+            
+            // 해당 사용자가 해당 강습에 이미 APPLIED, PAID 상태의 신청이 있는지 확인
+            List<String> activePayStatuses = Arrays.asList("PAID", "UNPAID"); // UNPAID도 포함 (만료되지 않은 경우)
+            List<String> activeStatuses = Arrays.asList("APPLIED");
+            
+            // 현재 시간보다 만료시간이 미래인 UNPAID 신청 또는 PAID 신청이 있는지 확인
+            List<Enroll> existingEnrolls = enrollRepository.findByUserUuidAndLessonLessonId(currentUser.getUuid(), lessonId);
+            
+            for (Enroll existingEnroll : existingEnrolls) {
+                boolean isActivePaid = "PAID".equals(existingEnroll.getPayStatus());
+                boolean isActiveUnpaid = "UNPAID".equals(existingEnroll.getPayStatus()) && 
+                                       "APPLIED".equals(existingEnroll.getStatus()) &&
+                                       existingEnroll.getExpireDt() != null && 
+                                       existingEnroll.getExpireDt().isAfter(LocalDateTime.now());
+                
+                if (isActivePaid || isActiveUnpaid) {
+                    logger.warn("❌ 중복 신청 감지: enrollId={}, status={}, payStatus={}, expireDt={}", 
+                        existingEnroll.getEnrollId(), existingEnroll.getStatus(), 
+                        existingEnroll.getPayStatus(), existingEnroll.getExpireDt());
+                    throw new BusinessRuleException(ErrorCode.DUPLICATE_ENROLLMENT, 
+                        "이미 해당 강습에 신청 내역이 존재합니다. 기존 신청을 확인해 주세요.");
+                }
+            }
+            
+            logger.info("✅ 중복 신청 체크 통과: 신청 가능");
+        }
+
+        // ****** ADD KISPG APPROVAL API CALL HERE ******
+        boolean kispgApprovalSuccess = callKispgApprovalApi(kispgTid, moid, kispgAmt); // Use system's MOID for approval call if that's what KISPG expects, or kispgResult.getOrdNo() if KISPG's MOID is needed. Check KISPG docs.
+                                                                                      // For now, using `moid` (system's MOID) as per the existing callKispgApprovalApi signature.
+
+        if (!kispgApprovalSuccess) {
+            logger.error("KISPG payment approval failed for TID: {}, MOID: {}. Enrollment will not be processed.", kispgTid, moid);
+            throw new BusinessRuleException(ErrorCode.PAYMENT_GATEWAY_APPROVAL_FAILED, "KISPG 결제 승인에 실패했습니다.");
+        }
+        logger.info("KISPG payment approval successful for TID: {}, MOID: {}", kispgTid, moid);
+        // ****** END KISPG APPROVAL API CALL ******
+
+        // 4. 결제 금액으로부터 사물함 사용 여부 판단
         boolean usesLocker = false;
-        int paidAmount = Integer.parseInt(amt);
+        int paidAmount = Integer.parseInt(kispgResult.getAmt());
         int lessonPrice = lesson.getPrice();
         if (paidAmount > lessonPrice) {
             usesLocker = true;
         }
 
-        // 6. 사물함 배정 (사용하는 경우)
+        // 5. 사물함 배정 (사용하는 경우)
         boolean lockerAllocated = false;
         if (usesLocker) {
             if (currentUser.getGender() != null && !currentUser.getGender().trim().isEmpty()) {
@@ -414,7 +509,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
             }
         }
 
-        // 7. 최종 금액 계산
+        // 6. 최종 금액 계산
         int finalAmount = lessonPrice;
         if (usesLocker && lockerAllocated) {
             finalAmount += 5000; // 기본 사물함 요금
@@ -439,94 +534,229 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
                 return convertToMypageEnrollDto(existingEnrollForUpdate);
             }
             
-            // 기존 Enroll 업데이트
+            // 기존 Enroll 업데이트 시 finalAmount는 KISPG 실제 결제 금액으로 유지하거나,
+            // 또는 여기서도 멤버십 기준으로 재계산할지 정책 결정 필요.
+            // 현재는 KISPG 실제 결제 금액을 반영하고, 멤버십 유형/할인율은 정보성으로만 업데이트.
             existingEnrollForUpdate.setPayStatus("PAID");
             existingEnrollForUpdate.setExpireDt(enrollExpireDate);
-            existingEnrollForUpdate.setUsesLocker(usesLocker);
+            existingEnrollForUpdate.setUsesLocker(usesLocker); // KISPG 결제액 기반으로 판단된 사물함 사용 여부
             existingEnrollForUpdate.setLockerAllocated(lockerAllocated);
-            existingEnrollForUpdate.setFinalAmount(finalAmount);
+            // existingEnrollForUpdate.setFinalAmount(paidAmount); // KISPG 실제 결제 금액 (Payment.paidAmt와 동일)
+            // 만약 Enroll의 finalAmount를 멤버십 할인 기준으로 저장하고 싶다면 여기서 재계산
+            // 예:
+            // MembershipType currentMembership = existingEnrollForUpdate.getMembershipType(); // 기존 멤버십 유형
+            // int calculatedFinalAmount = lessonPrice;
+            // if (currentMembership != null && currentMembership.getDiscountPercentage() > 0) {
+            //     calculatedFinalAmount -= (lessonPrice * currentMembership.getDiscountPercentage() / 100);
+            // }
+            // if (usesLocker && lockerAllocated) {
+            //     calculatedFinalAmount += lockerFee;
+            // }
+            // existingEnrollForUpdate.setFinalAmount(calculatedFinalAmount); // 할인 적용된 자체 계산 금액
+
+            existingEnrollForUpdate.setFinalAmount(paidAmount); // 일단 KISPG 결제 금액으로 설정
+            
+            // 멤버십 정보는 approvalRequest에서 온 것으로 업데이트 (만약 클라이언트가 변경했을 수도 있으므로)
+            MembershipType requestedMembership = MembershipType.GENERAL; // 기본값
+            int requestedDiscount = 0;
+            if (approvalRequest.getMembershipType() != null && !approvalRequest.getMembershipType().isEmpty()) {
+                try {
+                    requestedMembership = MembershipType.fromValue(approvalRequest.getMembershipType());
+                    requestedDiscount = requestedMembership.getDiscountPercentage();
+                } catch (IllegalArgumentException e) {
+                    logger.warn("Invalid membership type '{}' received in approvalRequest for existing enroll. Using GENERAL. Error: {}", approvalRequest.getMembershipType(), e.getMessage());
+                }
+            }
+            existingEnrollForUpdate.setMembershipType(requestedMembership);
+            existingEnrollForUpdate.setDiscountAppliedPercentage(requestedDiscount);
+
             existingEnrollForUpdate.setUpdatedAt(LocalDateTime.now());
             existingEnrollForUpdate.setUpdatedBy(currentUser.getUuid());
             
             savedEnroll = enrollRepository.save(existingEnrollForUpdate);
-            logger.info("Successfully updated existing enrollment: enrollId={}, user={}, lesson={}, usesLocker={}, lockerAllocated={}", 
-                    savedEnroll.getEnrollId(), currentUser.getUsername(), lesson.getLessonId(), usesLocker, lockerAllocated);
+            logger.info("Successfully updated existing enrollment: enrollId={}, user={}, lesson={}, usesLocker={}, lockerAllocated={}, membershipType={}, discountApplied={}%", 
+                    savedEnroll.getEnrollId(), currentUser.getUsername(), lesson.getLessonId(), usesLocker, lockerAllocated, savedEnroll.getMembershipType(), savedEnroll.getDiscountAppliedPercentage());
             
         } else {
             // 8-B. 새로운 Enroll 생성 (temp_ 형식)
+            MembershipType selectedMembership = MembershipType.GENERAL; // 기본값
+            int discountPercentage = 0;
+
+            if (approvalRequest.getMembershipType() != null && !approvalRequest.getMembershipType().isEmpty()) {
+                try {
+                    selectedMembership = MembershipType.fromValue(approvalRequest.getMembershipType());
+                    discountPercentage = selectedMembership.getDiscountPercentage();
+                } catch (IllegalArgumentException e) {
+                    logger.warn("Invalid membership type '{}' received in approvalRequest. Using GENERAL. Error: {}", approvalRequest.getMembershipType(), e.getMessage());
+                    // selectedMembership은 GENERAL, discountPercentage는 0으로 유지됨
+                }
+            }
+            
+            // Enroll에 기록될 finalAmount는 멤버십 할인을 적용하여 자체 계산
+            int calculatedEnrollFinalAmount = lessonPrice;
+            if (discountPercentage > 0) {
+                calculatedEnrollFinalAmount -= (lessonPrice * discountPercentage / 100);
+            }
+            if (usesLocker && lockerAllocated) { // KISPG 결제액 기반으로 판단된 사물함 사용 여부 및 실제 배정 성공 여부
+                calculatedEnrollFinalAmount += lockerFee;
+            }
+
             savedEnroll = Enroll.builder()
                     .user(currentUser)
                     .lesson(lesson)
                     .status("APPLIED")
                     .payStatus("PAID")
                     .expireDt(enrollExpireDate)
-                    .usesLocker(usesLocker)
-                    .lockerAllocated(lockerAllocated)
-                    .membershipType(cms.enroll.domain.MembershipType.GENERAL)
-                    .finalAmount(finalAmount)
-                    .discountAppliedPercentage(0)
+                    .usesLocker(usesLocker) // KISPG 결제액 기반으로 판단된 사물함 사용 여부
+                    .lockerAllocated(lockerAllocated) // 실제 사물함 배정 성공 여부
+                    .membershipType(selectedMembership) // DTO에서 전달받은 멤버십 적용
+                    .finalAmount(calculatedEnrollFinalAmount) // 할인 및 사물함 비용 적용된 자체 계산 금액
+                    .discountAppliedPercentage(discountPercentage) // 적용된 할인율
                     .createdBy(currentUser.getUuid())
-                    .createdIp("KISPG_APPROVAL")
+                    .createdIp("KISPG_APPROVAL_SERVICE")
                     .build();
 
             savedEnroll = enrollRepository.save(savedEnroll);
-            logger.info("Successfully created new enrollment: enrollId={}, user={}, lesson={}, usesLocker={}, lockerAllocated={}", 
-                    savedEnroll.getEnrollId(), currentUser.getUsername(), lesson.getLessonId(), usesLocker, lockerAllocated);
+            logger.info("Successfully created new enrollment: enrollId={}, user={}, lesson={}, usesLocker={}, lockerAllocated={}, membershipType={}, discountApplied={}%, calculatedFinalAmount={}", 
+                    savedEnroll.getEnrollId(), currentUser.getUsername(), lesson.getLessonId(), usesLocker, lockerAllocated, selectedMembership.getValue(), discountPercentage, calculatedEnrollFinalAmount);
         }
 
         // 9. Payment 엔티티 생성
+        LocalDateTime paidAt = LocalDateTime.now(); // Default to now
+        if (kispgResult.getEdiDate() != null && !kispgResult.getEdiDate().isEmpty()) {
+            try {
+                paidAt = LocalDateTime.parse(kispgResult.getEdiDate(), KISPG_DATE_FORMATTER);
+            } catch (Exception e) {
+                logger.warn("Failed to parse KISPG ediDate '{}'. Defaulting paidAt to current time. Error: {}", kispgResult.getEdiDate(), e.getMessage());
+            }
+        }
+
         Payment payment = Payment.builder()
                 .enroll(savedEnroll)
-                .tid(tid)
-                .moid(moid)
+                .tid(kispgResult.getTid()) // Use KISPG TID
+                .moid(moid) // Use system MOID (could be original enroll_ or temp_)
                 .paidAmt(paidAmount)
                 .lessonAmount(lessonPrice)
-                .lockerAmount(usesLocker && lockerAllocated ? 5000 : 0)
-                .status("PAID")
-                .payMethod("CARD")
-                .pgResultCode("0000")
-                .pgResultMsg("SUCCESS")
-                .paidAt(LocalDateTime.now())
+                .lockerAmount(usesLocker && lockerAllocated ? lockerFee : 0) // Use configured lockerFee
+                .status("PAID") // If we reach here, it's paid
+                .payMethod(kispgResult.getPayMethod() != null ? kispgResult.getPayMethod().toUpperCase() : "UNKNOWN") // Use KISPG payMethod
+                .pgResultCode(kispgResult.getResultCd()) // Use KISPG resultCd
+                .pgResultMsg(kispgResult.getResultMsg()) // Use KISPG resultMsg
+                .paidAt(paidAt) // Use parsed ediDate or current time
                 .createdBy(currentUser.getUuid())
-                .createdIp("KISPG_APPROVAL")
+                .createdIp("KISPG_APPROVAL_SERVICE") // Default IP as it's not in DTO, or obtain from request if available
                 .build();
 
         paymentRepository.save(payment);
-        logger.info("Successfully created payment record for enrollId: {}, tid: {}, moid: {}", 
-                savedEnroll.getEnrollId(), tid, moid);
+        logger.info("Successfully created payment record for enrollId: {}, System MOID: {}, KISPG TID: {}", 
+                savedEnroll.getEnrollId(), moid, kispgResult.getTid());
 
         return convertToMypageEnrollDto(savedEnroll);
     }
 
     /**
-     * KISPG 승인 API 호출
+     * KISPG 승인 API 호출 (공식 문서 준수)
      */
     private boolean callKispgApprovalApi(String tid, String moid, String amt) {
         try {
-            // 샘플 코드 기반으로 KISPG 승인 API 호출 로직 구현
-            String mid = "kistest00m"; // 설정에서 가져와야 함
-            String merchantKey = "test-key"; // 설정에서 가져와야 함
-            String ediDate = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
-            String encData = generateHash(mid + ediDate + amt + merchantKey);
-
-            // JSON 요청 생성
-            Map<String, String> requestMap = new HashMap<>();
-            requestMap.put("mid", mid);
-            requestMap.put("tid", tid);
-            requestMap.put("goodsAmt", amt);
-            requestMap.put("ediDate", ediDate);
-            requestMap.put("encData", encData);
-            requestMap.put("charset", "UTF-8");
-
-            // KISPG API 호출 (실제 구현에서는 RestTemplate 등 사용)
-            logger.info("KISPG approval API request: {}", requestMap.toString());
+            logger.info("=== KISPG 승인 API 호출 시작 ===");
+            logger.info("📋 입력 파라미터:");
+            logger.info("  - TID: {}", tid);
+            logger.info("  - MOID: {}", moid);
+            logger.info("  - AMT: {}", amt);
             
-            // TODO: 실제 KISPG API 호출 구현
-            // 현재는 테스트를 위해 true 반환
-            return true;
+            // 1. ediDate 생성 (현재 시각, KISPG는 현재 시각 -10분까지 유효)
+            String ediDate = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
+            
+            // 2. KISPG 공식 문서에 따른 해시 생성: mid + ediDate + goodsAmt + merchantKey
+            String hashData = kispgMid + ediDate + amt + merchantKey;
+            String encData = generateHash(hashData);
+
+            logger.info("📋 KISPG 승인 요청 구성:");
+            logger.info("  - MID: {}", kispgMid);
+            logger.info("  - TID: {}", tid);
+            logger.info("  - goodsAmt: {}", amt);
+            logger.info("  - ediDate: {} (현재시각)", ediDate);
+            logger.info("  - HashData: {} (길이: {})", hashData, hashData.length());
+            logger.info("  - encData: {} (길이: {})", encData, encData.length());
+
+            // 3. KISPG 승인 요청 파라미터 생성 (공식 문서 순서대로)
+            Map<String, String> requestParams = new HashMap<>();
+            requestParams.put("mid", kispgMid);           // 가맹점ID (필수)
+            requestParams.put("tid", tid);                // 거래번호 (필수) - KISPG에서 제공한 실제 TID
+            requestParams.put("goodsAmt", amt);           // 결제금액 (필수)
+            requestParams.put("ediDate", ediDate);        // 전문요청일시 (필수)
+            requestParams.put("encData", encData);        // 해시값 (필수)
+            requestParams.put("charset", "UTF-8");        // 인코딩방식
+
+            // 4. JSON 요청 본문 생성
+            ObjectMapper objectMapper = new ObjectMapper();
+            String jsonBody = objectMapper.writeValueAsString(requestParams);
+            
+            logger.info("📤 KISPG 승인 API 요청:");
+            logger.info("  - URL: https://api.kispg.co.kr/v2/payment");
+            logger.info("  - Method: POST");
+            logger.info("  - Content-Type: application/json");
+            logger.info("  - Body: {}", jsonBody);
+
+            // 5. HTTP 요청 설정
+            RestTemplate restTemplate = new RestTemplate();
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("User-Agent", "ARPINA-CMS/1.0");
+            
+            HttpEntity<String> entity = new HttpEntity<>(jsonBody, headers);
+            
+            // 6. KISPG 승인 API 호출 (운영 URL 고정)
+            String apiUrl = "https://api.kispg.co.kr/v2/payment";
+            
+            long startTime = System.currentTimeMillis();
+            ResponseEntity<String> response = restTemplate.postForEntity(apiUrl, entity, String.class);
+            long responseTime = System.currentTimeMillis() - startTime;
+            
+            logger.info("📥 KISPG 승인 API 응답 ({}ms):", responseTime);
+            logger.info("  - Status Code: {}", response.getStatusCode());
+            logger.info("  - Response Body: {}", response.getBody());
+            
+            // 7. 응답 처리
+            if (response.getStatusCode() == HttpStatus.OK) {
+                String responseBody = response.getBody();
+                if (responseBody != null && !responseBody.trim().isEmpty()) {
+                    // JSON 응답을 Map으로 파싱
+                    Map<String, Object> responseMap = objectMapper.readValue(responseBody, Map.class);
+                    String resultCd = (String) responseMap.get("resultCd");
+                    String resultMsg = (String) responseMap.get("resultMsg");
+                    
+                    logger.info("📋 KISPG 승인 결과 파싱:");
+                    logger.info("  - resultCd: {}", resultCd);
+                    logger.info("  - resultMsg: {}", resultMsg);
+                    
+                    // 모든 응답 필드 로깅
+                    responseMap.forEach((key, value) -> 
+                        logger.info("  - {}: {}", key, value)
+                    );
+                    
+                    // 성공 코드 확인 (KISPG 문서에 따라 "0000"이 성공, "3001"도 성공으로 간주)
+                    if ("0000".equals(resultCd) || "3001".equals(resultCd)) {
+                        logger.info("✅ KISPG 승인 성공! (resultCd: {})", resultCd);
+                        return true;
+                    } else {
+                        logger.error("❌ KISPG 승인 실패: [{}] {}", resultCd, resultMsg);
+                        return false;
+                    }
+                } else {
+                    logger.error("❌ KISPG API 응답 본문이 비어있습니다.");
+                    return false;
+                }
+            } else {
+                logger.error("❌ KISPG 승인 API HTTP 오류 - Status: {}", response.getStatusCode());
+                return false;
+            }
             
         } catch (Exception e) {
-            logger.error("Failed to call KISPG approval API: {}", e.getMessage(), e);
+            logger.error("❌ KISPG 승인 API 호출 중 예외 발생:", e);
+            logger.error("  - 예외 타입: {}", e.getClass().getSimpleName());
+            logger.error("  - 예외 메시지: {}", e.getMessage());
             return false;
         }
     }

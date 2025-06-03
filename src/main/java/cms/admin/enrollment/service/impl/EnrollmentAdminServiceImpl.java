@@ -58,7 +58,9 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
         logger.info("Attempting to convert Enroll to EnrollAdminResponseDto for enrollId: {}", enroll != null ? enroll.getEnrollId() : "null_enroll_object");
         if (enroll == null) return null;
         
-        Payment payment = paymentRepository.findByEnroll_EnrollId(enroll.getEnrollId()).orElse(null);
+        List<Payment> payments = paymentRepository.findByEnroll_EnrollIdOrderByCreatedAtDesc(enroll.getEnrollId());
+        Payment payment = payments.isEmpty() ? null : payments.get(0);
+
         EnrollAdminResponseDto.PaymentInfoForEnrollAdmin paymentInfo = null;
         if (payment != null) {
             paymentInfo = EnrollAdminResponseDto.PaymentInfoForEnrollAdmin.builder()
@@ -95,7 +97,8 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
         logger.info("Attempting to convert Enroll to CancelRequestAdminDto for enrollId: {}", enroll != null ? enroll.getEnrollId() : "null_enroll_object");
         if (enroll == null) return null;
 
-        Payment payment = paymentRepository.findByEnroll_EnrollId(enroll.getEnrollId()).orElse(null); // UNPAID의 경우 Payment가 없을 수 있음
+        List<Payment> payments = paymentRepository.findByEnroll_EnrollIdOrderByCreatedAtDesc(enroll.getEnrollId());
+        Payment payment = payments.isEmpty() ? null : payments.get(0);
 
         CancelRequestAdminDto.PaymentDetailsForCancel paymentDetails = null;
         CalculatedRefundDetailsDto refundDetailsDto = null;

@@ -742,8 +742,11 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 "취소 요청 상태가 아니거나 이미 처리된 건입니다. 현재 상태: " + enroll.getCancelStatus());
         }
 
-        Payment payment = paymentRepository.findByEnroll_EnrollId(enrollId)
-            .orElseThrow(() -> new ResourceNotFoundException("Payment record not found for enrollment ID: " + enrollId, ErrorCode.PAYMENT_INFO_NOT_FOUND));
+        List<Payment> paymentsApprove = paymentRepository.findByEnroll_EnrollIdOrderByCreatedAtDesc(enrollId);
+        if (paymentsApprove.isEmpty()) {
+            throw new ResourceNotFoundException("Payment record not found for enrollment ID: " + enrollId, ErrorCode.PAYMENT_INFO_NOT_FOUND);
+        }
+        Payment payment = paymentsApprove.get(0); // Get the most recent payment
 
         CalculatedRefundDetailsDto refundDetails = calculateRefundInternal(enroll, payment, manualUsedDaysFromRequest, LocalDate.now());
 
@@ -827,12 +830,15 @@ public class EnrollmentServiceImpl implements EnrollmentService {
     public CalculatedRefundDetailsDto getRefundPreview(Long enrollId, Integer manualUsedDaysPreview) {
         Enroll enroll = enrollRepository.findById(enrollId)
             .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found with ID: " + enrollId, ErrorCode.ENROLLMENT_NOT_FOUND));
-        Payment payment = paymentRepository.findByEnroll_EnrollId(enrollId)
-            .orElseThrow(() -> new ResourceNotFoundException("Payment record not found for enrollment ID: " + enrollId, ErrorCode.PAYMENT_INFO_NOT_FOUND));
+        List<Payment> paymentsPreview = paymentRepository.findByEnroll_EnrollIdOrderByCreatedAtDesc(enrollId);
+        if (paymentsPreview.isEmpty()) {
+            throw new ResourceNotFoundException("Payment record not found for enrollment ID: " + enrollId, ErrorCode.PAYMENT_INFO_NOT_FOUND);
+        }
+        Payment paymentForPreview = paymentsPreview.get(0); // Get the most recent payment
 
         // 헬퍼 메서드를 사용하여 환불 상세 내역 계산 (계산 기준일: 오늘)
         // manualUsedDaysPreview는 관리자가 화면에서 입력해본 값
-        return calculateRefundInternal(enroll, payment, manualUsedDaysPreview, LocalDate.now());
+        return calculateRefundInternal(enroll, paymentForPreview, manualUsedDaysPreview, LocalDate.now());
     }
 
     @Override

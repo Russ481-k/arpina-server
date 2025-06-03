@@ -23,6 +23,8 @@ public interface EnrollRepository extends JpaRepository<Enroll, Long>, JpaSpecif
 
     List<Enroll> findByUserUuid(String userUuid);
 
+    List<Enroll> findByUserUuidAndLessonLessonId(String userUuid, Long lessonId);
+
     Page<Enroll> findByUserUuidAndStatus(String userUuid, String status, Pageable pageable);
 
     Page<Enroll> findByLessonLessonId(Long lessonId, Pageable pageable);
