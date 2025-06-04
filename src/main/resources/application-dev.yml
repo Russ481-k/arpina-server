@@ -271,4 +271,4 @@ management:
       prometheus:
         enabled: true
 cors:
-  allowed-origins: ${GLOBALS_ALLOW_ORIGIN:https://arpina-cms-bnxm.vercel.app}
+  allowed-origins: ${GLOBALS_ALLOW_ORIGIN:http://localhost:3000}

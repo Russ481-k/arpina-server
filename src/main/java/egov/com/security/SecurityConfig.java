@@ -57,7 +57,7 @@ public class SecurityConfig {
 	private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
 	private final RequestMatcher permitAllRequestMatcher;
 	
-	@Value("${cors.allowed-origins:https://arpina-cms-bnxm.vercel.app}")
+	@Value("${cors.allowed-origins}")
 	private String corsAllowedOrigins;
 	@Bean
 	public static RequestMatcher permitAllRequestMatcherBean() {
@@ -103,8 +103,8 @@ public class SecurityConfig {
 	@Bean
 	public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 		http
-			// .cors().configurationSource(corsConfigurationSource())
-			// .and()
+			.cors().configurationSource(corsConfigurationSource())
+			.and()
 			.csrf().disable()
 			.sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
 			.and()
