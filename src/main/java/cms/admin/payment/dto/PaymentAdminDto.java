@@ -15,6 +15,7 @@ public class PaymentAdminDto {
     private Long enrollId;
     private String userId;
     private String userName;
+    private String userPhone;
     private String lessonTitle;
     private String tid; // KISPG Transaction ID
     private Integer paidAmt; // 실제 결제된 금액
@@ -25,4 +26,4 @@ public class PaymentAdminDto {
     private LocalDateTime paidAt;
     private LocalDateTime lastRefundDt;
     private String pgProvider;
-} 
+}

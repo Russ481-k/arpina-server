@@ -14,6 +14,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import cms.payment.domain.PaymentStatus;
 
 import javax.validation.Valid;
 import java.time.LocalDate;
@@ -36,9 +37,10 @@ public class PaymentAdminController {
             @Parameter(description = "KISPG 거래 ID (TID)") @RequestParam(required = false) String tid,
             @Parameter(description = "조회 시작일 (YYYY-MM-DD)") @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @Parameter(description = "조회 종료일 (YYYY-MM-DD)") @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
-            @Parameter(description = "결제 상태 (PAID, FAILED, CANCELED, PARTIALLY_REFUNDED)") @RequestParam(required = false) String status,
+            @Parameter(description = "결제 상태 (PAID, FAILED, CANCELED, PARTIAL_REFUNDED, REFUND_REQUESTED)") @RequestParam(required = false) PaymentStatus status,
             @PageableDefault(size = 10, sort = "paidAt,desc") Pageable pageable) {
-        Page<PaymentAdminDto> payments = paymentAdminService.getAllPayments(enrollId, userId, tid, startDate, endDate, status, pageable);
+        Page<PaymentAdminDto> payments = paymentAdminService.getAllPayments(enrollId, userId, tid, startDate, endDate,
+                status, pageable);
         return ResponseEntity.ok(ApiResponseSchema.success(payments, "결제 내역 조회 성공"));
     }
 
@@ -62,10 +64,11 @@ public class PaymentAdminController {
         String adminNote = (String) payload.getOrDefault("adminNote", "");
 
         if (amount == null || reason == null) {
-            return ResponseEntity.badRequest().body(ApiResponseSchema.error("환불 금액과 사유는 필수입니다.", "INVALID_MANUAL_REFUND_REQUEST"));
+            return ResponseEntity.badRequest()
+                    .body(ApiResponseSchema.error("환불 금액과 사유는 필수입니다.", "INVALID_MANUAL_REFUND_REQUEST"));
         }
 
         PaymentAdminDto updatedPayment = paymentAdminService.manualRefund(paymentId, amount, reason, adminNote);
         return ResponseEntity.ok(ApiResponseSchema.success(updatedPayment, "수동 환불 처리 성공"));
     }
-} 
+}

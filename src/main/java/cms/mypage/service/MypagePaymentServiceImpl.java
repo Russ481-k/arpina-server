@@ -11,6 +11,7 @@ import cms.user.domain.User;
 import cms.common.exception.BusinessRuleException;
 import cms.common.exception.ErrorCode;
 import cms.common.exception.ResourceNotFoundException;
+import cms.payment.domain.PaymentStatus;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -31,9 +32,9 @@ public class MypagePaymentServiceImpl implements MypagePaymentService {
     private final EnrollRepository enrollRepository;
     private final PaymentGatewayService paymentGatewayService;
 
-    public MypagePaymentServiceImpl(PaymentRepository paymentRepository, 
-                                    EnrollRepository enrollRepository,
-                                    @Qualifier("mockPaymentGatewayService") PaymentGatewayService paymentGatewayService) {
+    public MypagePaymentServiceImpl(PaymentRepository paymentRepository,
+            EnrollRepository enrollRepository,
+            @Qualifier("mockPaymentGatewayService") PaymentGatewayService paymentGatewayService) {
         this.paymentRepository = paymentRepository;
         this.enrollRepository = enrollRepository;
         this.paymentGatewayService = paymentGatewayService;
@@ -55,43 +56,47 @@ public class MypagePaymentServiceImpl implements MypagePaymentService {
     @Override
     public void requestPaymentCancellation(User user, Long paymentId) {
         Payment payment = paymentRepository.findById(paymentId)
-                .orElseThrow(() -> new ResourceNotFoundException("결제 정보를 찾을 수 없습니다 (ID: " + paymentId + ")", ErrorCode.PAYMENT_INFO_NOT_FOUND));
-        
+                .orElseThrow(() -> new ResourceNotFoundException("결제 정보를 찾을 수 없습니다 (ID: " + paymentId + ")",
+                        ErrorCode.PAYMENT_INFO_NOT_FOUND));
+
         Enroll enroll = payment.getEnroll();
         if (enroll == null) {
-            throw new BusinessRuleException("결제에 연결된 수강 신청 정보를 찾을 수 없습니다.", ErrorCode.ENROLLMENT_NOT_FOUND, HttpStatus.INTERNAL_SERVER_ERROR);
+            throw new BusinessRuleException("결제에 연결된 수강 신청 정보를 찾을 수 없습니다.", ErrorCode.ENROLLMENT_NOT_FOUND,
+                    HttpStatus.INTERNAL_SERVER_ERROR);
         }
         if (!enroll.getUser().getUuid().equals(user.getUuid())) {
             throw new BusinessRuleException(ErrorCode.ACCESS_DENIED, HttpStatus.FORBIDDEN);
         }
 
-        if (!"PAID".equalsIgnoreCase(payment.getStatus())) {
-            throw new BusinessRuleException("성공 상태의 결제만 취소할 수 있습니다. 현재 상태: " + payment.getStatus(), ErrorCode.PAYMENT_CANCEL_NOT_ALLOWED);
+        if (payment.getStatus() != PaymentStatus.PAID) {
+            throw new BusinessRuleException("성공 상태의 결제만 취소할 수 있습니다. 현재 상태: " + payment.getStatus().getDescription(),
+                    ErrorCode.PAYMENT_CANCEL_NOT_ALLOWED);
         }
-        
+
         if (enroll.getCancelStatus() != null && enroll.getCancelStatus() != CancelStatusType.NONE) {
-             throw new BusinessRuleException("이미 취소 절차가 진행 중이거나 완료/거절된 수강 신청입니다.", ErrorCode.ALREADY_CANCELLED_ENROLLMENT);
+            throw new BusinessRuleException("이미 취소 절차가 진행 중이거나 완료/거절된 수강 신청입니다.",
+                    ErrorCode.ALREADY_CANCELLED_ENROLLMENT);
         }
 
         boolean refundInitiated;
         try {
             refundInitiated = paymentGatewayService.requestRefund(
-                payment.getTid(),
-                payment.getMoid(),
-                payment.getPaidAmt(),
-                "User requested cancellation via My Page"
-            );
+                    payment.getTid(),
+                    payment.getMoid(),
+                    payment.getPaidAmt(),
+                    "User requested cancellation via My Page");
         } catch (Exception e) {
-            throw new BusinessRuleException("결제 게이트웨이를 통한 환불 요청에 실패했습니다. 잠시 후 다시 시도해주세요.", ErrorCode.PAYMENT_REFUND_FAILED);
+            throw new BusinessRuleException("결제 게이트웨이를 통한 환불 요청에 실패했습니다. 잠시 후 다시 시도해주세요.",
+                    ErrorCode.PAYMENT_REFUND_FAILED);
         }
 
         if (refundInitiated) {
-            payment.setStatus("REFUND_REQUESTED");
+            payment.setStatus(PaymentStatus.REFUND_REQUESTED);
             paymentRepository.save(payment);
 
             enroll.setCancelStatus(CancelStatusType.REQ);
             enrollRepository.save(enroll);
-            
+
             // TODO: Notify admin about the refund request
         } else {
             throw new BusinessRuleException("결제 게이트웨이에서 환불 요청 처리를 시작하지 못했습니다.", ErrorCode.PAYMENT_REFUND_FAILED);
@@ -99,35 +104,41 @@ public class MypagePaymentServiceImpl implements MypagePaymentService {
     }
 
     private PaymentDto convertToPaymentDto(Payment payment) {
-        if (payment == null) return null;
-        
+        if (payment == null)
+            return null;
+
         PaymentDto dto = new PaymentDto();
         dto.setPaymentId(payment.getId());
         dto.setAmount(payment.getPaidAmt() != null ? payment.getPaidAmt() : 0);
-        
+
         if (payment.getPaidAt() != null) {
             dto.setPaidAt(payment.getPaidAt().atOffset(ZoneOffset.UTC));
         }
-        dto.setStatus(payment.getStatus());
-        
+        if (payment.getStatus() != null) {
+            dto.setStatus(payment.getStatus().getDbValue());
+        } else {
+            dto.setStatus(null);
+        }
+
         // Enroll 정보 설정
         Enroll enroll = payment.getEnroll();
         if (enroll != null) {
             dto.setEnrollId(enroll.getEnrollId());
             dto.setUsesLocker(enroll.isUsesLocker());
-            dto.setFinalAmount(payment.getPaidAmt() != null ? payment.getPaidAmt() : (enroll.getFinalAmount() != null ? enroll.getFinalAmount() : 0) );
+            dto.setFinalAmount(payment.getPaidAmt() != null ? payment.getPaidAmt()
+                    : (enroll.getFinalAmount() != null ? enroll.getFinalAmount() : 0));
             dto.setDiscountPercentage(enroll.getDiscountAppliedPercentage());
-            
+
             // 회원권 유형
             if (enroll.getMembershipType() != null) {
                 dto.setMembershipType(enroll.getMembershipType().name());
             }
-            
+
             // 할인 유형 설정
             if (enroll.getDiscountType() != null) {
                 dto.setDiscountType(enroll.getDiscountType());
             }
-            
+
             // Lesson 정보 설정
             if (enroll.getLesson() != null) {
                 dto.setLessonTitle(enroll.getLesson().getTitle());
@@ -139,12 +150,12 @@ public class MypagePaymentServiceImpl implements MypagePaymentService {
                 dto.setLessonPrice(enroll.getLesson().getPrice());
             }
         }
-        
+
         // Payment 필드에서 사물함 요금 설정
         if (payment.getLockerAmount() != null) {
             dto.setLockerFee(payment.getLockerAmount());
         }
-        
+
         return dto;
     }
-} 
+}

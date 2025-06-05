@@ -26,8 +26,9 @@ public class Payment {
     @JoinColumn(name = "enroll_id", nullable = false)
     private Enroll enroll;
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)
-    private String status; // PAID | FAILED | CANCELED | PARTIAL_REFUNDED | REFUND_REQUESTED
+    private PaymentStatus status;
 
     @Column(name = "paid_at")
     private LocalDateTime paidAt;
@@ -95,4 +96,4 @@ public class Payment {
     protected void onUpdate() {
         updatedAt = LocalDateTime.now();
     }
-} 
+}

@@ -237,6 +237,7 @@ nice:
 
 # KISPG Configurations
 kispg:
+  url: ${KISPG_URL:https://testapi.kispg.co.kr}
   mid: ${KISPG_MID}
   merchantKey: ${KISPG_MERCHANT_KEY}
 
