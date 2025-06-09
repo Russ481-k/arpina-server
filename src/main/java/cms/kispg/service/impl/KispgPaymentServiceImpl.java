@@ -32,8 +32,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.HttpServerErrorException;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -61,8 +59,6 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
     private final LessonRepository lessonRepository;
     private final LockerService lockerService;
     private final PaymentRepository paymentRepository;
-
-    private KispgPaymentResultDto kispgResult;
 
     @Value("${kispg.url}")
     private String kispgUrl;
@@ -629,30 +625,23 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
                     logger.info("  - resultMsg: {}", resultMsg);
                     responseMap.forEach((key, value) -> logger.debug("    {}: {}", key, value));
 
-                    if ("0000".equals(resultCd)) {
-                        logger.info("✅ KISPG 승인 성공 (Result Code: {})", resultCd);
-                        this.kispgResult = objectMapper.convertValue(responseMap, KispgPaymentResultDto.class);
+                    if ("0000".equals(resultCd) || "3001".equals(resultCd)) {
+                        logger.info("✅ KISPG 승인 성공! (resultCd: {})", resultCd);
                         return true;
                     } else {
-                        logger.error("❌ KISPG 승인 실패: Result Code = {}, Result Msg = {}", resultCd, resultMsg);
+                        logger.error("❌ KISPG 승인 실패: [{}] {}", resultCd, resultMsg);
                         return false;
                     }
+                } else {
+                    logger.error("❌ KISPG API 응답 본문이 비어있습니다.");
+                    return false;
                 }
-                logger.error("❌ KISPG 승인 실패: 응답 본문이 비어있습니다.");
+            } else {
+                logger.error("❌ KISPG 승인 API HTTP 오류 - Status: {}", response.getStatusCode());
                 return false;
             }
-            logger.error("❌ KISPG 승인 실패: HTTP Status Code = {}", response.getStatusCode());
-            return false;
-        } catch (HttpClientErrorException e) {
-            logger.error("❌ KISPG 승인 API 호출 중 클라이언트 오류 발생 (4xx): HTTP Status = {}, Response Body = {}",
-                    e.getRawStatusCode(), e.getResponseBodyAsString(), e);
-            return false;
-        } catch (HttpServerErrorException e) {
-            logger.error("❌ KISPG 승인 API 호출 중 서버 오류 발생 (5xx): HTTP Status = {}, Response Body = {}",
-                    e.getRawStatusCode(), e.getResponseBodyAsString(), e);
-            return false;
         } catch (Exception e) {
-            logger.error("❌ KISPG 승인 API 호출 중 알 수 없는 오류 발생: {}", e.getMessage(), e);
+            logger.error("❌ KISPG 승인 API 호출 중 예외 발생:", e);
             return false;
         }
     }
