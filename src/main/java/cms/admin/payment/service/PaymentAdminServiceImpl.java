@@ -35,10 +35,11 @@ public class PaymentAdminServiceImpl implements PaymentAdminService {
 
     @Override
     @Transactional(readOnly = true)
-    public Page<PaymentAdminDto> getAllPayments(Long enrollId, String userId, String tid,
+    public Page<PaymentAdminDto> getAllPayments(Long lessonId, Long enrollId, String userId, String tid,
             LocalDate startDate, LocalDate endDate, PaymentStatus status,
             Pageable pageable) {
-        Specification<Payment> spec = PaymentSpecification.filterByAdminCriteria(enrollId, userId, tid, startDate,
+        Specification<Payment> spec = PaymentSpecification.filterByAdminCriteria(lessonId, enrollId, userId, tid,
+                startDate,
                 endDate, status);
         Page<Payment> paymentPage = paymentRepository.findAll(spec, pageable);
         return paymentPage.map(this::convertToPaymentAdminDto);

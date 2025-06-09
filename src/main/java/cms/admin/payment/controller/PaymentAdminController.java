@@ -15,6 +15,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import cms.payment.domain.PaymentStatus;
+import cms.admin.payment.dto.KispgQueryRequestDto;
+import cms.kispg.service.KispgPaymentService;
 
 import javax.validation.Valid;
 import java.time.LocalDate;
@@ -28,10 +30,12 @@ import java.util.Map;
 public class PaymentAdminController {
 
     private final PaymentAdminService paymentAdminService;
+    private final KispgPaymentService kispgPaymentService;
 
     @Operation(summary = "모든 결제/환불 내역 조회", description = "다양한 필터와 페이징을 적용하여 결제 및 환불 내역을 조회합니다.")
     @GetMapping
     public ResponseEntity<ApiResponseSchema<Page<PaymentAdminDto>>> getAllPayments(
+            @Parameter(description = "강습 ID") @RequestParam(required = false) Long lessonId,
             @Parameter(description = "신청 ID") @RequestParam(required = false) Long enrollId,
             @Parameter(description = "사용자 UUID") @RequestParam(required = false) String userId,
             @Parameter(description = "KISPG 거래 ID (TID)") @RequestParam(required = false) String tid,
@@ -39,8 +43,8 @@ public class PaymentAdminController {
             @Parameter(description = "조회 종료일 (YYYY-MM-DD)") @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
             @Parameter(description = "결제 상태 (PAID, FAILED, CANCELED, PARTIAL_REFUNDED, REFUND_REQUESTED)") @RequestParam(required = false) PaymentStatus status,
             @PageableDefault(size = 10, sort = "paidAt,desc") Pageable pageable) {
-        Page<PaymentAdminDto> payments = paymentAdminService.getAllPayments(enrollId, userId, tid, startDate, endDate,
-                status, pageable);
+        Page<PaymentAdminDto> payments = paymentAdminService.getAllPayments(lessonId, enrollId, userId, tid, startDate,
+                endDate, status, pageable);
         return ResponseEntity.ok(ApiResponseSchema.success(payments, "결제 내역 조회 성공"));
     }
 
@@ -70,5 +74,13 @@ public class PaymentAdminController {
 
         PaymentAdminDto updatedPayment = paymentAdminService.manualRefund(paymentId, amount, reason, adminNote);
         return ResponseEntity.ok(ApiResponseSchema.success(updatedPayment, "수동 환불 처리 성공"));
+    }
+
+    @Operation(summary = "PG사 결제 내역 직접 조회", description = "PG사에 특정 거래의 상세 내역을 직접 조회하여 DB와 대사합니다.")
+    @PostMapping("/query-pg")
+    public ResponseEntity<ApiResponseSchema<Map<String, Object>>> queryPaymentFromPg(
+            @Valid @RequestBody KispgQueryRequestDto requestDto) {
+        Map<String, Object> pgTransactionDetails = kispgPaymentService.queryTransactionAtPg(requestDto);
+        return ResponseEntity.ok(ApiResponseSchema.success(pgTransactionDetails, "PG사 결제 내역 조회 성공"));
     }
 }

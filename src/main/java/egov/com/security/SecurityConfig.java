@@ -37,28 +37,29 @@ import java.util.List;
 import javax.servlet.MultipartConfigElement;
 
 /**
- * fileName       : SecurityConfig
- * author         : crlee
- * date           : 2023/06/10
- * description    :
+ * fileName : SecurityConfig
+ * author : crlee
+ * date : 2023/06/10
+ * description :
  * ===========================================================
- * DATE              AUTHOR             NOTE
+ * DATE AUTHOR NOTE
  * -----------------------------------------------------------
- * 2023/06/10        crlee       최초 생성
+ * 2023/06/10 crlee 최초 생성
  */
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
-	
+
 	private final CustomUserDetailsService userDetailsService;
 	private final JwtRequestFilter jwtRequestFilter;
 	private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
 	private final RequestMatcher permitAllRequestMatcher;
-	
+
 	@Value("${cors.allowed-origins}")
 	private String corsAllowedOrigins;
+
 	@Bean
 	public static RequestMatcher permitAllRequestMatcherBean() {
 		List<RequestMatcher> matchers = new ArrayList<>();
@@ -66,30 +67,29 @@ public class SecurityConfig {
 		matchers.add(new AntPathRequestMatcher("/**", HttpMethod.OPTIONS.toString()));
 
 		List<String> permitAllAntPatterns = Arrays.asList(
-			"/login/**",
-			"/swagger-ui/**",
-			"/v3/api-docs/**",
-			"/swagger-resources/**",
-			"/webjars/**",
-			"/nice/checkplus/**",
-			"/api/v1/v3/api-docs/**",
-			"/api/v1/auth/**",
-			"/api/v1/cms/menu/public",
-			"/api/v1/cms/menu/public/**/page-details",
-			"/api/v1/cms/template/public",
-			"/api/v1/cms/template",
-			"/api/v1/cms/bbs/article",
-			"/api/v1/cms/bbs/article/**",
-			"/api/v1/cms/bbs/article/board/**",
-			"/api/v1/cms/bbs",
-			"/api/v1/cms/bbs/**",
-			"/api/v1/cms/bbs/master",
-			"/api/v1/cms/schedule/public**",
-			"/api/v1/cms/schedule/**",
-			"/api/v1/cms/file/public/**",
-			"/api/v1/swimming/lessons/**",
-			"/api/v1/nice/checkplus/**"
-		);
+				"/login/**",
+				"/swagger-ui/**",
+				"/v3/api-docs/**",
+				"/swagger-resources/**",
+				"/webjars/**",
+				"/nice/checkplus/**",
+				"/api/v1/v3/api-docs/**",
+				"/api/v1/auth/**",
+				"/api/v1/cms/menu/public",
+				"/api/v1/cms/menu/public/**/page-details",
+				"/api/v1/cms/template/public",
+				"/api/v1/cms/template",
+				"/api/v1/cms/bbs/article",
+				"/api/v1/cms/bbs/article/**",
+				"/api/v1/cms/bbs/article/board/**",
+				"/api/v1/cms/bbs",
+				"/api/v1/cms/bbs/**",
+				"/api/v1/cms/bbs/master",
+				"/api/v1/cms/schedule/public**",
+				"/api/v1/cms/schedule/**",
+				"/api/v1/cms/file/public/**",
+				"/api/v1/swimming/lessons/**",
+				"/api/v1/nice/checkplus/**");
 		for (String pattern : permitAllAntPatterns) {
 			matchers.add(new AntPathRequestMatcher(pattern));
 		}
@@ -103,35 +103,37 @@ public class SecurityConfig {
 	@Bean
 	public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 		http
-			.cors().configurationSource(corsConfigurationSource())
-			.and()
-			.csrf().disable()
-			.sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-			.and()
-			.authorizeHttpRequests(authz -> authz
-				.requestMatchers(this.permitAllRequestMatcher).permitAll()
-				.antMatchers(
-					HttpMethod.POST, "/api/v1/cms/enterprises"
-				).hasRole("ADMIN")
-				.antMatchers(
-					HttpMethod.PUT, "/api/v1/cms/enterprises/{id}"
-				).hasRole("ADMIN")
-				.antMatchers(
-					HttpMethod.DELETE, "/api/v1/cms/enterprises/{id}"
-				).hasRole("ADMIN")
-				.antMatchers(
-					"/api/v1/cms/menu",
-					"/api/v1/cms/menu/type/**",
-					"/api/v1/cms/bbs/master/**",
-					"/api/v1/cms/content",
-					"/api/v1/cms/user",
-					"/api/v1/cms/file/private/**"
-				).authenticated()
-				.antMatchers("/api/v1/mypage/**").hasRole("USER")
-				.anyRequest().authenticated()
-			)
-			.addFilterBefore(jwtRequestFilter, UsernamePasswordAuthenticationFilter.class)
-			.exceptionHandling()
+				// .cors().configurationSource(corsConfigurationSource())
+				// .and()
+				.csrf().disable()
+				.sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+				.and()
+				.authorizeHttpRequests(authz -> authz
+						.requestMatchers(this.permitAllRequestMatcher).permitAll()
+						.antMatchers(
+								HttpMethod.POST, "/api/v1/cms/enterprises")
+						.hasRole("ADMIN")
+						.antMatchers(
+								HttpMethod.PUT, "/api/v1/cms/enterprises/{id}")
+						.hasRole("ADMIN")
+						.antMatchers(
+								HttpMethod.DELETE, "/api/v1/cms/enterprises/{id}")
+						.hasRole("ADMIN")
+						.antMatchers(
+								HttpMethod.POST, "/api/v1/cms/payments/**")
+						.hasAnyRole("ADMIN", "SYSTEM_ADMIN")
+						.antMatchers(
+								"/api/v1/cms/menu",
+								"/api/v1/cms/menu/type/**",
+								"/api/v1/cms/bbs/master/**",
+								"/api/v1/cms/content",
+								"/api/v1/cms/user",
+								"/api/v1/cms/file/private/**")
+						.authenticated()
+						.antMatchers("/api/v1/mypage/**").hasRole("USER")
+						.anyRequest().authenticated())
+				.addFilterBefore(jwtRequestFilter, UsernamePasswordAuthenticationFilter.class)
+				.exceptionHandling()
 				.authenticationEntryPoint(jwtAuthenticationEntryPoint);
 		return http.build();
 	}
@@ -157,25 +159,24 @@ public class SecurityConfig {
 	@Bean
 	protected CorsConfigurationSource corsConfigurationSource() {
 		CorsConfiguration configuration = new CorsConfiguration();
-		
+
 		// 개발환경용 Origin 설정
 		String[] origins = corsAllowedOrigins.split(",");
 		configuration.setAllowedOriginPatterns(Arrays.asList(origins));
 		configuration.setAllowedMethods(Arrays.asList("HEAD", "POST", "GET", "DELETE", "PUT", "PATCH", "OPTIONS"));
 		configuration.setAllowedHeaders(Arrays.asList(
-			"Authorization", 
-			"Cache-Control", 
-			"Content-Type",
-			"Origin",
-			"Accept",
-			"X-Requested-With",
-			"Access-Control-Request-Method",
-			"Access-Control-Request-Headers"
-		));
+				"Authorization",
+				"Cache-Control",
+				"Content-Type",
+				"Origin",
+				"Accept",
+				"X-Requested-With",
+				"Access-Control-Request-Method",
+				"Access-Control-Request-Headers"));
 		configuration.setAllowCredentials(true);
 		configuration.setExposedHeaders(Arrays.asList("Authorization"));
 		configuration.setMaxAge(3600L);
-		
+
 		UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
 		source.registerCorsConfiguration("/**", configuration); // CORS 설정 활성화
 		return source;
