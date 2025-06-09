@@ -12,17 +12,18 @@ public enum ErrorCode {
     INTERNAL_SERVER_ERROR("CM_0001", "서버 내부 오류가 발생했습니다. 관리자에게 문의해주세요.", HttpStatus.INTERNAL_SERVER_ERROR),
     INVALID_INPUT_VALUE("CM_0002", "입력값이 유효하지 않습니다. 다시 확인해주세요.", HttpStatus.BAD_REQUEST),
     ACCESS_DENIED("CM_0003", "요청에 대한 접근 권한이 없습니다.", HttpStatus.FORBIDDEN),
-    AUTHENTICATION_FAILED("CM_0004", "사용자 인증에 실패했습니다. 로그인 정보를 확인해주세요.", HttpStatus.UNAUTHORIZED),
-    RESOURCE_NOT_FOUND("CM_0005", "요청한 리소스를 찾을 수 없습니다.", HttpStatus.NOT_FOUND),
-    METHOD_NOT_ALLOWED("CM_0006", "허용되지 않은 HTTP 메소드입니다.", HttpStatus.METHOD_NOT_ALLOWED),
-    REQUEST_TIMEOUT("CM_0007", "요청 처리 시간이 초과되었습니다.", HttpStatus.REQUEST_TIMEOUT),
-    SERVICE_UNAVAILABLE("CM_0008", "현재 서비스를 사용할 수 없습니다. 잠시 후 다시 시도해주세요.", HttpStatus.SERVICE_UNAVAILABLE),
-    DATA_INTEGRITY_VIOLATION("CM_0009", "데이터 무결성 제약조건을 위반했습니다. 입력값을 확인해주세요.", HttpStatus.CONFLICT),
+    AUTHENTICATION_FAILED("CM_0004", "로그인이 필요한 서비스입니다. 로그인 후 이용해 주세요.", HttpStatus.UNAUTHORIZED),
+    SESSION_EXPIRED("CM_0005", "로그인 세션이 만료되었습니다. 다시 로그인해 주세요.", HttpStatus.UNAUTHORIZED),
+    RESOURCE_NOT_FOUND("CM_0006", "요청한 리소스를 찾을 수 없습니다.", HttpStatus.NOT_FOUND),
+    METHOD_NOT_ALLOWED("CM_0007", "허용되지 않은 HTTP 메소드입니다.", HttpStatus.METHOD_NOT_ALLOWED),
+    REQUEST_TIMEOUT("CM_0008", "요청 처리 시간이 초과되었습니다.", HttpStatus.REQUEST_TIMEOUT),
+    SERVICE_UNAVAILABLE("CM_0009", "현재 서비스를 사용할 수 없습니다. 잠시 후 다시 시도해주세요.", HttpStatus.SERVICE_UNAVAILABLE),
+    DATA_INTEGRITY_VIOLATION("CM_0010", "데이터 무결성 제약조건을 위반했습니다. 입력값을 확인해주세요.", HttpStatus.CONFLICT),
 
     // User Errors (US_xxxx)
     USER_NOT_FOUND("US_0001", "해당 사용자를 찾을 수 없습니다.", HttpStatus.NOT_FOUND),
     DUPLICATE_USERNAME("US_0002", "이미 사용 중인 사용자 ID입니다.", HttpStatus.CONFLICT), // username 중복은 DUPLICATE_USERNAME 사용
-    DUPLICATE_EMAIL("US_0003", "이미 사용 중인 이메일입니다.", HttpStatus.CONFLICT),    // email 중복은 DUPLICATE_EMAIL 사용
+    DUPLICATE_EMAIL("US_0003", "이미 사용 중인 이메일입니다.", HttpStatus.CONFLICT), // email 중복은 DUPLICATE_EMAIL 사용
     PASSWORD_MISMATCH("US_0004", "비밀번호가 일치하지 않습니다.", HttpStatus.BAD_REQUEST),
     INVALID_PASSWORD_FORMAT("US_0005", "비밀번호 형식이 올바르지 않습니다.", HttpStatus.BAD_REQUEST),
     ACCOUNT_LOCKED("US_0006", "계정이 잠겼습니다. 관리자에게 문의하세요.", HttpStatus.FORBIDDEN),
@@ -57,7 +58,8 @@ public enum ErrorCode {
     PAYMENT_PAGE_SLOT_UNAVAILABLE("EN_0007", "정원 마감 또는 신청 가능한 슬롯이 없습니다.", HttpStatus.CONFLICT),
     ALREADY_CANCELLED_ENROLLMENT("EN_0008", "이미 취소 처리 중이거나 완료된 신청입니다.", HttpStatus.CONFLICT),
     RENEWAL_PERIOD_INVALID("EN_0009", "재수강 신청 기간이 아닙니다.", HttpStatus.BAD_REQUEST),
-    ENROLLMENT_PREVIOUSLY_CANCELLED_BY_ADMIN("EN_0010", "해당 강습에 대한 이전 신청이 관리자에 의해 취소된 내역이 있어 재신청할 수 없습니다.", HttpStatus.FORBIDDEN),
+    ENROLLMENT_PREVIOUSLY_CANCELLED_BY_ADMIN("EN_0010", "해당 강습에 대한 이전 신청이 관리자에 의해 취소된 내역이 있어 재신청할 수 없습니다.",
+            HttpStatus.FORBIDDEN),
     DUPLICATE_ENROLLMENT("EN_0011", "이미 해당 강습에 신청 내역이 존재합니다.", HttpStatus.CONFLICT),
     REGISTRATION_PERIOD_INVALID("EN_0012", "신청 기간이 아닙니다.", HttpStatus.BAD_REQUEST),
 
@@ -72,6 +74,8 @@ public enum ErrorCode {
     PAYMENT_CANCEL_NOT_ALLOWED("PM_0008", "해당 결제는 현재 취소할 수 없는 상태입니다.", HttpStatus.BAD_REQUEST),
     PAYMENT_REFUND_FAILED("PM_0009", "결제 환불 처리 중 오류가 발생했습니다.", HttpStatus.INTERNAL_SERVER_ERROR),
     PAYMENT_GATEWAY_APPROVAL_FAILED("PM_0010", "결제 게이트웨이 승인에 실패했습니다.", HttpStatus.BAD_REQUEST),
+    CANNOT_CALCULATE_REFUND("PM_0011", "환불액을 계산할 수 없는 상태입니다.", HttpStatus.BAD_REQUEST),
+    PAYMENT_CANCEL_FAILED("PM_0012", "PG사 결제 취소에 실패했습니다.", HttpStatus.INTERNAL_SERVER_ERROR),
 
     // Locker Errors (LK_xxxx)
     LOCKER_NOT_AVAILABLE("LK_0001", "사용 가능한 사물함이 없습니다.", HttpStatus.CONFLICT),
@@ -89,4 +93,4 @@ public enum ErrorCode {
     private final String code;
     private final String defaultMessage;
     private final HttpStatus httpStatus;
-} 
+}

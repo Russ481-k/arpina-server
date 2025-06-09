@@ -28,7 +28,6 @@ public class CancelRequestAdminDto {
 
     private LocalDateTime requestedAt; // 사용자 요청 시각 또는 취소 처리 요청된 시각
     private String userReason;
-    private String adminComment;
 
     @Data
     @Builder

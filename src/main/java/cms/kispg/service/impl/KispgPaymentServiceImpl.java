@@ -32,6 +32,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -44,6 +46,8 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import cms.kispg.dto.KispgCancelRequestDto;
+import cms.kispg.dto.KispgCancelResponseDto;
 
 @Service
 @RequiredArgsConstructor
@@ -57,6 +61,8 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
     private final LessonRepository lessonRepository;
     private final LockerService lockerService;
     private final PaymentRepository paymentRepository;
+
+    private KispgPaymentResultDto kispgResult;
 
     @Value("${kispg.url}")
     private String kispgUrl;
@@ -623,23 +629,30 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
                     logger.info("  - resultMsg: {}", resultMsg);
                     responseMap.forEach((key, value) -> logger.debug("    {}: {}", key, value));
 
-                    if ("0000".equals(resultCd) || "3001".equals(resultCd)) {
-                        logger.info("✅ KISPG 승인 성공! (resultCd: {})", resultCd);
+                    if ("0000".equals(resultCd)) {
+                        logger.info("✅ KISPG 승인 성공 (Result Code: {})", resultCd);
+                        this.kispgResult = objectMapper.convertValue(responseMap, KispgPaymentResultDto.class);
                         return true;
                     } else {
-                        logger.error("❌ KISPG 승인 실패: [{}] {}", resultCd, resultMsg);
+                        logger.error("❌ KISPG 승인 실패: Result Code = {}, Result Msg = {}", resultCd, resultMsg);
                         return false;
                     }
-                } else {
-                    logger.error("❌ KISPG API 응답 본문이 비어있습니다.");
-                    return false;
                 }
-            } else {
-                logger.error("❌ KISPG 승인 API HTTP 오류 - Status: {}", response.getStatusCode());
+                logger.error("❌ KISPG 승인 실패: 응답 본문이 비어있습니다.");
                 return false;
             }
+            logger.error("❌ KISPG 승인 실패: HTTP Status Code = {}", response.getStatusCode());
+            return false;
+        } catch (HttpClientErrorException e) {
+            logger.error("❌ KISPG 승인 API 호출 중 클라이언트 오류 발생 (4xx): HTTP Status = {}, Response Body = {}",
+                    e.getRawStatusCode(), e.getResponseBodyAsString(), e);
+            return false;
+        } catch (HttpServerErrorException e) {
+            logger.error("❌ KISPG 승인 API 호출 중 서버 오류 발생 (5xx): HTTP Status = {}, Response Body = {}",
+                    e.getRawStatusCode(), e.getResponseBodyAsString(), e);
+            return false;
         } catch (Exception e) {
-            logger.error("❌ KISPG 승인 API 호출 중 예외 발생:", e);
+            logger.error("❌ KISPG 승인 API 호출 중 알 수 없는 오류 발생: {}", e.getMessage(), e);
             return false;
         }
     }
@@ -713,5 +726,79 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
                 logger.warn("Unknown gender code: {}. Defaulting to MALE for locker assignment.", genderCode);
                 return "MALE";
         }
+    }
+
+    @Override
+    @Transactional
+    public KispgCancelResponseDto cancelPayment(String tid, String moid, int cancelAmount, String reason) {
+        logger.info("결제 취소 요청 시작. TID: {}, MOID: {}, 취소 금액: {}, 사유: {}", tid, moid, cancelAmount, reason);
+
+        // 1. 해시 생성 및 요청 DTO 빌드
+        String ediDate = generateEdiDate();
+        String cancelAmountStr = String.valueOf(cancelAmount);
+        String hashData = generateCancelHash(kispgMid, ediDate, cancelAmountStr, tid);
+
+        KispgCancelRequestDto requestDto = KispgCancelRequestDto.builder()
+                .mid(kispgMid)
+                .tid(tid)
+                .ordNo(moid)
+                .canAmt(cancelAmountStr)
+                .canMsg(reason)
+                .partCanFlg("1") // 부분취소 플래그 (0:전체, 1:부분) - 우선 부분취소로 고정
+                .ediDate(ediDate)
+                .encData(hashData)
+                .charset("UTF-8")
+                .build();
+
+        // 2. PG사 취소 API 호출
+        return callKispgCancelApi(requestDto);
+    }
+
+    private KispgCancelResponseDto callKispgCancelApi(KispgCancelRequestDto requestDto) {
+        String url = kispgUrl + "/v2/cancel";
+        logger.info("KISPG 취소 API 호출. URL: {}, 요청 데이터: {}", url, requestDto);
+
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            ObjectMapper objectMapper = new ObjectMapper();
+            String jsonBody = objectMapper.writeValueAsString(requestDto);
+
+            HttpEntity<String> entity = new HttpEntity<>(jsonBody, headers);
+            RestTemplate restTemplate = new RestTemplate();
+
+            ResponseEntity<KispgCancelResponseDto> response = restTemplate.postForEntity(url, entity,
+                    KispgCancelResponseDto.class);
+
+            if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
+                KispgCancelResponseDto responseBody = response.getBody();
+                logger.info("KISPG 취소 API 응답 성공. 응답: {}", responseBody);
+
+                // 성공 코드: "2001" (전체취소), "2002" (부분취소)
+                if ("2001".equals(responseBody.getResultCd()) || "2002".equals(responseBody.getResultCd())) {
+                    return responseBody;
+                } else {
+                    logger.error("KISPG 취소 실패. Result Code: {}, Message: {}", responseBody.getResultCd(),
+                            responseBody.getResultMsg());
+                    throw new BusinessRuleException(ErrorCode.PAYMENT_REFUND_FAILED,
+                            "PG사 취소 실패: " + responseBody.getResultMsg());
+                }
+            } else {
+                logger.error("KISPG 취소 API 호출 실패. 응답 코드: {}, 응답 본문: {}", response.getStatusCode(), response.getBody());
+                throw new BusinessRuleException(ErrorCode.PAYMENT_REFUND_FAILED,
+                        "PG사 통신 오류 (HTTP " + response.getStatusCode() + ")");
+            }
+        } catch (Exception e) {
+            logger.error("KISPG 취소 API 호출 중 예외 발생", e);
+            throw new BusinessRuleException(ErrorCode.PAYMENT_REFUND_FAILED, "PG사 취소 처리 중 오류 발생: " + e.getMessage());
+        }
+    }
+
+    private String generateCancelHash(String mid, String ediDate, String canAmt, String tid) {
+        // PG사 취소 API 명세에 따른 해시 생성
+        // 기존 결제승인 해시 생성(mid + ediDate + amt + merchantKey)과 유사하게 tid를 제외하고 생성
+        String data = mid + ediDate + canAmt + merchantKey;
+        return generateHash(data);
     }
 }

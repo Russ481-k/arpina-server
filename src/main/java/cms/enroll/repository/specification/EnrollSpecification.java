@@ -17,35 +17,42 @@ import java.util.Arrays;
 public class EnrollSpecification {
 
     public static Specification<Enroll> filterByAdminCriteria(
-            Long lessonId, String userId, String payStatus, String cancelStatus, Integer year, Integer month, boolean excludeUnpaidParam) {
+            Long lessonId, String userId, String payStatus, String cancelStatus, Integer year, Integer month,
+            boolean excludeUnpaidParam) {
         return (root, query, criteriaBuilder) -> {
             List<Predicate> predicates = new ArrayList<>();
             Join<Enroll, Lesson> lessonJoin = null;
             Join<Enroll, User> userJoin = null;
 
             if (lessonId != null) {
-                if (lessonJoin == null) lessonJoin = root.join("lesson");
+                if (lessonJoin == null)
+                    lessonJoin = root.join("lesson");
                 predicates.add(criteriaBuilder.equal(lessonJoin.get("lessonId"), lessonId));
             }
 
             if (userId != null && !userId.trim().isEmpty()) {
-                if (userJoin == null) userJoin = root.join("user");
+                if (userJoin == null)
+                    userJoin = root.join("user");
                 predicates.add(criteriaBuilder.equal(userJoin.get("uuid"), userId));
             }
 
             // Default payStatus filtering for general enrollment list
             if (payStatus != null && !payStatus.trim().isEmpty()) {
-                predicates.add(criteriaBuilder.equal(criteriaBuilder.upper(root.get("payStatus")), payStatus.toUpperCase()));
+                predicates.add(
+                        criteriaBuilder.equal(criteriaBuilder.upper(root.get("payStatus")), payStatus.toUpperCase()));
             } else {
-                // If no specific payStatus is given, default to PAID or UNPAID for the general list
+                // If no specific payStatus is given, default to PAID or UNPAID for the general
+                // list
                 Predicate paid = criteriaBuilder.equal(criteriaBuilder.upper(root.get("payStatus")), "PAID");
                 Predicate unpaid = criteriaBuilder.equal(criteriaBuilder.upper(root.get("payStatus")), "UNPAID");
                 predicates.add(criteriaBuilder.or(paid, unpaid));
             }
-            
+
             // Exclude canceled statuses for the general enrollment list
-            // Assuming 'status' field holds values like 'APPLIED', 'CANCELED', 'CANCELED_BY_ADMIN'
-            List<String> excludedStatuses = Arrays.asList("CANCELED", "CANCELED_BY_ADMIN"); // Add other canceled status if any
+            // Assuming 'status' field holds values like 'APPLIED', 'CANCELED',
+            // 'CANCELED_BY_ADMIN'
+            List<String> excludedStatuses = Arrays.asList("CANCELED", "CANCELED_BY_ADMIN"); // Add other canceled status
+                                                                                            // if any
             predicates.add(criteriaBuilder.not(root.get("status").in(excludedStatuses)));
 
             if (cancelStatus != null && !cancelStatus.trim().isEmpty()) {
@@ -58,7 +65,8 @@ public class EnrollSpecification {
             }
 
             if (year != null) {
-                if (lessonJoin == null) lessonJoin = root.join("lesson");
+                if (lessonJoin == null)
+                    lessonJoin = root.join("lesson");
                 if (month != null && month >= 1 && month <= 12) {
                     YearMonth yearMonth = YearMonth.of(year, month);
                     LocalDate monthStart = yearMonth.atDay(1);
@@ -71,16 +79,22 @@ public class EnrollSpecification {
                 }
             }
 
-            // The excludeUnpaidParam from controller is for getAllEnrollments, typically false.
-            // If it's true for some reason, and payStatus was not specified (defaulting to PAID/UNPAID),
-            // then UNPAID would be excluded. If payStatus *was* specified as UNPAID, this param wouldn't override that.
-            // This existing excludeUnpaidParam seems to conflict a bit with the new default PAID/UNPAID logic.
-            // For now, keeping its effect. If payStatus is not specified, excludeUnpaidParam=true will make it PAID only.
+            // The excludeUnpaidParam from controller is for getAllEnrollments, typically
+            // false.
+            // If it's true for some reason, and payStatus was not specified (defaulting to
+            // PAID/UNPAID),
+            // then UNPAID would be excluded. If payStatus *was* specified as UNPAID, this
+            // param wouldn't override that.
+            // This existing excludeUnpaidParam seems to conflict a bit with the new default
+            // PAID/UNPAID logic.
+            // For now, keeping its effect. If payStatus is not specified,
+            // excludeUnpaidParam=true will make it PAID only.
             if (excludeUnpaidParam) {
-                 predicates.add(criteriaBuilder.notEqual(criteriaBuilder.upper(root.get("payStatus")), "UNPAID"));
+                predicates.add(criteriaBuilder.notEqual(criteriaBuilder.upper(root.get("payStatus")), "UNPAID"));
             }
 
-            // Ensure a default sort order if query.orderBy() is empty to avoid issues with pagination
+            // Ensure a default sort order if query.orderBy() is empty to avoid issues with
+            // pagination
             if (query.getResultType().equals(Enroll.class) && query.getOrderList().isEmpty()) {
                 query.orderBy(criteriaBuilder.desc(root.get("createdAt")));
             }
@@ -90,10 +104,10 @@ public class EnrollSpecification {
     }
 
     public static Specification<Enroll> filterForCancelAndRefundManagement(
-            Long lessonId, 
+            Long lessonId,
             List<Enroll.CancelStatusType> cancelStatusList,
             List<String> payStatusInList,
-            boolean useCombinedLogic, 
+            boolean useCombinedLogic,
             boolean excludeUnpaid) {
         return (root, query, criteriaBuilder) -> {
             List<Predicate> finalAndPredicates = new ArrayList<>();
@@ -108,31 +122,20 @@ public class EnrollSpecification {
             Predicate coreCancelRefundPredicate;
 
             // Define the base conditions for what constitutes a "cancel/refund item"
-            // This logic will be used for useCombinedLogic=true, AND as a fallback if explicit filters are empty.
+            // This logic will be used for useCombinedLogic=true, AND as a fallback if
+            // explicit filters are empty.
             Predicate userCancelRequests = criteriaBuilder.equal(root.get("cancelStatus"), Enroll.CancelStatusType.REQ);
             Predicate adminPendingRefund = criteriaBuilder.and(
-                criteriaBuilder.equal(root.get("cancelStatus"), Enroll.CancelStatusType.APPROVED),
-                criteriaBuilder.equal(criteriaBuilder.upper(root.get("payStatus")), "REFUND_PENDING_ADMIN_CANCEL")
-            );
-            // Enroll.status is 'CANCELED' or 'CANCELED_BY_ADMIN' or 'REFUNDED' (if 'REFUNDED' is a main status)
-            List<String> canceledOrRefundedEnrollStatuses = Arrays.asList("CANCELED", "CANCELED_BY_ADMIN", "REFUNDED"); // Add other relevant main statuses
-            Predicate mainStatusCanceledOrRefunded = root.get("status").in(canceledOrRefundedEnrollStatuses);
-            
-            // Include items with cancelStatus PENDING or APPROVED (covers various stages of cancellation)
-            List<Enroll.CancelStatusType> relevantCancelStatuses = Arrays.asList(
-                Enroll.CancelStatusType.REQ, 
-                Enroll.CancelStatusType.PENDING, // If PENDING is used and should be shown
-                Enroll.CancelStatusType.APPROVED // If simply APPROVED (e.g. refund completed) should be shown
-            );
-            Predicate relevantCancelStatusTypes = root.get("cancelStatus").in(relevantCancelStatuses);
+                    criteriaBuilder.equal(root.get("cancelStatus"), Enroll.CancelStatusType.APPROVED),
+                    criteriaBuilder.equal(criteriaBuilder.upper(root.get("payStatus")), "REFUND_PENDING_ADMIN_CANCEL"));
 
+            // Include items with ANY cancelStatus that is not NONE. This is the simplest
+            // way.
+            Predicate anyCancelStatus = criteriaBuilder.isNotNull(root.get("cancelStatus"));
+            Predicate notNoneCancelStatus = criteriaBuilder.notEqual(root.get("cancelStatus"),
+                    Enroll.CancelStatusType.NONE);
 
-            Predicate baseCancelRefundConditions = criteriaBuilder.or(
-                userCancelRequests, 
-                adminPendingRefund, 
-                mainStatusCanceledOrRefunded,
-                relevantCancelStatusTypes // Adding this to broaden the scope based on cancelStatus field
-            );
+            Predicate baseCancelRefundConditions = criteriaBuilder.and(anyCancelStatus, notNoneCancelStatus);
 
             if (useCombinedLogic) {
                 // A. Default view for /cancel-requests without specific filters
@@ -145,8 +148,8 @@ public class EnrollSpecification {
                 }
                 if (payStatusInList != null && !payStatusInList.isEmpty()) {
                     List<String> upperCasePayStatusInList = payStatusInList.stream()
-                                                                         .map(String::toUpperCase)
-                                                                         .collect(Collectors.toList());
+                            .map(String::toUpperCase)
+                            .collect(Collectors.toList());
                     explicitOrPredicates.add(criteriaBuilder.upper(root.get("payStatus")).in(upperCasePayStatusInList));
                 }
 
@@ -154,7 +157,8 @@ public class EnrollSpecification {
                     coreCancelRefundPredicate = criteriaBuilder.or(explicitOrPredicates.toArray(new Predicate[0]));
                 } else {
                     // No explicit status filters were given, but lessonId might be (handled above).
-                    // In this case (e.g., only lessonId is provided), we should still apply the base cancel/refund criteria.
+                    // In this case (e.g., only lessonId is provided), we should still apply the
+                    // base cancel/refund criteria.
                     coreCancelRefundPredicate = baseCancelRefundConditions;
                 }
             }
@@ -163,17 +167,22 @@ public class EnrollSpecification {
             // 3. Unpaid Exclusion (Conditional)
             // For "cancel/refund management", we generally want to see all relevant items,
             // including UNPAID CANCELED items (like enrollId: 21).
-            // So, the 'excludeUnpaid' parameter should typically be false for this specific API.
+            // So, the 'excludeUnpaid' parameter should typically be false for this specific
+            // API.
             if (excludeUnpaid) {
-                 // This will only apply if the service layer explicitly sets excludeUnpaid to true.
-                Predicate unpaidPredicate = criteriaBuilder.notEqual(criteriaBuilder.upper(root.get("payStatus")), "UNPAID");
+                // This will only apply if the service layer explicitly sets excludeUnpaid to
+                // true.
+                Predicate unpaidPredicate = criteriaBuilder.notEqual(criteriaBuilder.upper(root.get("payStatus")),
+                        "UNPAID");
                 finalAndPredicates.add(unpaidPredicate);
             }
-            
+
             Predicate finalPredicateConstruct;
             if (finalAndPredicates.isEmpty()) {
-                // This should not happen if baseCancelRefundConditions is always applied when no explicit filters.
-                // But as a fallback, prevent returning everything. Return nothing or throw error.
+                // This should not happen if baseCancelRefundConditions is always applied when
+                // no explicit filters.
+                // But as a fallback, prevent returning everything. Return nothing or throw
+                // error.
                 // For now, returning a predicate that matches nothing.
                 finalPredicateConstruct = criteriaBuilder.disjunction(); // Always false
             } else {
@@ -182,7 +191,8 @@ public class EnrollSpecification {
 
             // Default sort order
             if (query.getResultType().equals(Enroll.class) && query.getOrderList().isEmpty()) {
-                query.orderBy(criteriaBuilder.desc(root.get("createdAt"))); // or root.get("updatedAt") or specific cancel date
+                query.orderBy(criteriaBuilder.desc(root.get("createdAt"))); // or root.get("updatedAt") or specific
+                                                                            // cancel date
             }
 
             return finalPredicateConstruct;
@@ -192,12 +202,15 @@ public class EnrollSpecification {
     public static Specification<Enroll> filterByStatus(String status) {
         // Example basic implementation, assuming 'status' is a direct field in Enroll
         // This method was causing a linter error for not returning.
-        // Returning null is a valid way to indicate no specification if an empty or invalid status is passed,
-        // or it can be adapted to throw an error or return a "match all" / "match none" spec.
+        // Returning null is a valid way to indicate no specification if an empty or
+        // invalid status is passed,
+        // or it can be adapted to throw an error or return a "match all" / "match none"
+        // spec.
         if (status == null || status.trim().isEmpty()) {
-            return null; // Or (root, query, criteriaBuilder) -> criteriaBuilder.conjunction(); for match all
+            return null; // Or (root, query, criteriaBuilder) -> criteriaBuilder.conjunction(); for match
+                         // all
         }
-        return (root, query, criteriaBuilder) ->
-            criteriaBuilder.equal(criteriaBuilder.upper(root.get("status")), status.toUpperCase());
+        return (root, query, criteriaBuilder) -> criteriaBuilder.equal(criteriaBuilder.upper(root.get("status")),
+                status.toUpperCase());
     }
-} 
+}

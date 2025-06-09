@@ -135,12 +135,25 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
                     .lockerPaidAmt(payment.getLockerAmount() != null ? payment.getLockerAmount() : originalLockerFee)
                     .build();
 
-            // UNPAID 상태가 아닌 경우에만 환불 로직 호출
-            if (enroll.getPayStatus() != null && !enroll.getPayStatus().equalsIgnoreCase("UNPAID")) {
-                refundDetailsDto = enrollmentService.getRefundPreview(enroll.getEnrollId(),
-                        enroll.getDaysUsedForRefund());
-                if (refundDetailsDto != null && refundDetailsDto.getFinalRefundAmount() != null) {
-                    calculatedRefundInt = refundDetailsDto.getFinalRefundAmount().intValue();
+            // 1. 이미 환불이 완료된 경우, 기록된 환불액을 사용
+            if (enroll.getPayStatus() != null && "REFUNDED".equalsIgnoreCase(enroll.getPayStatus())) {
+                calculatedRefundInt = payment.getRefundedAmt() != null ? payment.getRefundedAmt() : 0;
+                refundDetailsDto = null; // 이미 환불되었으므로 미리보기 DTO는 null
+            }
+            // 2. 그 외 결제된 건에 대해서는 환불액 미리보기 시도
+            else if (enroll.getPayStatus() != null && !"UNPAID".equalsIgnoreCase(enroll.getPayStatus())) {
+                try {
+                    // getRefundPreview는 REFUNDED, FAILED, CANCELED 등의 상태에 대해 예외를 던질 수 있음
+                    refundDetailsDto = enrollmentService.getRefundPreview(enroll.getEnrollId(),
+                            enroll.getDaysUsedForRefund());
+                    if (refundDetailsDto != null && refundDetailsDto.getFinalRefundAmount() != null) {
+                        calculatedRefundInt = refundDetailsDto.getFinalRefundAmount().intValue();
+                    }
+                } catch (BusinessRuleException e) {
+                    // 환불 계산이 불가능한 상태(예: FAILED)의 경우, 미리보기 금액을 0으로 설정하고 로그만 남김
+                    logger.warn("환불액 미리보기 계산 중 예외 발생 (enrollId: {}): {}", enroll.getEnrollId(), e.getMessage());
+                    calculatedRefundInt = 0;
+                    refundDetailsDto = null;
                 }
             }
         } else {
@@ -163,7 +176,6 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
                 .requestedAt(
                         enroll.getCancelRequestedAt() != null ? enroll.getCancelRequestedAt() : enroll.getUpdatedAt())
                 .userReason(enroll.getCancelReason())
-                .adminComment(enroll.getCancelReason())
                 .build();
     }
 

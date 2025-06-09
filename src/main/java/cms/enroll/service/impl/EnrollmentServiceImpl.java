@@ -71,6 +71,7 @@ import java.time.format.DateTimeFormatter; // Added for formatting
 import java.util.regex.Matcher; // Added for regex parsing
 import java.util.regex.Pattern; // Added for regex parsing
 import java.util.Arrays; // For Arrays.asList
+import cms.payment.service.PaymentService;
 
 @Service("enrollmentServiceImpl")
 @Transactional
@@ -83,7 +84,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
     private final UserRepository userRepository;
     private final LessonRepository lessonRepository;
     private final LessonCapacityWebSocketHandler webSocketHandler;
-    // private final KispgService kispgService; // KISPG 서비스 주입 (실제 구현 시 필요)
+    private final PaymentService paymentService;
 
     @Value("${app.default-locker-fee:5000}") // Default to 5000 if not set in properties
     private int defaultLockerFee;
@@ -107,7 +108,8 @@ public class EnrollmentServiceImpl implements EnrollmentService {
             @Qualifier("lockerServiceImpl") LockerService lockerService,
             UserRepository userRepository,
             LessonRepository lessonRepository,
-            LessonCapacityWebSocketHandler webSocketHandler
+            LessonCapacityWebSocketHandler webSocketHandler,
+            PaymentService paymentService
     /* , KispgService kispgService */) { // 주입
         this.enrollRepository = enrollRepository;
         this.paymentRepository = paymentRepository;
@@ -116,6 +118,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         this.userRepository = userRepository;
         this.lessonRepository = lessonRepository;
         this.webSocketHandler = webSocketHandler;
+        this.paymentService = paymentService;
         // this.kispgService = kispgService;
     }
 
@@ -919,34 +922,50 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         int totalPaidAmount = payment.getPaidAmt() != null ? payment.getPaidAmt() : 0;
 
         if (finalRefundAmountForPg > 0) {
-            String kispgTid = payment.getTid();
-            if (kispgTid == null || kispgTid.trim().isEmpty()) {
+            if (payment.getTid() == null || payment.getTid().trim().isEmpty()) {
                 logger.error("KISPG TID가 없어 자동 환불 불가 (enrollId: {}). 관리자 확인 필요.", enrollId);
                 enroll.setCancelStatus(CancelStatusType.PENDING);
                 enroll.setCancelReason(
                         (enroll.getCancelReason() == null ? "" : enroll.getCancelReason()) + " [시스템: PG TID 없음]");
             } else {
-                // --- 임시 KISPG 연동 성공 처리 ---
-                logger.info("KISPG 부분 환불 성공 (임시) (enrollId: {}, tid: {}, amount: {})", enrollId, kispgTid,
-                        finalRefundAmountForPg);
-                payment.setRefundedAmt(
-                        (payment.getRefundedAmt() == null ? 0 : payment.getRefundedAmt()) + finalRefundAmountForPg);
-                payment.setRefundDt(LocalDateTime.now());
-                if (payment.getRefundedAmt() >= totalPaidAmount) {
-                    payment.setStatus(PaymentStatus.CANCELED);
-                    enroll.setPayStatus("REFUNDED");
-                } else if (payment.getRefundedAmt() > 0) {
-                    payment.setStatus(PaymentStatus.PARTIAL_REFUNDED);
-                    enroll.setPayStatus("PARTIALLY_REFUNDED");
+                try {
+                    // --- 실제 PG사 환불 요청 (상태 업데이트는 PaymentService에서 처리) ---
+                    String cancelReason = "관리자 승인에 의한 환불 처리";
+                    if (enroll.getCancelReason() != null && !enroll.getCancelReason().isEmpty()) {
+                        cancelReason = enroll.getCancelReason();
+                    }
+                    paymentService.requestCancelPayment(payment.getId(), finalRefundAmountForPg, cancelReason);
+
+                    // --- PG사 연동 성공 후 Enroll 상태 변경 ---
+                    logger.info("PG사 환불 요청 성공. Enroll 상태 업데이트 (enrollId: {})", enrollId);
+
+                    // Payment 객체를 다시 로드하여 최신 상태 확인
+                    Payment updatedPayment = paymentRepository.findById(payment.getId())
+                            .orElseThrow(() -> new ResourceNotFoundException(
+                                    "Payment record not found after cancellation", ErrorCode.PAYMENT_INFO_NOT_FOUND));
+
+                    if (updatedPayment.getStatus() == PaymentStatus.CANCELED) {
+                        enroll.setPayStatus("REFUNDED");
+                    } else if (updatedPayment.getStatus() == PaymentStatus.PARTIAL_REFUNDED) {
+                        enroll.setPayStatus("PARTIALLY_REFUNDED");
+                    }
+                    enroll.setCancelStatus(CancelStatusType.APPROVED);
+
+                } catch (BusinessRuleException e) {
+                    logger.error("PG사 환불 처리 실패 (enrollId: {}). 사유: {}", enrollId, e.getMessage());
+                    enroll.setCancelStatus(CancelStatusType.PENDING);
+                    enroll.setCancelReason(
+                            (enroll.getCancelReason() == null ? "" : enroll.getCancelReason()) + " [시스템: PG 환불 실패 - "
+                                    + e.getMessage() + "]");
                 }
-                enroll.setCancelStatus(CancelStatusType.APPROVED);
-                // --- 임시 KISPG 연동 성공 처리 끝 ---
             }
         } else { // 환불 금액이 0원인 경우 (for PAID enrollments)
             enroll.setPayStatus("REFUNDED");
             enroll.setCancelStatus(CancelStatusType.APPROVED);
-            if (payment != null)
+            if (payment != null) {
                 payment.setStatus(PaymentStatus.CANCELED);
+                paymentRepository.save(payment); // 0원 환불 시에도 payment 상태를 CANCELED로 업데이트
+            }
         }
 
         enroll.setCancelApprovedAt(LocalDateTime.now());
@@ -996,9 +1015,6 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         enroll.setLockerPgToken(null);
 
         enrollRepository.save(enroll);
-        if (payment != null) {
-            paymentRepository.save(payment);
-        }
         logger.info("PAID/Other enrollment ID: {} cancellation processed by admin.", enrollId);
     }
 
@@ -1006,18 +1022,30 @@ public class EnrollmentServiceImpl implements EnrollmentService {
     @Transactional(readOnly = true) // DB 변경 없음
     public CalculatedRefundDetailsDto getRefundPreview(Long enrollId, Integer manualUsedDaysPreview) {
         Enroll enroll = enrollRepository.findById(enrollId)
-                .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found with ID: " + enrollId,
+                .orElseThrow(() -> new ResourceNotFoundException("신청 정보를 찾을 수 없습니다. (ID: " + enrollId + ")",
                         ErrorCode.ENROLLMENT_NOT_FOUND));
-        List<Payment> paymentsPreview = paymentRepository.findByEnroll_EnrollIdOrderByCreatedAtDesc(enrollId);
-        if (paymentsPreview.isEmpty()) {
-            throw new ResourceNotFoundException("Payment record not found for enrollment ID: " + enrollId,
-                    ErrorCode.PAYMENT_INFO_NOT_FOUND);
-        }
-        Payment paymentForPreview = paymentsPreview.get(0); // Get the most recent payment
 
-        // 헬퍼 메서드를 사용하여 환불 상세 내역 계산 (계산 기준일: 오늘)
-        // manualUsedDaysPreview는 관리자가 화면에서 입력해본 값
-        return calculateRefundInternal(enroll, paymentForPreview, manualUsedDaysPreview, LocalDate.now());
+        // 환불 계산이 불가능한 상태(UNPAID, FAILED, CANCELED 등)에 대한 사전 예외 처리
+        if (enroll.getPayStatus() == null ||
+                Arrays.asList("UNPAID", "FAILED", "CANCELED", "REFUNDED")
+                        .contains(enroll.getPayStatus().toUpperCase())) {
+            throw new BusinessRuleException(
+                    "현재 상태에서는 환불 금액을 계산할 수 없습니다. (상태: " + enroll.getPayStatus() + ")",
+                    ErrorCode.CANNOT_CALCULATE_REFUND,
+                    HttpStatus.BAD_REQUEST);
+        }
+
+        // 환불의 기준이 되는 원본 결제(PAID 또는 PARTIAL_REFUNDED) 내역을 찾습니다.
+        Payment payment = paymentRepository.findByEnrollOrderByCreatedAtDesc(enroll)
+                .stream()
+                .filter(p -> p.getStatus() == PaymentStatus.PAID || p.getStatus() == PaymentStatus.PARTIAL_REFUNDED)
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "환불 처리에 필요한 결제 원본 내역을 찾을 수 없습니다. 데이터 확인이 필요합니다. (신청 ID: " + enrollId + ")",
+                        ErrorCode.PAYMENT_INFO_NOT_FOUND));
+
+        // 이 payment 객체를 사용하여 환불액 계산 로직을 수행합니다.
+        return calculateRefundInternal(enroll, payment, manualUsedDaysPreview, LocalDate.now());
     }
 
     @Override

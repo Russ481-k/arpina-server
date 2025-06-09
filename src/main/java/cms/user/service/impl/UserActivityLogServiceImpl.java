@@ -13,6 +13,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Propagation;
+import cms.user.domain.User;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -27,16 +29,30 @@ public class UserActivityLogServiceImpl implements UserActivityLogService {
 
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void logActivity(String uuid, String userUuid, String groupId, String organizationId, String action, String description,
-                          String userAgent, String createdBy, String createdIp) {
-        if (!userRepository.existsById(userUuid)) {
-            log.warn("User not found with UUID: {}", userUuid);
-            return;
+    public void logActivity(String uuid, String userUuid, String groupId, String organizationId, String action,
+            String description,
+            String userAgent, String createdBy, String createdIp) {
+
+        String effectiveOrganizationId = organizationId;
+
+        // 1. organizationId가 유효하지 않은 경우, userUuid를 통해 다시 조회
+        if (!StringUtils.hasText(effectiveOrganizationId)) {
+            User user = userRepository.findById(userUuid).orElse(null);
+            if (user != null && StringUtils.hasText(user.getOrganizationId())) {
+                effectiveOrganizationId = user.getOrganizationId();
+                log.debug("organizationId가 누락되어 사용자의 정보로 대체합니다. userUuid: {}, organizationId: {}", userUuid,
+                        effectiveOrganizationId);
+            } else {
+                // 사용자를 찾을 수 없거나 사용자에게도 organizationId가 없는 경우, 로그 기록을 건너뜀
+                log.warn("활동 로그 기록 실패: organizationId를 확인할 수 없습니다. userUuid: {}", userUuid);
+                return;
+            }
         }
 
-        UserActivityLog log = UserActivityLog.createLog(uuid, userUuid, groupId, organizationId, action, description,
+        UserActivityLog activityLog = UserActivityLog.createLog(uuid, userUuid, groupId, effectiveOrganizationId,
+                action, description,
                 userAgent, createdBy, createdIp);
-        userActivityLogRepository.save(log);
+        userActivityLogRepository.save(activityLog);
     }
 
     @Override
@@ -47,8 +63,10 @@ public class UserActivityLogServiceImpl implements UserActivityLogService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<UserActivityLog> getUserActivitiesByDateRange(String uuid, LocalDateTime startDate, LocalDateTime endDate) {
-        return userActivityLogRepository.findByUserUuidAndCreatedAtBetweenOrderByCreatedAtDesc(uuid, startDate, endDate);
+    public List<UserActivityLog> getUserActivitiesByDateRange(String uuid, LocalDateTime startDate,
+            LocalDateTime endDate) {
+        return userActivityLogRepository.findByUserUuidAndCreatedAtBetweenOrderByCreatedAtDesc(uuid, startDate,
+                endDate);
     }
 
     @Override
@@ -63,7 +81,7 @@ public class UserActivityLogServiceImpl implements UserActivityLogService {
     @Transactional(readOnly = true)
     public List<UserActivityLog> getUserActivityLogs(String uuid, LocalDateTime startDate, LocalDateTime endDate) {
         return userActivityLogRepository.findByUserUuidAndCreatedAtBetweenOrderByCreatedAtDesc(
-            uuid, startDate, endDate);
+                uuid, startDate, endDate);
     }
 
     @Override
@@ -108,4 +126,4 @@ public class UserActivityLogServiceImpl implements UserActivityLogService {
                 .updatedAt(log.getUpdatedAt())
                 .build();
     }
-} 
+}
