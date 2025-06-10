@@ -174,12 +174,18 @@ public class PaymentServiceImpl implements PaymentService {
             throw new BusinessRuleException(ErrorCode.PAYMENT_CANCEL_NOT_ALLOWED, "주문번호(MOID)가 없어 취소할 수 없습니다.");
         }
 
+        String payMethod = payment.getPayMethod();
+        if (payMethod == null || payMethod.trim().isEmpty() || "UNKNOWN".equalsIgnoreCase(payMethod)) {
+            throw new BusinessRuleException(ErrorCode.PAYMENT_CANCEL_NOT_ALLOWED, "결제수단(payMethod) 정보가 없어 취소할 수 없습니다.");
+        }
+
         // 1. PG사 취소 API 호출
-        KispgCancelResponseDto cancelResponse = kispgPaymentService.cancelPayment(payment.getTid(), moid, cancelAmount,
+        KispgCancelResponseDto cancelResponse = kispgPaymentService.cancelPayment(payment.getTid(), moid,
+                payMethod.toLowerCase(), cancelAmount,
                 reason);
 
         // 2. PG사 취소 성공 시, Payment 상태 업데이트
-        if ("0000".equals(cancelResponse.getResultCd())) {
+        if ("2001".equals(cancelResponse.getResultCd())) {
             logger.info("PG사 환불 성공. Payment 상태 업데이트 (Payment ID: {}, 금액: {})", paymentId, cancelAmount);
             int totalPaidAmount = payment.getPaidAmt() != null ? payment.getPaidAmt() : 0;
             int newRefundedAmount = (payment.getRefundedAmt() == null ? 0 : payment.getRefundedAmt()) + cancelAmount;

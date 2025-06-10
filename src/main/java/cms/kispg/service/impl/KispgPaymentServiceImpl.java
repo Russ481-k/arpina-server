@@ -39,6 +39,7 @@ import cms.kispg.dto.KispgCancelResponseDto;
 import java.util.Optional;
 import cms.admin.payment.dto.KispgQueryRequestDto;
 
+import javax.annotation.PostConstruct;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -80,6 +81,11 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
 
     @Value("${app.locker.fee:5000}")
     private int lockerFee;
+
+    @PostConstruct
+    public void init() {
+        log.info("KISPG Service Initialized. API URL: [{}], MID: [{}]", kispgUrl, kispgMid);
+    }
 
     @Override
     @Transactional(readOnly = true)
@@ -731,7 +737,8 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
 
     @Override
     @Transactional
-    public KispgCancelResponseDto cancelPayment(String tid, String moid, int cancelAmount, String reason) {
+    public KispgCancelResponseDto cancelPayment(String tid, String moid, String payMethod, int cancelAmount,
+            String reason) {
         String ediDate = generateEdiDate();
         String cancelAmountStr = String.valueOf(cancelAmount);
         String hashData = generateCancelHash(this.kispgMid, ediDate, cancelAmountStr);
@@ -739,13 +746,14 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
         KispgCancelRequestDto cancelRequest = KispgCancelRequestDto.builder()
                 .mid(this.kispgMid)
                 .tid(tid)
-                .ordNo(moid)
+                .payMethod(payMethod)
+                .ordNo(null)
                 .canAmt(cancelAmountStr)
                 .canMsg(reason)
                 .ediDate(ediDate)
                 .encData(hashData)
                 .charset("UTF-8")
-                .partCanFlg("1") // 부분취소 플래그 (0:전체, 1:부분) - 우선 부분취소로 고정
+                .partCanFlg("1")
                 .build();
 
         return callKispgCancelApi(cancelRequest);
@@ -772,7 +780,6 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
                 KispgCancelResponseDto responseBody = response.getBody();
                 log.info("KISPG 취소 API 응답 성공. 응답: {}", responseBody);
 
-                // 성공 코드: "2001" (전체취소), "2002" (부분취소)
                 if ("2001".equals(responseBody.getResultCd()) || "2002".equals(responseBody.getResultCd())) {
                     return responseBody;
                 } else {
@@ -798,6 +805,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
             throw new IllegalStateException("KISPG Merchant Key가 설정되어 있지 않습니다.");
         }
         String rawHash = mid + ediDate + canAmt + merchantKey;
+        log.info("Generated Cancel Hash from: mid={}, ediDate={}, canAmt={}", mid, ediDate, canAmt);
         return generateHash(rawHash);
     }
 
@@ -816,18 +824,8 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
         String tid = requestDto.getTid();
         String moid = requestDto.getMoid();
 
-        String transactionIdForHash;
-        if (requestDto.getTid() != null && !requestDto.getTid().trim().isEmpty()) {
-            transactionIdForHash = requestDto.getTid();
-        } else if (requestDto.getMoid() != null && !requestDto.getMoid().trim().isEmpty()) {
-            transactionIdForHash = requestDto.getMoid();
-        } else {
-            throw new BusinessRuleException(ErrorCode.INVALID_INPUT_VALUE, "TID 또는 MOID는 필수입니다.");
-        }
-
-        // 요청 해시 생성: mid + moid + amt + merchantKey (ediDate 제외)
-        String requestHashData = kispgMid + moid + amt + merchantKey;
-        log.info("[KISPG 거래조회 요청] 요청 해시 데이터: {}", requestHashData);
+        String requestHashData = kispgMid + ediDate + amt + merchantKey;
+        log.info("[KISPG 거래조회 요청] 요청 해시 데이터: mid + ediDate + amt + merchantKey = {}", requestHashData);
         String encData = generateHash(requestHashData);
         log.info("[KISPG 거래조회 요청] 생성된 해시: {}", encData);
 
@@ -874,7 +872,6 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
                 String resultTid = (String) responseBody.get("tid");
                 String receivedEdiDate = (String) responseBody.get("ediDate");
 
-                // 응답 검증 해시 생성: mid + moid + amt + ediDate + merchantKey (ediDate 포함)
                 String verificationHashData = kispgMid + resultMoid + resultAmt + receivedEdiDate + merchantKey;
                 log.info("[KISPG 거래조회 응답] 해시 검증 데이터: {}", verificationHashData);
                 String verificationHash = generateHash(verificationHashData);
