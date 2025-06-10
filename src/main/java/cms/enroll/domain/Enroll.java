@@ -27,8 +27,14 @@ import org.hibernate.annotations.ColumnDefault;
 @AllArgsConstructor
 public class Enroll {
 
-    public static enum CancelStatusType {
-        NONE, REQ, PENDING, APPROVED, DENIED
+    @Getter
+    public enum CancelStatusType {
+        NONE, // 취소 절차 없음
+        REQ, // 사용자가 취소 요청
+        PENDING, // 시스템 처리중 (사용되지 않을 수 있음)
+        APPROVED, // 관리자가 사용자 요청을 승인 (환불 처리 필요)
+        DENIED, // 관리자가 취소 거부
+        ADMIN_CANCELED // 관리자가 직접 취소 (환불 처리 필요)
     }
 
     public static enum DiscountStatusType {
