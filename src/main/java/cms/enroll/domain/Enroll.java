@@ -12,16 +12,14 @@ import java.time.LocalDateTime;
 import org.hibernate.annotations.ColumnDefault;
 
 @Entity
-@Table(name = "enroll", 
-       indexes = {
-           @Index(name = "idx_user_lesson_status", columnList = "user_uuid, lesson_id, status"),
-           @Index(name = "idx_lesson_paystatus", columnList = "lesson_id, pay_status"),
-           @Index(name = "idx_expire_dt", columnList = "expire_dt")
-       },
-       uniqueConstraints = {
-           @UniqueConstraint(name = "uk_user_lesson_active", 
-                           columnNames = {"user_uuid", "lesson_id"}) // DDL에서 이미 존재하는 제약조건
-       })
+@Table(name = "enroll", indexes = {
+        @Index(name = "idx_user_lesson_status", columnList = "user_uuid, lesson_id, status"),
+        @Index(name = "idx_lesson_paystatus", columnList = "lesson_id, pay_status"),
+        @Index(name = "idx_expire_dt", columnList = "expire_dt")
+}, uniqueConstraints = {
+        @UniqueConstraint(name = "uk_user_lesson_active", columnNames = { "user_uuid", "lesson_id" }) // DDL에서 이미 존재하는
+                                                                                                      // 제약조건
+})
 @Getter
 @Setter
 @Builder
@@ -166,4 +164,4 @@ public class Enroll {
     protected void onUpdate() {
         this.updatedAt = LocalDateTime.now();
     }
-} 
+}

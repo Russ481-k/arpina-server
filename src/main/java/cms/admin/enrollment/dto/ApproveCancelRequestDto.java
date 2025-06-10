@@ -8,4 +8,4 @@ import lombok.Setter;
 public class ApproveCancelRequestDto {
     private String adminComment;
     private Integer manualUsedDays; // Nullable, if null, system calculates
-} 
+}
