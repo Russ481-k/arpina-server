@@ -828,14 +828,15 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found with ID: " + enrollId,
                         ErrorCode.ENROLLMENT_NOT_FOUND));
 
-        if (enroll.getCancelStatus() != Enroll.CancelStatusType.REQ
-                && enroll.getCancelStatus() != Enroll.CancelStatusType.PENDING) {
+        // 현재 상태 검증
+        if (enroll.getCancelStatus() != CancelStatusType.REQ
+                && enroll.getCancelStatus() != CancelStatusType.ADMIN_CANCELED) {
             throw new BusinessRuleException(ErrorCode.ENROLLMENT_CANCELLATION_NOT_ALLOWED,
-                    "취소 요청 상태가 아니거나 이미 처리된 건입니다. 현재 상태: " + enroll.getCancelStatus());
+                    "취소 요청(REQ) 또는 관리자 취소(ADMIN_CANCELED) 상태가 아니므로 승인할 수 없습니다. 현재 상태: " + enroll.getCancelStatus());
         }
 
         // === Logic for UNPAID enrollments ===
-        if ("UNPAID".equalsIgnoreCase(enroll.getPayStatus())) {
+        if ("UNPAID".equalsIgnoreCase(enroll.getPayStatus()) || "CANCELED".equalsIgnoreCase(enroll.getPayStatus())) {
             logger.info("Approving cancellation for UNPAID enrollment ID: {}", enrollId);
 
             enroll.setPayStatus("CANCELED_UNPAID");

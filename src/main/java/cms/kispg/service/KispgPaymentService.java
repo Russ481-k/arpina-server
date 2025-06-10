@@ -6,6 +6,9 @@ import cms.swimming.dto.EnrollRequestDto;
 import cms.mypage.dto.EnrollDto;
 import cms.kispg.dto.PaymentApprovalRequestDto;
 import cms.kispg.dto.KispgCancelResponseDto;
+import cms.admin.payment.dto.KispgQueryRequestDto;
+
+import java.util.Map;
 
 public interface KispgPaymentService {
     /**
@@ -34,5 +37,7 @@ public interface KispgPaymentService {
      */
     EnrollDto approvePaymentAndCreateEnrollment(PaymentApprovalRequestDto approvalRequest, User currentUser);
 
-    KispgCancelResponseDto cancelPayment(String tid, String moid, int cancelAmount, String reason);
+    KispgCancelResponseDto cancelPayment(String tid, String moid, String payMethod, int cancelAmount, String reason);
+
+    Map<String, Object> queryTransactionAtPg(KispgQueryRequestDto requestDto);
 }

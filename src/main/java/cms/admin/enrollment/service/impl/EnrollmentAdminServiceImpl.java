@@ -264,57 +264,67 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
 
         boolean lockerWasAllocated = enroll.isLockerAllocated();
 
-        enroll.setStatus("CANCELED_BY_ADMIN");
-        enroll.setPayStatus("REFUND_PENDING_ADMIN_CANCEL");
-        enroll.setCancelStatus(Enroll.CancelStatusType.APPROVED);
+        // 결제된 건에 대한 처리
+        if ("PAID".equals(enroll.getPayStatus())) {
+            enroll.setCancelStatus(Enroll.CancelStatusType.ADMIN_CANCELED);
+            enroll.setCancelApprovedAt(LocalDateTime.now());
+            enroll.setPayStatus("REFUND_PENDING_ADMIN_CANCEL");
 
-        String fullCancelReason = (adminComment == null ? "" : adminComment);
-        enroll.setCancelReason(fullCancelReason);
-        enroll.setCancelApprovedAt(LocalDateTime.now());
+            logger.info("PAID 상태의 수강(enrollId: {})을 관리자 취소 처리. 환불 대기 상태로 변경.", enrollId);
 
-        if (lockerWasAllocated) {
-            User user = enroll.getUser();
-            if (user != null && user.getGender() != null && !user.getGender().trim().isEmpty()) {
-                String lockerGenderString; // Renamed for clarity
-                if ("0".equals(user.getGender())) {
-                    lockerGenderString = "FEMALE";
-                } else if ("1".equals(user.getGender())) {
-                    lockerGenderString = "MALE";
+            if (lockerWasAllocated) {
+                User user = enroll.getUser();
+                if (user != null && user.getGender() != null && !user.getGender().trim().isEmpty()) {
+                    String lockerGenderString; // Renamed for clarity
+                    if ("0".equals(user.getGender())) {
+                        lockerGenderString = "FEMALE";
+                    } else if ("1".equals(user.getGender())) {
+                        lockerGenderString = "MALE";
+                    } else {
+                        logger.warn(
+                                "Unknown gender code '{}' for user {} during admin cancellation. Cannot determine locker gender for decrement.",
+                                user.getGender(), user.getUuid());
+                        // Skip decrementing if gender is unknown, or throw an error if strict handling
+                        // is required
+                        lockerGenderString = null;
+                    }
+
+                    if (lockerGenderString != null) {
+                        try {
+                            logger.info(
+                                    "Attempting to decrement locker count due to admin cancellation. User-gender: {}, mapped-locker-gender: {} (User: {}, EnrollId: {})",
+                                    user.getGender(), lockerGenderString, user.getUuid(), enrollId);
+                            lockerService.decrementUsedQuantity(lockerGenderString);
+                            enroll.setLockerAllocated(false); // Mark locker as de-allocated
+                            logger.info(
+                                    "Locker decremented successfully for mapped-locker-gender: {} (User: {}, EnrollId: {})",
+                                    lockerGenderString, user.getUuid(), enrollId);
+                        } catch (Exception e) {
+                            logger.error(
+                                    "Failed to decrement locker for user {} (mapped-locker-gender: {}) during admin cancellation of enrollId {}. Reason: {}",
+                                    user.getUuid(), lockerGenderString, enrollId, e.getMessage(), e);
+                            // Potentially add to admin notes or a specific error state on enrollment if
+                            // critical
+                        }
+                    }
                 } else {
                     logger.warn(
-                            "Unknown gender code '{}' for user {} during admin cancellation. Cannot determine locker gender for decrement.",
-                            user.getGender(), user.getUuid());
-                    // Skip decrementing if gender is unknown, or throw an error if strict handling
-                    // is required
-                    lockerGenderString = null;
+                            "Cannot decrement locker quantity for enrollId {} during admin cancellation due to missing user or gender info.",
+                            enrollId);
                 }
-
-                if (lockerGenderString != null) {
-                    try {
-                        logger.info(
-                                "Attempting to decrement locker count due to admin cancellation. User-gender: {}, mapped-locker-gender: {} (User: {}, EnrollId: {})",
-                                user.getGender(), lockerGenderString, user.getUuid(), enrollId);
-                        lockerService.decrementUsedQuantity(lockerGenderString);
-                        enroll.setLockerAllocated(false); // Mark locker as de-allocated
-                        logger.info(
-                                "Locker decremented successfully for mapped-locker-gender: {} (User: {}, EnrollId: {})",
-                                lockerGenderString, user.getUuid(), enrollId);
-                    } catch (Exception e) {
-                        logger.error(
-                                "Failed to decrement locker for user {} (mapped-locker-gender: {}) during admin cancellation of enrollId {}. Reason: {}",
-                                user.getUuid(), lockerGenderString, enrollId, e.getMessage(), e);
-                        // Potentially add to admin notes or a specific error state on enrollment if
-                        // critical
-                    }
-                }
-            } else {
-                logger.warn(
-                        "Cannot decrement locker quantity for enrollId {} during admin cancellation due to missing user or gender info.",
-                        enrollId);
             }
+            enroll.setUsesLocker(false); // 사물함 사용 안함으로 변경
+            enroll.setLockerPgToken(null);
+        } else if ("UNPAID".equals(enroll.getPayStatus())) {
+            // 미결제 건에 대한 처리
+            enroll.setCancelStatus(Enroll.CancelStatusType.ADMIN_CANCELED);
+            enroll.setCancelApprovedAt(LocalDateTime.now());
+            enroll.setPayStatus("CANCELED"); // 결제 상태를 '취소됨'으로 변경
+            logger.info("UNPAID 상태의 수강(enrollId: {})을 관리자 취소 처리. CANCELED 상태로 변경.", enrollId);
+        } else {
+            // PAID, UNPAID 외 다른 상태 (예: REFUNDED, FAILED 등)
+            // ... existing code ...
         }
-        enroll.setUsesLocker(false); // 사물함 사용 안함으로 변경
-        enroll.setLockerPgToken(null);
 
         Enroll savedEnroll = enrollRepository.save(enroll);
 

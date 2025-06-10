@@ -12,16 +12,14 @@ import java.time.LocalDateTime;
 import org.hibernate.annotations.ColumnDefault;
 
 @Entity
-@Table(name = "enroll", 
-       indexes = {
-           @Index(name = "idx_user_lesson_status", columnList = "user_uuid, lesson_id, status"),
-           @Index(name = "idx_lesson_paystatus", columnList = "lesson_id, pay_status"),
-           @Index(name = "idx_expire_dt", columnList = "expire_dt")
-       },
-       uniqueConstraints = {
-           @UniqueConstraint(name = "uk_user_lesson_active", 
-                           columnNames = {"user_uuid", "lesson_id"}) // DDL에서 이미 존재하는 제약조건
-       })
+@Table(name = "enroll", indexes = {
+        @Index(name = "idx_user_lesson_status", columnList = "user_uuid, lesson_id, status"),
+        @Index(name = "idx_lesson_paystatus", columnList = "lesson_id, pay_status"),
+        @Index(name = "idx_expire_dt", columnList = "expire_dt")
+}, uniqueConstraints = {
+        @UniqueConstraint(name = "uk_user_lesson_active", columnNames = { "user_uuid", "lesson_id" }) // DDL에서 이미 존재하는
+                                                                                                      // 제약조건
+})
 @Getter
 @Setter
 @Builder
@@ -29,8 +27,14 @@ import org.hibernate.annotations.ColumnDefault;
 @AllArgsConstructor
 public class Enroll {
 
-    public static enum CancelStatusType {
-        NONE, REQ, PENDING, APPROVED, DENIED
+    @Getter
+    public enum CancelStatusType {
+        NONE, // 취소 절차 없음
+        REQ, // 사용자가 취소 요청
+        PENDING, // 시스템 처리중 (사용되지 않을 수 있음)
+        APPROVED, // 관리자가 사용자 요청을 승인 (환불 처리 필요)
+        DENIED, // 관리자가 취소 거부
+        ADMIN_CANCELED // 관리자가 직접 취소 (환불 처리 필요)
     }
 
     public static enum DiscountStatusType {
@@ -166,4 +170,4 @@ public class Enroll {
     protected void onUpdate() {
         this.updatedAt = LocalDateTime.now();
     }
-} 
+}

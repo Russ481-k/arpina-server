@@ -76,6 +76,8 @@ public enum ErrorCode {
     PAYMENT_GATEWAY_APPROVAL_FAILED("PM_0010", "결제 게이트웨이 승인에 실패했습니다.", HttpStatus.BAD_REQUEST),
     CANNOT_CALCULATE_REFUND("PM_0011", "환불액을 계산할 수 없는 상태입니다.", HttpStatus.BAD_REQUEST),
     PAYMENT_CANCEL_FAILED("PM_0012", "PG사 결제 취소에 실패했습니다.", HttpStatus.INTERNAL_SERVER_ERROR),
+    PG_TRANSACTION_NOT_FOUND("PM_0012", "PG사에서 해당 거래를 찾을 수 없습니다.", HttpStatus.NOT_FOUND),
+    PAYMENT_GATEWAY_COMMUNICATION_ERROR("PM_0013", "PG사와의 통신 중 오류가 발생했습니다.", HttpStatus.INTERNAL_SERVER_ERROR),
 
     // Locker Errors (LK_xxxx)
     LOCKER_NOT_AVAILABLE("LK_0001", "사용 가능한 사물함이 없습니다.", HttpStatus.CONFLICT),

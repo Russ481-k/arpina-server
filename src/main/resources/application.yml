@@ -237,7 +237,7 @@ nice:
 
 # KISPG Configurations
 kispg:
-  url: ${KISPG_URL:https://testapi.kispg.co.kr}
+  url: ${KISPG_URL}
   mid: ${KISPG_MID}
   merchantKey: ${KISPG_MERCHANT_KEY}
 
@@ -259,4 +259,4 @@ management:
       prometheus:
         enabled: true
 cors:
-  allowed-origins: ${GLOBALS_ALLOW_ORIGIN:http://localhost:3000}
+  allowed-origins: ${GLOBALS_ALLOW_ORIGIN:https://arpina-cms-bnxm.vercel.app}

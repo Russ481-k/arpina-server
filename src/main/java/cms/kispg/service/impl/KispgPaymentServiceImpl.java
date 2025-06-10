@@ -21,8 +21,7 @@ import cms.swimming.repository.LessonRepository;
 import cms.user.domain.User;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -32,27 +31,35 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
-
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
-import java.time.temporal.TemporalAdjusters;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import cms.kispg.dto.KispgCancelRequestDto;
 import cms.kispg.dto.KispgCancelResponseDto;
+import java.util.Optional;
+import cms.admin.payment.dto.KispgQueryRequestDto;
 
+import javax.annotation.PostConstruct;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.temporal.TemporalAdjusters;
+import java.util.Base64;
+import java.util.Map;
+import java.util.List;
+import java.util.HashMap;
+import org.apache.commons.codec.binary.Hex;
+
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class KispgPaymentServiceImpl implements KispgPaymentService {
 
-    private static final Logger logger = LoggerFactory.getLogger(KispgPaymentServiceImpl.class);
     private static final DateTimeFormatter KISPG_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
 
     private final EnrollRepository enrollRepository;
@@ -74,6 +81,11 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
 
     @Value("${app.locker.fee:5000}")
     private int lockerFee;
+
+    @PostConstruct
+    public void init() {
+        log.info("KISPG Service Initialized. API URL: [{}], MID: [{}]", kispgUrl, kispgMid);
+    }
 
     @Override
     @Transactional(readOnly = true)
@@ -102,7 +114,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
 
         long availableSlots = lesson.getCapacity() - paidCount - unpaidActiveCount;
         if (availableSlots <= 0) {
-            logger.warn(
+            log.warn(
                     "Payment slot unavailable for enrollId: {} (lesson: {}, capacity: {}, paid: {}, unpaidActive: {})",
                     enrollId, lesson.getLessonId(), lesson.getCapacity(), paidCount, unpaidActiveCount);
             throw new BusinessRuleException(ErrorCode.PAYMENT_PAGE_SLOT_UNAVAILABLE,
@@ -131,7 +143,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
 
         String requestHash = generateRequestHash(kispgMid, ediDate, String.valueOf(totalAmount));
 
-        logger.info(
+        log.info(
                 "KISPG Init Params for enrollId: {}. MID: {}, MOID: {}, Amt: {}, ItemName: '{}', BuyerName: '{}', BuyerTel: '{}', BuyerEmail: '{}', EdiDate: {}, UserIP: '{}', MbsUsrId: '{}', MbsReserved1: '{}', ReturnURL: '{}', NotifyURL: '{}', Hash: '[length:{}], GoodsSplAmt: {}, GoodsVat: {}",
                 enrollId, kispgMid, moid, String.valueOf(totalAmount), itemName, buyerName, buyerTel, buyerEmail,
                 ediDate, userIp, mbsUsrId, mbsReserved1, returnUrl, notifyUrl, requestHash.length(), goodsSplAmt,
@@ -161,7 +173,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
     @Transactional(readOnly = true)
     public KispgInitParamsDto preparePaymentWithoutEnroll(EnrollRequestDto enrollRequest, User currentUser,
             String userIp) {
-        logger.info(
+        log.info(
                 "Preparing KISPG payment for user: {} without creating enrollment record. LessonId: {}, usesLocker: {}, membershipType: {}",
                 currentUser.getUsername(), enrollRequest.getLessonId(), enrollRequest.getUsesLocker(),
                 enrollRequest.getMembershipType());
@@ -209,12 +221,12 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
                     int discountPercentage = membership.getDiscountPercentage();
                     int discountedLessonPrice = lessonPrice - (lessonPrice * discountPercentage / 100);
                     totalAmount = discountedLessonPrice;
-                    logger.info(
+                    log.info(
                             "Applied discount: {}% for membership type: {}. Original lesson price: {}, Discounted lesson price: {}",
                             discountPercentage, enrollRequest.getMembershipType(), lessonPrice, discountedLessonPrice);
                 }
             } catch (IllegalArgumentException e) {
-                logger.warn("Invalid membership type '{}' received in enrollRequest. No discount applied. Error: {}",
+                log.warn("Invalid membership type '{}' received in enrollRequest. No discount applied. Error: {}",
                         enrollRequest.getMembershipType(), e.getMessage());
             }
         }
@@ -243,7 +255,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
 
         String requestHash = generateRequestHash(kispgMid, ediDate, String.valueOf(totalAmount));
 
-        logger.info("Generated KISPG init params for user: {}, lesson: {}, tempMoid: {}, amt: {}, usesLocker: {}",
+        log.info("Generated KISPG init params for user: {}, lesson: {}, tempMoid: {}, amt: {}, usesLocker: {}",
                 currentUser.getUsername(), lesson.getLessonId(), tempMoid, totalAmount, enrollRequest.getUsesLocker());
 
         return KispgInitParamsDto.builder()
@@ -280,7 +292,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
             int discountPercentage = membership.getDiscountPercentage();
             int discountedLessonPrice = lessonPrice - (lessonPrice * discountPercentage / 100);
             totalAmount = discountedLessonPrice;
-            logger.info(
+            log.info(
                     "Applied discount: {}% for membership type: {}. Original lesson price: {}, Discounted lesson price: {} for enrollId: {}",
                     discountPercentage, membership.getValue(), lessonPrice, discountedLessonPrice,
                     enroll.getEnrollId());
@@ -297,22 +309,21 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
     }
 
     private String generateRequestHash(String mid, String ediDate, String amt) {
-        try {
-            String hashData = mid + ediDate + amt + merchantKey;
-            logger.debug("Hash generation - mid: {}, ediDate: {}, amt: {}", mid, ediDate, amt);
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] hashBytes = md.digest(hashData.getBytes());
-            StringBuilder sb = new StringBuilder();
-            for (byte b : hashBytes) {
-                sb.append(String.format("%02x", b));
-            }
-            String hash = sb.toString();
-            logger.debug("Generated hash: {}", hash);
-            return hash;
-        } catch (NoSuchAlgorithmException e) {
-            logger.error("SHA-256 알고리즘을 찾을 수 없습니다", e);
-            throw new RuntimeException("해시 생성 중 오류가 발생했습니다", e);
+        if (merchantKey == null || merchantKey.trim().isEmpty()) {
+            log.error("KISPG Merchant Key is not configured.");
+            throw new IllegalStateException("KISPG Merchant Key가 설정되어 있지 않습니다.");
         }
+        String rawHash = mid + ediDate + amt + merchantKey;
+        return generateHash(rawHash);
+    }
+
+    private String generateApprovalHash(String mid, String ediDate, String amt) {
+        if (merchantKey == null || merchantKey.trim().isEmpty()) {
+            log.error("KISPG Merchant Key is not configured.");
+            throw new IllegalStateException("KISPG Merchant Key가 설정되어 있지 않습니다.");
+        }
+        String rawHash = mid + ediDate + amt + merchantKey;
+        return generateHash(rawHash);
     }
 
     private String generateTempMoid(Long lessonId, String userUuid) {
@@ -324,7 +335,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
     @Override
     @Transactional(readOnly = true)
     public EnrollDto verifyAndGetEnrollment(String moid, User currentUser) {
-        logger.info("Verifying payment and retrieving enrollment for moid: {}, user: {}", moid,
+        log.info("Verifying payment and retrieving enrollment for moid: {}, user: {}", moid,
                 currentUser.getUsername());
 
         Payment payment = paymentRepository.findByMoid(moid)
@@ -353,22 +364,30 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
         KispgPaymentResultDto kispgResult = approvalRequest.getKispgPaymentResult();
         String moid = approvalRequest.getMoid();
 
-        logger.info("Approving KISPG payment and creating enrollment. MOID: {}, User: {}",
+        log.info("Approving KISPG payment and creating enrollment. MOID: {}, User: {}",
                 moid, currentUser.getUsername());
         if (kispgResult == null) {
-            logger.error("KispgPaymentResultDto is null for MOID: {}", moid);
+            log.error("KispgPaymentResultDto is null for MOID: {}", moid);
             throw new BusinessRuleException(ErrorCode.INVALID_INPUT_VALUE, "KISPG 결제 결과가 누락되었습니다.");
         }
-        logger.info(
+        log.info(
                 "KISPG Result Details - TID: {}, KISPG MOID (ordNo): {}, Amt: {}, ResultCd: {}, ResultMsg: {}, PayMethod: {}, EdiDate: {}",
                 kispgResult.getTid(), kispgResult.getOrdNo(), kispgResult.getAmt(), kispgResult.getResultCd(),
                 kispgResult.getResultMsg(), kispgResult.getPayMethod(), kispgResult.getEdiDate());
 
         String kispgTid = kispgResult.getTid();
+
+        // 1. TID로 기존 결제 내역 확인 (중복 처리 방어)
+        Optional<Payment> existingPayment = paymentRepository.findByTid(kispgTid);
+        if (existingPayment.isPresent()) {
+            log.warn("Payment with TID {} already exists. Returning existing enrollment information.", kispgTid);
+            return convertToMypageEnrollDto(existingPayment.get().getEnroll());
+        }
+
         String kispgAmt = kispgResult.getAmt();
         int paidAmount = Integer.parseInt(kispgAmt);
 
-        Long lessonId;
+        Lesson lesson;
         Enroll existingEnrollForUpdate = null;
 
         if (moid.startsWith("temp_")) {
@@ -376,7 +395,30 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
             if (parts.length < 3) {
                 throw new BusinessRuleException(ErrorCode.INVALID_INPUT_VALUE, "temp moid 형식이 올바르지 않습니다: " + moid);
             }
-            lessonId = Long.parseLong(parts[0]);
+            Long lessonId = Long.parseLong(parts[0]);
+            lesson = lessonRepository.findById(lessonId)
+                    .orElseThrow(() -> new ResourceNotFoundException("강습을 찾을 수 없습니다: " + lessonId,
+                            ErrorCode.LESSON_NOT_FOUND));
+
+            log.info("🔍 중복 신청 체크 시작 (temp moid): user={}, lesson={}", currentUser.getUuid(), lessonId);
+            List<Enroll> existingEnrolls = enrollRepository.findByUserUuidAndLessonLessonId(currentUser.getUuid(),
+                    lessonId);
+            for (Enroll existingEnroll : existingEnrolls) {
+                boolean isActivePaid = "PAID".equals(existingEnroll.getPayStatus());
+                boolean isActiveUnpaid = "UNPAID".equals(existingEnroll.getPayStatus()) &&
+                        "APPLIED".equals(existingEnroll.getStatus()) &&
+                        existingEnroll.getExpireDt() != null &&
+                        existingEnroll.getExpireDt().isAfter(LocalDateTime.now());
+                if (isActivePaid || isActiveUnpaid) {
+                    log.warn("❌ 중복 신청 감지: enrollId={}, status={}, payStatus={}, expireDt={}",
+                            existingEnroll.getEnrollId(), existingEnroll.getStatus(),
+                            existingEnroll.getPayStatus(), existingEnroll.getExpireDt());
+                    throw new BusinessRuleException(ErrorCode.DUPLICATE_ENROLLMENT,
+                            "이미 해당 강습에 신청 내역이 존재합니다. 기존 신청을 확인해 주세요.");
+                }
+            }
+            log.info("✅ 중복 신청 체크 통과: 신청 가능");
+
         } else if (moid.startsWith("enroll_")) {
             String[] parts = moid.substring("enroll_".length()).split("_");
             if (parts.length < 2) {
@@ -389,46 +431,26 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
             if (!existingEnrollForUpdate.getUser().getUuid().equals(currentUser.getUuid())) {
                 throw new BusinessRuleException(ErrorCode.ACCESS_DENIED, "해당 수강신청에 대한 권한이 없습니다.");
             }
-            lessonId = existingEnrollForUpdate.getLesson().getLessonId();
-            logger.info("Found existing enrollment: enrollId={}, lessonId={}, user={}",
-                    enrollId, lessonId, currentUser.getUsername());
+            lesson = existingEnrollForUpdate.getLesson();
+            if (lesson == null) {
+                throw new ResourceNotFoundException("수강신청에 연결된 강습 정보를 찾을 수 없습니다: " + enrollId,
+                        ErrorCode.LESSON_NOT_FOUND);
+            }
+            log.info("Found existing enrollment: enrollId={}, lessonId={}, user={}",
+                    enrollId, lesson.getLessonId(), currentUser.getUsername());
         } else {
             throw new BusinessRuleException(ErrorCode.INVALID_INPUT_VALUE, "지원되지 않는 moid 형식입니다: " + moid);
         }
 
-        Lesson lesson = lessonRepository.findById(lessonId)
-                .orElseThrow(
-                        () -> new ResourceNotFoundException("강습을 찾을 수 없습니다: " + lessonId, ErrorCode.LESSON_NOT_FOUND));
         int lessonPrice = lesson.getPrice();
 
-        if (moid.startsWith("temp_")) {
-            logger.info("🔍 중복 신청 체크 시작: user={}, lesson={}", currentUser.getUuid(), lessonId);
-            List<Enroll> existingEnrolls = enrollRepository.findByUserUuidAndLessonLessonId(currentUser.getUuid(),
-                    lessonId);
-            for (Enroll existingEnroll : existingEnrolls) {
-                boolean isActivePaid = "PAID".equals(existingEnroll.getPayStatus());
-                boolean isActiveUnpaid = "UNPAID".equals(existingEnroll.getPayStatus()) &&
-                        "APPLIED".equals(existingEnroll.getStatus()) &&
-                        existingEnroll.getExpireDt() != null &&
-                        existingEnroll.getExpireDt().isAfter(LocalDateTime.now());
-                if (isActivePaid || isActiveUnpaid) {
-                    logger.warn("❌ 중복 신청 감지: enrollId={}, status={}, payStatus={}, expireDt={}",
-                            existingEnroll.getEnrollId(), existingEnroll.getStatus(),
-                            existingEnroll.getPayStatus(), existingEnroll.getExpireDt());
-                    throw new BusinessRuleException(ErrorCode.DUPLICATE_ENROLLMENT,
-                            "이미 해당 강습에 신청 내역이 존재합니다. 기존 신청을 확인해 주세요.");
-                }
-            }
-            logger.info("✅ 중복 신청 체크 통과: 신청 가능");
-        }
-
-        boolean kispgApprovalSuccess = callKispgApprovalApi(kispgTid, moid, kispgAmt);
+        boolean kispgApprovalSuccess = callKispgApprovalApi(kispgTid, moid, kispgAmt, kispgResult.getEdiDate());
         if (!kispgApprovalSuccess) {
-            logger.error("KISPG payment approval failed for TID: {}, MOID: {}. Enrollment will not be processed.",
+            log.error("KISPG payment approval failed for TID: {}, MOID: {}. Enrollment will not be processed.",
                     kispgTid, moid);
             throw new BusinessRuleException(ErrorCode.PAYMENT_GATEWAY_APPROVAL_FAILED, "KISPG 결제 승인에 실패했습니다.");
         }
-        logger.info("KISPG payment approval successful for TID: {}, MOID: {}", kispgTid, moid);
+        log.info("KISPG payment approval successful for TID: {}, MOID: {}", kispgTid, moid);
 
         boolean usesLocker = paidAmount > lessonPrice;
         boolean lockerAllocated = false;
@@ -438,15 +460,15 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
                     String genderStr = convertGenderCodeToString(currentUser.getGender());
                     lockerService.incrementUsedQuantity(genderStr);
                     lockerAllocated = true;
-                    logger.info("Locker allocated for user: {} (gender code: {} -> {})",
+                    log.info("Locker allocated for user: {} (gender code: {} -> {})",
                             currentUser.getUsername(), currentUser.getGender(), genderStr);
                 } catch (Exception e) {
-                    logger.error("Failed to allocate locker for user: {}. Error: {}", currentUser.getUsername(),
+                    log.error("Failed to allocate locker for user: {}. Error: {}", currentUser.getUsername(),
                             e.getMessage(), e);
                     usesLocker = false;
                 }
             } else {
-                logger.warn("User {} has no gender info. Cannot allocate locker.", currentUser.getUsername());
+                log.warn("User {} has no gender info. Cannot allocate locker.", currentUser.getUsername());
                 usesLocker = false;
             }
         }
@@ -456,7 +478,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
 
         if (existingEnrollForUpdate != null) {
             if ("PAID".equals(existingEnrollForUpdate.getPayStatus())) {
-                logger.warn("Enrollment {} is already paid. Current status: {}", existingEnrollForUpdate.getEnrollId(),
+                log.warn("Enrollment {} is already paid. Current status: {}", existingEnrollForUpdate.getEnrollId(),
                         existingEnrollForUpdate.getPayStatus());
                 return convertToMypageEnrollDto(existingEnrollForUpdate);
             }
@@ -473,7 +495,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
                     requestedMembership = MembershipType.fromValue(approvalRequest.getMembershipType());
                     requestedDiscount = requestedMembership.getDiscountPercentage();
                 } catch (IllegalArgumentException e) {
-                    logger.warn(
+                    log.warn(
                             "Invalid membership type '{}' received in approvalRequest for existing enroll. Using GENERAL. Error: {}",
                             approvalRequest.getMembershipType(), e.getMessage());
                 }
@@ -483,7 +505,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
             existingEnrollForUpdate.setUpdatedAt(LocalDateTime.now());
             existingEnrollForUpdate.setUpdatedBy(currentUser.getUuid());
             savedEnroll = enrollRepository.save(existingEnrollForUpdate);
-            logger.info(
+            log.info(
                     "Successfully updated existing enrollment: enrollId={}, user={}, lesson={}, usesLocker={}, lockerAllocated={}, membershipType={}, discountApplied={}%",
                     savedEnroll.getEnrollId(), currentUser.getUsername(), lesson.getLessonId(), usesLocker,
                     lockerAllocated, savedEnroll.getMembershipType(), savedEnroll.getDiscountAppliedPercentage());
@@ -495,7 +517,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
                     selectedMembership = MembershipType.fromValue(approvalRequest.getMembershipType());
                     discountPercentage = selectedMembership.getDiscountPercentage();
                 } catch (IllegalArgumentException e) {
-                    logger.warn("Invalid membership type '{}' received in approvalRequest. Using GENERAL. Error: {}",
+                    log.warn("Invalid membership type '{}' received in approvalRequest. Using GENERAL. Error: {}",
                             approvalRequest.getMembershipType(), e.getMessage());
                 }
             }
@@ -523,7 +545,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
                     .createdIp("KISPG_APPROVAL_SERVICE")
                     .build();
             savedEnroll = enrollRepository.save(savedEnroll);
-            logger.info(
+            log.info(
                     "Successfully created new enrollment: enrollId={}, user={}, lesson={}, usesLocker={}, lockerAllocated={}, membershipType={}, discountApplied={}%, calculatedFinalAmount={}",
                     savedEnroll.getEnrollId(), currentUser.getUsername(), lesson.getLessonId(), usesLocker,
                     lockerAllocated, selectedMembership.getValue(), discountPercentage, calculatedEnrollFinalAmount);
@@ -534,7 +556,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
             try {
                 paidAt = LocalDateTime.parse(kispgResult.getEdiDate(), KISPG_DATE_FORMATTER);
             } catch (Exception e) {
-                logger.warn("Failed to parse KISPG ediDate '{}'. Defaulting paidAt to current time. Error: {}",
+                log.warn("Failed to parse KISPG ediDate '{}'. Defaulting paidAt to current time. Error: {}",
                         kispgResult.getEdiDate(), e.getMessage());
             }
         }
@@ -555,114 +577,110 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
                 .createdIp("KISPG_APPROVAL_SERVICE")
                 .build();
         paymentRepository.save(payment);
-        logger.info("Successfully created payment record for enrollId: {}, System MOID: {}, KISPG TID: {}",
+        log.info("Successfully created payment record for enrollId: {}, System MOID: {}, KISPG TID: {}",
                 savedEnroll.getEnrollId(), moid, kispgResult.getTid());
 
         return convertToMypageEnrollDto(savedEnroll);
     }
 
-    private boolean callKispgApprovalApi(String tid, String moid, String amt) {
+    private boolean callKispgApprovalApi(String tid, String moid, String amt, String ediDateFromAuth) {
+        log.info("=== KISPG 승인 API 호출 시작 ===");
+        log.info("📋 입력 파라미터 (인증 결과):");
+        log.info("  - TID: {}", tid);
+        log.info("  - MOID: {}", moid);
+        log.info("  - AMT: {}", amt);
+        log.info("  - Auth EdiDate: {}", ediDateFromAuth);
+
+        String ediDate = generateEdiDate();
+        String encData = generateApprovalHash(kispgMid, ediDate, amt);
+
+        log.info("📋 KISPG 승인 요청 구성:");
+        log.info("  - MID: {}", kispgMid);
+        log.info("  - TID: {}", tid);
+        log.info("  - goodsAmt: {}", amt);
+        log.info("  - ediDate: {} (신규 생성)", ediDate);
+        log.info("  - HashData (Raw): {}{}{}{}", kispgMid, ediDate, amt, merchantKey);
+        log.info("  - encData (Hashed): {} (길이: {})", encData, encData.length());
+
+        RestTemplate restTemplate = new RestTemplate();
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        Map<String, String> body = new HashMap<>();
+        body.put("mid", kispgMid);
+        body.put("tid", tid);
+        body.put("goodsAmt", amt);
+        body.put("ediDate", ediDate);
+        body.put("encData", encData);
+        body.put("charset", "UTF-8");
+
+        HttpEntity<Map<String, String>> requestEntity = new HttpEntity<>(body, headers);
+
+        String url = kispgUrl + "/v2/payment";
+        log.info("📤 KISPG 승인 API 요청:");
+        log.info("  - URL: {}", url);
+        log.info("  - Method: POST");
+        log.info("  - Content-Type: application/json");
+        log.info("  - Body: {}", body);
+
+        long startTime = System.currentTimeMillis();
         try {
-            logger.info("=== KISPG 승인 API 호출 시작 ===");
-            logger.info("📋 입력 파라미터:");
-            logger.info("  - TID: {}", tid);
-            logger.info("  - MOID: {}", moid);
-            logger.info("  - AMT: {}", amt);
+            ResponseEntity<String> response = restTemplate.postForEntity(url, requestEntity, String.class);
+            long endTime = System.currentTimeMillis();
 
-            String ediDate = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
-            String hashData = kispgMid + ediDate + amt + merchantKey;
-            String encData = generateHash(hashData);
-
-            logger.info("📋 KISPG 승인 요청 구성:");
-            logger.info("  - MID: {}", kispgMid);
-            logger.info("  - TID: {}", tid);
-            logger.info("  - goodsAmt: {}", amt);
-            logger.info("  - ediDate: {} (현재시각)", ediDate);
-            logger.info("  - HashData: {} (길이: {})", hashData, hashData.length());
-            logger.info("  - encData: {} (길이: {})", encData, encData.length());
-
-            Map<String, String> requestParams = new HashMap<>();
-            requestParams.put("mid", kispgMid);
-            requestParams.put("tid", tid);
-            requestParams.put("goodsAmt", amt);
-            requestParams.put("ediDate", ediDate);
-            requestParams.put("encData", encData);
-            requestParams.put("charset", "UTF-8");
-
-            ObjectMapper objectMapper = new ObjectMapper();
-            String jsonBody = objectMapper.writeValueAsString(requestParams);
-
-            logger.info("📤 KISPG 승인 API 요청:");
-            String apiUrl = kispgUrl + "/v2/payment";
-            logger.info("  - URL: {}", apiUrl);
-            logger.info("  - Method: POST");
-            logger.info("  - Content-Type: application/json");
-            logger.info("  - Body: {}", jsonBody);
-
-            RestTemplate restTemplate = new RestTemplate();
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.set("User-Agent", "ARPINA-CMS/1.0");
-            HttpEntity<String> entity = new HttpEntity<>(jsonBody, headers);
-
-            long startTime = System.currentTimeMillis();
-            ResponseEntity<String> response = restTemplate.postForEntity(apiUrl, entity, String.class);
-            long responseTime = System.currentTimeMillis() - startTime;
-
-            logger.info("📥 KISPG 승인 API 응답 ({}ms):", responseTime);
-            logger.info("  - Status Code: {}", response.getStatusCode());
-            logger.info("  - Response Body: {}", response.getBody());
+            log.info("📥 KISPG 승인 API 응답 ({}ms):", endTime - startTime);
+            log.info("  - Status Code: {}", response.getStatusCode());
+            log.info("  - Response Body: {}", response.getBody());
 
             if (response.getStatusCode() == HttpStatus.OK) {
-                String responseBody = response.getBody();
-                if (responseBody != null && !responseBody.trim().isEmpty()) {
-                    Map<String, Object> responseMap = objectMapper.readValue(responseBody, Map.class);
-                    String resultCd = (String) responseMap.get("resultCd");
-                    String resultMsg = (String) responseMap.get("resultMsg");
+                try {
+                    ObjectMapper objectMapper = new ObjectMapper();
+                    KispgPaymentResultDto resultDto = objectMapper.readValue(response.getBody(),
+                            KispgPaymentResultDto.class);
 
-                    logger.info("📋 KISPG 승인 결과 파싱:");
-                    logger.info("  - resultCd: {}", resultCd);
-                    logger.info("  - resultMsg: {}", resultMsg);
-                    responseMap.forEach((key, value) -> logger.debug("    {}: {}", key, value));
+                    log.info("📋 KISPG 승인 결과 파싱:");
+                    log.info("  - resultCd: {}", resultDto.getResultCd());
+                    log.info("  - resultMsg: {}", resultDto.getResultMsg());
+                    log.debug(objectMapper.writeValueAsString(resultDto));
 
-                    if ("0000".equals(resultCd) || "3001".equals(resultCd)) {
-                        logger.info("✅ KISPG 승인 성공! (resultCd: {})", resultCd);
+                    if ("0000".equals(resultDto.getResultCd()) || "3001".equals(resultDto.getResultCd())
+                            || "6001".equals(resultDto.getResultCd())) {
+                        log.info("✅ KISPG 승인 성공: [{}] {}", resultDto.getResultCd(), resultDto.getResultMsg());
                         return true;
                     } else {
-                        logger.error("❌ KISPG 승인 실패: [{}] {}", resultCd, resultMsg);
-                        return false;
+                        log.error("❌ KISPG 승인 실패: [{}] {}", resultDto.getResultCd(), resultDto.getResultMsg());
+                        throw new BusinessRuleException(ErrorCode.PAYMENT_GATEWAY_APPROVAL_FAILED,
+                                "결제 게이트웨이 승인에 실패했습니다: " + resultDto.getResultMsg());
                     }
-                } else {
-                    logger.error("❌ KISPG API 응답 본문이 비어있습니다.");
-                    return false;
+                } catch (Exception e) {
+                    log.error("KISPG 응답 파싱 중 에러 발생", e);
+                    throw new BusinessRuleException(ErrorCode.PAYMENT_FAILED, "결제 게이트웨이 응답 처리 중 오류가 발생했습니다.");
                 }
             } else {
-                logger.error("❌ KISPG 승인 API HTTP 오류 - Status: {}", response.getStatusCode());
+                log.error("KISPG 승인 API 호출 실패. 응답 코드: {}", response.getStatusCode());
                 return false;
             }
+        } catch (HttpClientErrorException e) {
+            log.error("KISPG 승인 API 호출 중 클라이언트 에러 발생: {} - {}", e.getStatusCode(), e.getResponseBodyAsString(), e);
+            throw new BusinessRuleException(ErrorCode.PAYMENT_GATEWAY_COMMUNICATION_ERROR,
+                    "결제 게이트웨이 통신 중 오류가 발생했습니다: " + e.getMessage());
         } catch (Exception e) {
-            logger.error("❌ KISPG 승인 API 호출 중 예외 발생:", e);
-            return false;
+            log.error("KISPG 승인 API 호출 중 알 수 없는 에러 발생", e);
+            e.printStackTrace();
+
+            throw new BusinessRuleException(ErrorCode.PAYMENT_FAILED, "결제 게이트웨이 처리 중 알 수 없는 오류가 발생했습니다.");
         }
     }
 
-    private String generateHash(String data) {
+    private String generateHash(String input) {
         try {
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] hash = md.digest(data.getBytes("UTF-8"));
-            return bytesToHex(hash);
-        } catch (Exception e) {
-            logger.error("Failed to generate hash: {}", e.getMessage(), e);
-            throw new RuntimeException("Hash generation failed", e);
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
+            return Hex.encodeHexString(hash);
+        } catch (NoSuchAlgorithmException e) {
+            log.error("SHA-256 알고리즘을 찾을 수 없습니다.", e);
+            throw new RuntimeException("SHA-256 알고리즘을 찾을 수 없습니다.", e);
         }
-    }
-
-    private String bytesToHex(byte[] bytes) {
-        StringBuilder result = new StringBuilder();
-        for (byte b : bytes) {
-            result.append(String.format("%02x", b));
-        }
-        return result.toString();
     }
 
     private EnrollDto convertToMypageEnrollDto(Enroll enroll) {
@@ -712,40 +730,38 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
             case "FEMALE":
                 return "FEMALE";
             default:
-                logger.warn("Unknown gender code: {}. Defaulting to MALE for locker assignment.", genderCode);
+                log.warn("Unknown gender code: {}. Defaulting to MALE for locker assignment.", genderCode);
                 return "MALE";
         }
     }
 
     @Override
     @Transactional
-    public KispgCancelResponseDto cancelPayment(String tid, String moid, int cancelAmount, String reason) {
-        logger.info("결제 취소 요청 시작. TID: {}, MOID: {}, 취소 금액: {}, 사유: {}", tid, moid, cancelAmount, reason);
-
-        // 1. 해시 생성 및 요청 DTO 빌드
+    public KispgCancelResponseDto cancelPayment(String tid, String moid, String payMethod, int cancelAmount,
+            String reason) {
         String ediDate = generateEdiDate();
         String cancelAmountStr = String.valueOf(cancelAmount);
-        String hashData = generateCancelHash(kispgMid, ediDate, cancelAmountStr, tid);
+        String hashData = generateCancelHash(this.kispgMid, ediDate, cancelAmountStr);
 
-        KispgCancelRequestDto requestDto = KispgCancelRequestDto.builder()
-                .mid(kispgMid)
+        KispgCancelRequestDto cancelRequest = KispgCancelRequestDto.builder()
+                .mid(this.kispgMid)
                 .tid(tid)
-                .ordNo(moid)
+                .payMethod(payMethod)
+                .ordNo(null)
                 .canAmt(cancelAmountStr)
                 .canMsg(reason)
-                .partCanFlg("1") // 부분취소 플래그 (0:전체, 1:부분) - 우선 부분취소로 고정
                 .ediDate(ediDate)
                 .encData(hashData)
                 .charset("UTF-8")
+                .partCanFlg("1")
                 .build();
 
-        // 2. PG사 취소 API 호출
-        return callKispgCancelApi(requestDto);
+        return callKispgCancelApi(cancelRequest);
     }
 
     private KispgCancelResponseDto callKispgCancelApi(KispgCancelRequestDto requestDto) {
         String url = kispgUrl + "/v2/cancel";
-        logger.info("KISPG 취소 API 호출. URL: {}, 요청 데이터: {}", url, requestDto);
+        log.info("KISPG 취소 API 호출. URL: {}, 요청 데이터: {}", url, requestDto);
 
         try {
             HttpHeaders headers = new HttpHeaders();
@@ -762,32 +778,115 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
 
             if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
                 KispgCancelResponseDto responseBody = response.getBody();
-                logger.info("KISPG 취소 API 응답 성공. 응답: {}", responseBody);
+                log.info("KISPG 취소 API 응답 성공. 응답: {}", responseBody);
 
-                // 성공 코드: "2001" (전체취소), "2002" (부분취소)
                 if ("2001".equals(responseBody.getResultCd()) || "2002".equals(responseBody.getResultCd())) {
                     return responseBody;
                 } else {
-                    logger.error("KISPG 취소 실패. Result Code: {}, Message: {}", responseBody.getResultCd(),
+                    log.error("KISPG 취소 실패. Result Code: {}, Message: {}", responseBody.getResultCd(),
                             responseBody.getResultMsg());
                     throw new BusinessRuleException(ErrorCode.PAYMENT_REFUND_FAILED,
                             "PG사 취소 실패: " + responseBody.getResultMsg());
                 }
             } else {
-                logger.error("KISPG 취소 API 호출 실패. 응답 코드: {}, 응답 본문: {}", response.getStatusCode(), response.getBody());
+                log.error("KISPG 취소 API 호출 실패. 응답 코드: {}, 응답 본문: {}", response.getStatusCode(), response.getBody());
                 throw new BusinessRuleException(ErrorCode.PAYMENT_REFUND_FAILED,
                         "PG사 통신 오류 (HTTP " + response.getStatusCode() + ")");
             }
         } catch (Exception e) {
-            logger.error("KISPG 취소 API 호출 중 예외 발생", e);
+            log.error("KISPG 취소 API 호출 중 예외 발생", e);
             throw new BusinessRuleException(ErrorCode.PAYMENT_REFUND_FAILED, "PG사 취소 처리 중 오류 발생: " + e.getMessage());
         }
     }
 
-    private String generateCancelHash(String mid, String ediDate, String canAmt, String tid) {
-        // PG사 취소 API 명세에 따른 해시 생성
-        // 기존 결제승인 해시 생성(mid + ediDate + amt + merchantKey)과 유사하게 tid를 제외하고 생성
-        String data = mid + ediDate + canAmt + merchantKey;
-        return generateHash(data);
+    private String generateCancelHash(String mid, String ediDate, String canAmt) {
+        if (merchantKey == null || merchantKey.trim().isEmpty()) {
+            log.error("KISPG Merchant Key is not configured.");
+            throw new IllegalStateException("KISPG Merchant Key가 설정되어 있지 않습니다.");
+        }
+        String rawHash = mid + ediDate + canAmt + merchantKey;
+        log.info("Generated Cancel Hash from: mid={}, ediDate={}, canAmt={}", mid, ediDate, canAmt);
+        return generateHash(rawHash);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Map<String, Object> queryTransactionAtPg(KispgQueryRequestDto requestDto) {
+        log.info("KISPG 결제 내역 조회 요청. TID: {}, MOID: {}", requestDto.getTid(), requestDto.getMoid());
+
+        if ((requestDto.getTid() == null || requestDto.getTid().trim().isEmpty()) &&
+                (requestDto.getMoid() == null || requestDto.getMoid().trim().isEmpty())) {
+            throw new BusinessRuleException(ErrorCode.INVALID_INPUT_VALUE, "TID 또는 MOID 중 하나는 필수입니다.");
+        }
+
+        String ediDate = generateEdiDate();
+        String amt = requestDto.getAmt();
+        String tid = requestDto.getTid();
+        String moid = requestDto.getMoid();
+
+        String requestHashData = kispgMid + ediDate + amt + merchantKey;
+        log.info("[KISPG 거래조회 요청] 요청 해시 데이터: mid + ediDate + amt + merchantKey = {}", requestHashData);
+        String encData = generateHash(requestHashData);
+        log.info("[KISPG 거래조회 요청] 생성된 해시: {}", encData);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        Map<String, String> body = new HashMap<>();
+        body.put("mid", kispgMid);
+        body.put("ver", "2");
+        if (requestDto.getTid() != null && !requestDto.getTid().trim().isEmpty()) {
+            body.put("tid", requestDto.getTid());
+        }
+        if (requestDto.getMoid() != null && !requestDto.getMoid().trim().isEmpty()) {
+            body.put("moid", requestDto.getMoid());
+        }
+        body.put("amt", amt);
+        body.put("ediDate", ediDate);
+        body.put("encData", encData);
+        body.put("signData", "");
+
+        try {
+            ObjectMapper objectMapper = new ObjectMapper();
+            String jsonBody = objectMapper.writeValueAsString(body);
+            HttpEntity<String> request = new HttpEntity<>(jsonBody, headers);
+            log.info("[KISPG 거래조회 요청] PG 요청 전문: {}", request.toString());
+
+            RestTemplate restTemplate = new RestTemplate();
+            ResponseEntity<Map> response = restTemplate.postForEntity(kispgUrl + "/v2/order", request, Map.class);
+            log.info("[KISPG 거래조회 요청] PG 응답 전문: {}", response.toString());
+            Map<String, Object> responseBody = response.getBody();
+
+            if (responseBody == null) {
+                log.error("KISPG 조회 API 응답 본문이 비어있습니다.");
+                throw new BusinessRuleException(ErrorCode.PAYMENT_GATEWAY_COMMUNICATION_ERROR,
+                        "PG사 조회 실패: 응답 본문이 비어있습니다.");
+            }
+
+            String resultCd = (String) responseBody.get("resultCd");
+
+            if ("0000".equals(resultCd)) {
+                log.info("KISPG 조회 성공. 응답: {}", responseBody);
+                String resultMoid = (String) responseBody.get("moid");
+                String resultAmt = (String) responseBody.get("amt");
+                String resultTid = (String) responseBody.get("tid");
+                String receivedEdiDate = (String) responseBody.get("ediDate");
+
+                String verificationHashData = kispgMid + resultMoid + resultAmt + receivedEdiDate + merchantKey;
+                log.info("[KISPG 거래조회 응답] 해시 검증 데이터: {}", verificationHashData);
+                String verificationHash = generateHash(verificationHashData);
+                log.info("[KISPG 거래조회 응답] 생성된 검증 해시: {}", verificationHash);
+
+                return responseBody;
+            } else {
+                String resultMsg = (String) responseBody.get("resultMsg");
+                log.error("KISPG 조회 실패. Result Code: {}, Message: {}", resultCd, resultMsg);
+                throw new BusinessRuleException(ErrorCode.PG_TRANSACTION_NOT_FOUND, "PG사 조회 실패: " + resultMsg);
+            }
+        } catch (Exception e) {
+            log.error("KISPG 조회 API 호출 중 예외 발생", e);
+            throw new BusinessRuleException(ErrorCode.PAYMENT_GATEWAY_COMMUNICATION_ERROR,
+                    "PG사 조회 처리 중 오류 발생: " + e.getMessage());
+        }
     }
 }

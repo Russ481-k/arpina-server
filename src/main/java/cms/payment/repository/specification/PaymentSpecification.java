@@ -12,28 +12,28 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
+import javax.persistence.criteria.JoinType;
+import cms.lesson.domain.Lesson;
 
 public class PaymentSpecification {
 
-    public static Specification<Payment> filterByAdminCriteria(
-            Long enrollId, String userId, String tid,
+    public static Specification<Payment> filterByAdminCriteria(Long lessonId, Long enrollId, String userId, String tid,
             LocalDate startDate, LocalDate endDate, PaymentStatus status) {
         return (root, query, criteriaBuilder) -> {
             List<Predicate> predicates = new ArrayList<>();
-            Join<Payment, Enroll> enrollJoin = null;
-            Join<Enroll, User> userJoin = null; // Declare userJoin here
+            Join<Payment, Enroll> enrollJoin = root.join("enroll", JoinType.LEFT);
+
+            if (lessonId != null) {
+                Join<Enroll, Lesson> lessonJoin = enrollJoin.join("lesson", JoinType.LEFT);
+                predicates.add(criteriaBuilder.equal(lessonJoin.get("lessonId"), lessonId));
+            }
 
             if (enrollId != null) {
-                if (enrollJoin == null)
-                    enrollJoin = root.join("enroll");
                 predicates.add(criteriaBuilder.equal(enrollJoin.get("enrollId"), enrollId));
             }
 
             if (userId != null && !userId.trim().isEmpty()) {
-                if (enrollJoin == null)
-                    enrollJoin = root.join("enroll");
-                if (userJoin == null)
-                    userJoin = enrollJoin.join("user"); // Assign userJoin
+                Join<Enroll, User> userJoin = enrollJoin.join("user");
                 predicates.add(criteriaBuilder.equal(userJoin.get("uuid"), userId));
             }
 
@@ -56,7 +56,7 @@ public class PaymentSpecification {
             }
 
             if (query.getResultType().equals(Payment.class) && query.getOrderList().isEmpty()) {
-                query.orderBy(criteriaBuilder.desc(root.get("paidAt"))); // Changed to paidAt
+                query.orderBy(criteriaBuilder.desc(root.get("paidAt")));
             }
 
             return criteriaBuilder.and(predicates.toArray(new Predicate[0]));
