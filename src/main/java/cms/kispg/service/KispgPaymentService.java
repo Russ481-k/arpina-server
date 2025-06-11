@@ -37,7 +37,8 @@ public interface KispgPaymentService {
      */
     EnrollDto approvePaymentAndCreateEnrollment(PaymentApprovalRequestDto approvalRequest, User currentUser);
 
-    KispgCancelResponseDto cancelPayment(String tid, String moid, String payMethod, int cancelAmount, String reason);
+    KispgCancelResponseDto cancelPayment(String tid, String moid, String payMethod, int cancelAmount, String reason,
+            boolean isPartial);
 
     Map<String, Object> queryTransactionAtPg(KispgQueryRequestDto requestDto);
 }

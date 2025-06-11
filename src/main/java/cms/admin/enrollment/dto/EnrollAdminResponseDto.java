@@ -40,5 +40,6 @@ public class EnrollAdminResponseDto {
         private Integer refundedAmt;
         private String payMethod;
         private LocalDateTime paidAt;
+        private boolean isFullRefund;
     }
-} 
+}

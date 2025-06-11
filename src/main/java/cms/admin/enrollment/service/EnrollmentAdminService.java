@@ -5,6 +5,7 @@ import cms.admin.enrollment.model.dto.TemporaryEnrollmentRequestDto;
 import cms.admin.enrollment.dto.CancelRequestAdminDto;
 import cms.admin.enrollment.dto.DiscountStatusUpdateRequestDto;
 import cms.admin.enrollment.dto.CalculatedRefundDetailsDto;
+import cms.admin.enrollment.dto.AdminCancelRequestDto;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -21,8 +22,13 @@ public interface EnrollmentAdminService {
         Page<CancelRequestAdminDto> getCancelRequests(Long lessonId, List<Enroll.CancelStatusType> cancelStatuses,
                         List<String> targetPayStatuses, boolean useCombinedLogic, Pageable pageable);
 
-        EnrollAdminResponseDto approveCancellationWithManualDays(Long enrollId, String adminComment,
-                        Integer manualUsedDays);
+        /**
+         * 관리자가 수강 신청 취소 요청을 승인합니다.
+         * 
+         * @param enrollId         신청 ID
+         * @param cancelRequestDto 관리자가 직접 입력한 환불 정보 DTO
+         */
+        void approveCancellation(Long enrollId, AdminCancelRequestDto cancelRequestDto);
 
         EnrollAdminResponseDto denyCancellation(Long enrollId, String adminComment);
 

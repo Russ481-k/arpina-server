@@ -7,15 +7,17 @@ import java.math.BigDecimal;
 @Data
 @Builder
 public class CalculatedRefundDetailsDto {
-    private int systemCalculatedUsedDays; 
-    private Integer manualUsedDays;       
-    private int effectiveUsedDays;        
+    private int systemCalculatedUsedDays;
+    private Integer manualUsedDays;
+    private int effectiveUsedDays;
 
-    private BigDecimal originalLessonPrice;  
-    private BigDecimal paidLessonAmount;     
-    private BigDecimal paidLockerAmount;     
+    private BigDecimal originalLessonPrice;
+    private BigDecimal paidLessonAmount;
+    private BigDecimal paidLockerAmount;
 
-    private BigDecimal lessonUsageDeduction; 
+    private BigDecimal lessonUsageDeduction;
 
-    private BigDecimal finalRefundAmount;    
-} 
+    private BigDecimal finalRefundAmount;
+
+    private boolean isFullRefund;
+}

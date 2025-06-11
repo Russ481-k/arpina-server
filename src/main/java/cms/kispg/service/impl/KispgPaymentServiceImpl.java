@@ -662,7 +662,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
             }
         } catch (HttpClientErrorException e) {
             log.error("KISPG 승인 API 호출 중 클라이언트 에러 발생: {} - {}", e.getStatusCode(), e.getResponseBodyAsString(), e);
-            throw new BusinessRuleException(ErrorCode.PAYMENT_GATEWAY_COMMUNICATION_ERROR,
+            throw new BusinessRuleException(ErrorCode.PAYMENT_GATEWAY_ERROR,
                     "결제 게이트웨이 통신 중 오류가 발생했습니다: " + e.getMessage());
         } catch (Exception e) {
             log.error("KISPG 승인 API 호출 중 알 수 없는 에러 발생", e);
@@ -738,10 +738,12 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
     @Override
     @Transactional
     public KispgCancelResponseDto cancelPayment(String tid, String moid, String payMethod, int cancelAmount,
-            String reason) {
+            String reason, boolean isPartial) {
         String ediDate = generateEdiDate();
         String cancelAmountStr = String.valueOf(cancelAmount);
         String hashData = generateCancelHash(this.kispgMid, ediDate, cancelAmountStr);
+
+        String partCanFlg = isPartial ? "1" : "0";
 
         KispgCancelRequestDto cancelRequest = KispgCancelRequestDto.builder()
                 .mid(this.kispgMid)
@@ -753,7 +755,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
                 .ediDate(ediDate)
                 .encData(hashData)
                 .charset("UTF-8")
-                .partCanFlg("1")
+                .partCanFlg(partCanFlg)
                 .build();
 
         return callKispgCancelApi(cancelRequest);
@@ -785,17 +787,17 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
                 } else {
                     log.error("KISPG 취소 실패. Result Code: {}, Message: {}", responseBody.getResultCd(),
                             responseBody.getResultMsg());
-                    throw new BusinessRuleException(ErrorCode.PAYMENT_REFUND_FAILED,
-                            "PG사 취소 실패: " + responseBody.getResultMsg());
+                    String pgErrorMessage = responseBody.getResultMsg() != null ? responseBody.getResultMsg()
+                            : "알 수 없는 PG사 오류";
+                    throw new BusinessRuleException(ErrorCode.PAYMENT_CANCEL_FAILED, pgErrorMessage);
                 }
             } else {
                 log.error("KISPG 취소 API 호출 실패. 응답 코드: {}, 응답 본문: {}", response.getStatusCode(), response.getBody());
-                throw new BusinessRuleException(ErrorCode.PAYMENT_REFUND_FAILED,
-                        "PG사 통신 오류 (HTTP " + response.getStatusCode() + ")");
+                throw new BusinessRuleException(ErrorCode.PAYMENT_GATEWAY_ERROR, "PG사로부터 응답을 받지 못했습니다.");
             }
         } catch (Exception e) {
             log.error("KISPG 취소 API 호출 중 예외 발생", e);
-            throw new BusinessRuleException(ErrorCode.PAYMENT_REFUND_FAILED, "PG사 취소 처리 중 오류 발생: " + e.getMessage());
+            throw new BusinessRuleException(ErrorCode.PAYMENT_CANCEL_FAILED, "PG사 취소 처리 중 오류 발생: " + e.getMessage());
         }
     }
 
@@ -859,7 +861,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
 
             if (responseBody == null) {
                 log.error("KISPG 조회 API 응답 본문이 비어있습니다.");
-                throw new BusinessRuleException(ErrorCode.PAYMENT_GATEWAY_COMMUNICATION_ERROR,
+                throw new BusinessRuleException(ErrorCode.PAYMENT_GATEWAY_ERROR,
                         "PG사 조회 실패: 응답 본문이 비어있습니다.");
             }
 
@@ -885,7 +887,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
             }
         } catch (Exception e) {
             log.error("KISPG 조회 API 호출 중 예외 발생", e);
-            throw new BusinessRuleException(ErrorCode.PAYMENT_GATEWAY_COMMUNICATION_ERROR,
+            throw new BusinessRuleException(ErrorCode.PAYMENT_GATEWAY_ERROR,
                     "PG사 조회 처리 중 오류 발생: " + e.getMessage());
         }
     }

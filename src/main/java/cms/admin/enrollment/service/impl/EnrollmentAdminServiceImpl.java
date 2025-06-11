@@ -36,6 +36,7 @@ import java.util.UUID;
 import java.util.List;
 
 import cms.admin.enrollment.dto.CalculatedRefundDetailsDto;
+import cms.admin.enrollment.dto.AdminCancelRequestDto;
 
 @Service
 @RequiredArgsConstructor
@@ -61,16 +62,21 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
             return null;
 
         List<Payment> payments = paymentRepository.findByEnroll_EnrollIdOrderByCreatedAtDesc(enroll.getEnrollId());
-        Payment payment = payments.isEmpty() ? null : payments.get(0);
+        Payment latestPayment = payments.isEmpty() ? null : payments.get(0);
 
         EnrollAdminResponseDto.PaymentInfoForEnrollAdmin paymentInfo = null;
-        if (payment != null) {
+        if (latestPayment != null) {
+            boolean isFullRefund = latestPayment.getPaidAmt() != null &&
+                    latestPayment.getPaidAmt() > 0 &&
+                    latestPayment.getPaidAmt().equals(latestPayment.getRefundedAmt());
+
             paymentInfo = EnrollAdminResponseDto.PaymentInfoForEnrollAdmin.builder()
-                    .tid(payment.getTid())
-                    .paidAmt(payment.getPaidAmt())
-                    .refundedAmt(payment.getRefundedAmt())
-                    .payMethod(payment.getPayMethod())
-                    .paidAt(payment.getPaidAt())
+                    .tid(latestPayment.getTid())
+                    .paidAmt(latestPayment.getPaidAmt())
+                    .refundedAmt(latestPayment.getRefundedAmt())
+                    .payMethod(latestPayment.getPayMethod())
+                    .paidAt(latestPayment.getPaidAt())
+                    .isFullRefund(isFullRefund)
                     .build();
         }
 
@@ -222,27 +228,10 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
     }
 
     @Override
-    public EnrollAdminResponseDto approveCancellationWithManualDays(Long enrollId, String adminComment,
-            Integer manualUsedDays) {
-        enrollmentService.approveEnrollmentCancellationAdmin(enrollId, manualUsedDays);
-        Enroll updatedEnroll = enrollRepository.findById(enrollId)
-                .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found after approval: " + enrollId,
-                        ErrorCode.ENROLLMENT_NOT_FOUND));
-
-        if (adminComment != null && !adminComment.trim().isEmpty()) {
-            String currentReason = updatedEnroll.getCancelReason() == null ? "" : updatedEnroll.getCancelReason();
-            String newReasonSegment = " [Admin: " + adminComment.trim() + "]";
-            String combinedReason;
-
-            if (currentReason.isEmpty()) {
-                combinedReason = newReasonSegment.trim();
-            } else {
-                combinedReason = currentReason + newReasonSegment;
-            }
-            updatedEnroll.setCancelReason(combinedReason);
-            enrollRepository.save(updatedEnroll); // Save again to update cancelReason
-        }
-        return convertToEnrollAdminResponseDto(updatedEnroll);
+    @Transactional
+    public void approveCancellation(Long enrollId, AdminCancelRequestDto cancelRequestDto) {
+        // Delegate the call to the core EnrollmentService
+        enrollmentService.approveEnrollmentCancellationAdmin(enrollId, cancelRequestDto);
     }
 
     @Override
@@ -260,78 +249,64 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
         Enroll enroll = enrollRepository.findById(enrollId)
                 .orElseThrow(() -> new ResourceNotFoundException("신청 정보를 찾을 수 없습니다.", ErrorCode.ENROLLMENT_NOT_FOUND));
 
-        logger.info("관리자에 의한 직접 취소 처리 (enrollId: {}). 사유: {}", enrollId, adminComment);
+        String originalPayStatus = enroll.getPayStatus();
+        logger.info("관리자 직접 취소 시작. Enroll ID: {}, Original Pay Status: {}", enrollId, originalPayStatus);
 
-        boolean lockerWasAllocated = enroll.isLockerAllocated();
-
-        // 결제된 건에 대한 처리
-        if ("PAID".equals(enroll.getPayStatus())) {
-            enroll.setCancelStatus(Enroll.CancelStatusType.ADMIN_CANCELED);
-            enroll.setCancelApprovedAt(LocalDateTime.now());
-            enroll.setPayStatus("REFUND_PENDING_ADMIN_CANCEL");
-
-            logger.info("PAID 상태의 수강(enrollId: {})을 관리자 취소 처리. 환불 대기 상태로 변경.", enrollId);
-
-            if (lockerWasAllocated) {
-                User user = enroll.getUser();
-                if (user != null && user.getGender() != null && !user.getGender().trim().isEmpty()) {
-                    String lockerGenderString; // Renamed for clarity
-                    if ("0".equals(user.getGender())) {
-                        lockerGenderString = "FEMALE";
-                    } else if ("1".equals(user.getGender())) {
-                        lockerGenderString = "MALE";
-                    } else {
-                        logger.warn(
-                                "Unknown gender code '{}' for user {} during admin cancellation. Cannot determine locker gender for decrement.",
-                                user.getGender(), user.getUuid());
-                        // Skip decrementing if gender is unknown, or throw an error if strict handling
-                        // is required
-                        lockerGenderString = null;
-                    }
-
-                    if (lockerGenderString != null) {
-                        try {
-                            logger.info(
-                                    "Attempting to decrement locker count due to admin cancellation. User-gender: {}, mapped-locker-gender: {} (User: {}, EnrollId: {})",
-                                    user.getGender(), lockerGenderString, user.getUuid(), enrollId);
-                            lockerService.decrementUsedQuantity(lockerGenderString);
-                            enroll.setLockerAllocated(false); // Mark locker as de-allocated
-                            logger.info(
-                                    "Locker decremented successfully for mapped-locker-gender: {} (User: {}, EnrollId: {})",
-                                    lockerGenderString, user.getUuid(), enrollId);
-                        } catch (Exception e) {
-                            logger.error(
-                                    "Failed to decrement locker for user {} (mapped-locker-gender: {}) during admin cancellation of enrollId {}. Reason: {}",
-                                    user.getUuid(), lockerGenderString, enrollId, e.getMessage(), e);
-                            // Potentially add to admin notes or a specific error state on enrollment if
-                            // critical
-                        }
-                    }
-                } else {
-                    logger.warn(
-                            "Cannot decrement locker quantity for enrollId {} during admin cancellation due to missing user or gender info.",
-                            enrollId);
-                }
-            }
-            enroll.setUsesLocker(false); // 사물함 사용 안함으로 변경
-            enroll.setLockerPgToken(null);
-        } else if ("UNPAID".equals(enroll.getPayStatus())) {
-            // 미결제 건에 대한 처리
-            enroll.setCancelStatus(Enroll.CancelStatusType.ADMIN_CANCELED);
-            enroll.setCancelApprovedAt(LocalDateTime.now());
-            enroll.setPayStatus("CANCELED"); // 결제 상태를 '취소됨'으로 변경
-            logger.info("UNPAID 상태의 수강(enrollId: {})을 관리자 취소 처리. CANCELED 상태로 변경.", enrollId);
-        } else {
-            // PAID, UNPAID 외 다른 상태 (예: REFUNDED, FAILED 등)
-            // ... existing code ...
+        // 이미 최종적으로 취소/환불된 건은 더 이상 처리하지 않음.
+        if ("CANCELED".equals(enroll.getStatus())
+                && ("REFUNDED".equals(originalPayStatus) || "CANCELED_UNPAID".equals(originalPayStatus))) {
+            logger.warn("이미 최종 처리된 신청입니다 (ID: {}). 상태를 변경하지 않습니다.", enrollId);
+            throw new BusinessRuleException(ErrorCode.ALREADY_CANCELLED_ENROLLMENT, "이미 취소 또는 환불이 완료된 신청입니다.");
         }
 
-        Enroll savedEnroll = enrollRepository.save(enroll);
+        // [공통] 취소 상태 및 사유 설정
+        enroll.setCancelStatus(Enroll.CancelStatusType.ADMIN_CANCELED);
+        enroll.setCancelReason(adminComment);
+        enroll.setCancelApprovedAt(LocalDateTime.now()); // 관리자가 즉시 취소 승인한 것으로 간주
+        enroll.setUpdatedBy("ADMIN");
 
-        // TODO: Trigger actual refund process if payStatus was PAID
-        // This might involve calling a payment gateway service
+        // [핵심] '취소/환불 관리' 탭으로 보내기 위한 상태 설정
+        enroll.setStatus("CANCELED");
 
-        return convertToEnrollAdminResponseDto(savedEnroll);
+        // 결제된 건(부분 환불 포함)은 '환불 대기' 상태로 변경하여 환불 관리 탭으로 보냄
+        if ("PAID".equalsIgnoreCase(originalPayStatus) || "PARTIALLY_REFUNDED".equalsIgnoreCase(originalPayStatus)) {
+            enroll.setPayStatus("REFUND_PENDING_ADMIN_CANCEL");
+            logger.info("결제 완료 건 (ID: {}) -> 환불 대기 상태로 변경합니다.", enrollId);
+
+        } else if ("UNPAID".equalsIgnoreCase(originalPayStatus)) {
+            // 미결제 건은 즉시 취소 완료.
+            enroll.setPayStatus("CANCELED_UNPAID");
+            logger.info("미결제 건 (ID: {}) -> 즉시 취소 완료 상태로 변경합니다.", enrollId);
+            // 미결제 건에 할당된 사물함이 있다면 반납
+            if (enroll.isLockerAllocated()) {
+                User user = enroll.getUser();
+                if (user != null && user.getGender() != null && !user.getGender().isEmpty()) {
+                    String lockerGender = "0".equals(user.getGender()) ? "FEMALE"
+                            : ("1".equals(user.getGender()) ? "MALE" : null);
+                    if (lockerGender != null) {
+                        try {
+                            lockerService.decrementUsedQuantity(lockerGender);
+                            enroll.setLockerAllocated(false);
+                            enroll.setUsesLocker(false);
+                            logger.info("미결제 건(ID:{}) 관리자 취소에 따라 {} 사물함 반납 처리.", enrollId, lockerGender);
+                        } catch (Exception e) {
+                            logger.error("미결제 건(ID:{}) 관리자 취소 중 사물함 반납 실패: {}", enrollId, e.getMessage(), e);
+                        }
+                    }
+                }
+            }
+
+        } else {
+            // 사용자가 취소 요청한 상태(REFUND_REQUESTED) 등 다른 모든 상태도 강제로 관리자 취소 상태로 덮어씀
+            enroll.setPayStatus("REFUND_PENDING_ADMIN_CANCEL");
+            logger.warn("'{}` 상태의 건 (ID: {}) -> 관리자가 강제로 환불 대기 상태로 변경합니다.", originalPayStatus, enrollId);
+        }
+
+        Enroll updatedEnroll = enrollRepository.save(enroll);
+        logger.info("관리자 직접 취소 완료. 최종 상태: status={}, payStatus={}", updatedEnroll.getStatus(),
+                updatedEnroll.getPayStatus());
+
+        return convertToEnrollAdminResponseDto(updatedEnroll);
     }
 
     @Override

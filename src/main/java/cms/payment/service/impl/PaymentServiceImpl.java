@@ -158,8 +158,9 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Override
     @Transactional
-    public KispgCancelResponseDto requestCancelPayment(Long paymentId, int cancelAmount, String reason) {
-        logger.info("결제 취소 요청 처리 시작 (Payment ID: {}, 금액: {})", paymentId, cancelAmount);
+    public KispgCancelResponseDto requestCancelPayment(Long paymentId, int cancelAmount, String reason,
+            boolean isPartial) {
+        logger.info("결제 취소 요청 처리 시작 (Payment ID: {}, 금액: {}, 부분환불: {})", paymentId, cancelAmount, isPartial);
 
         Payment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("취소할 결제 정보를 찾을 수 없습니다: " + paymentId,
@@ -182,11 +183,12 @@ public class PaymentServiceImpl implements PaymentService {
         // 1. PG사 취소 API 호출
         KispgCancelResponseDto cancelResponse = kispgPaymentService.cancelPayment(payment.getTid(), moid,
                 payMethod.toLowerCase(), cancelAmount,
-                reason);
+                reason, isPartial);
 
         // 2. PG사 취소 성공 시, Payment 상태 업데이트
         if ("2001".equals(cancelResponse.getResultCd())) {
-            logger.info("PG사 환불 성공. Payment 상태 업데이트 (Payment ID: {}, 금액: {})", paymentId, cancelAmount);
+            logger.info("PG사 환불 성공. Payment 상태 업데이트 (Payment ID: {}, 금액: {}, 부분환불: {})", paymentId, cancelAmount,
+                    isPartial);
             int totalPaidAmount = payment.getPaidAmt() != null ? payment.getPaidAmt() : 0;
             int newRefundedAmount = (payment.getRefundedAmt() == null ? 0 : payment.getRefundedAmt()) + cancelAmount;
 

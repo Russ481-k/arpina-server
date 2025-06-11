@@ -18,133 +18,157 @@ import java.util.Optional;
 
 @Repository
 public interface EnrollRepository extends JpaRepository<Enroll, Long>, JpaSpecificationExecutor<Enroll> {
-    List<Enroll> findByUserOrderByCreatedAtDesc(User user);
-    List<Enroll> findByUserAndStatusOrderByCreatedAtDesc(User user, String status);
+       List<Enroll> findByUserOrderByCreatedAtDesc(User user);
 
-    List<Enroll> findByUserUuid(String userUuid);
+       List<Enroll> findByUserAndStatusOrderByCreatedAtDesc(User user, String status);
 
-    List<Enroll> findByUserUuidAndLessonLessonId(String userUuid, Long lessonId);
+       List<Enroll> findByUserUuid(String userUuid);
 
-    Page<Enroll> findByUserUuidAndStatus(String userUuid, String status, Pageable pageable);
+       List<Enroll> findByUserUuidAndLessonLessonId(String userUuid, Long lessonId);
 
-    Page<Enroll> findByLessonLessonId(Long lessonId, Pageable pageable);
+       Page<Enroll> findByUserUuidAndStatus(String userUuid, String status, Pageable pageable);
 
-    Optional<Enroll> findByUserUuidAndLessonLessonIdAndStatus(String userUuid, Long lessonId, String status);
+       Page<Enroll> findByLessonLessonId(Long lessonId, Pageable pageable);
 
-    Optional<Enroll> findByUserUuidAndLessonLessonIdAndPayStatus(String userUuid, Long lessonId, String payStatus);
+       Optional<Enroll> findByUserUuidAndLessonLessonIdAndStatus(String userUuid, Long lessonId, String status);
 
-    @Query("SELECT COUNT(e) FROM Enroll e " +
-           "WHERE e.lesson.lessonId = :lessonId " +
-           "AND e.user.gender = :gender " +
-           "AND e.usesLocker = true " +
-           "AND e.status = 'APPLIED'")
-    long countUsedLockersByLessonAndUserGender(@Param("lessonId") Long lessonId, @Param("gender") String gender);
+       Optional<Enroll> findByUserUuidAndLessonLessonIdAndPayStatus(String userUuid, Long lessonId, String payStatus);
 
-    // Added methods for capacity checks
-    long countByLessonLessonIdAndPayStatus(Long lessonId, String payStatus);
+       @Query("SELECT COUNT(e) FROM Enroll e " +
+                     "WHERE e.lesson.lessonId = :lessonId " +
+                     "AND e.user.gender = :gender " +
+                     "AND e.usesLocker = true " +
+                     "AND e.status = 'APPLIED'")
+       long countUsedLockersByLessonAndUserGender(@Param("lessonId") Long lessonId, @Param("gender") String gender);
 
-    long countByLessonLessonIdAndStatusAndPayStatus(Long lessonId, String status, String payStatus);
+       // Added methods for capacity checks
+       long countByLessonLessonIdAndPayStatus(Long lessonId, String payStatus);
 
-    // Methods for admin view
-    Page<Enroll> findByPayStatus(String payStatus, Pageable pageable);
-    Page<Enroll> findByStatus(String status, Pageable pageable);
-    Page<Enroll> findByLesson(Lesson lesson, Pageable pageable);
+       long countByLessonLessonIdAndStatusAndPayStatus(Long lessonId, String status, String payStatus);
 
-    long countByLessonAndPayStatusAndExpireDtAfter(Lesson lesson, String payStatus, LocalDateTime expireDt);
+       // Methods for admin view
+       Page<Enroll> findByPayStatus(String payStatus, Pageable pageable);
 
-    // Method to count active enrollments for a lesson (PAID or (UNPAID and APPLIED and not expired))
-    @Query("SELECT COUNT(e) FROM Enroll e WHERE e.lesson.lessonId = :lessonId AND (e.payStatus = 'PAID' OR (e.payStatus = 'UNPAID' AND e.status = 'APPLIED' AND e.expireDt > :now))")
-    long countActiveEnrollmentsForLesson(@Param("lessonId") Long lessonId, @Param("now") LocalDateTime now);
+       Page<Enroll> findByStatus(String status, Pageable pageable);
 
-    // Method to count UNPAID, APPLIED, active locker users for a lesson by gender
-    @Query("SELECT COUNT(e) FROM Enroll e WHERE e.lesson.lessonId = :lessonId AND e.user.gender = :gender AND e.usesLocker = true AND e.payStatus IN :payStatuses AND e.status = 'APPLIED' AND e.expireDt > :now")
-    long countByLessonLessonIdAndUserGenderAndUsesLockerTrueAndPayStatusInAndExpireDtAfter(@Param("lessonId") Long lessonId, @Param("gender") String gender, @Param("payStatuses") List<String> payStatuses, @Param("now") LocalDateTime now);
+       Page<Enroll> findByLesson(Lesson lesson, Pageable pageable);
 
-    // Method to count PAID locker users for a lesson by gender
-    @Query("SELECT COUNT(e) FROM Enroll e WHERE e.lesson.lessonId = :lessonId AND e.user.gender = :gender AND e.usesLocker = true AND e.payStatus IN :payStatuses")
-    long countByLessonLessonIdAndUserGenderAndUsesLockerTrueAndPayStatusIn(@Param("lessonId") Long lessonId, @Param("gender") String gender, @Param("payStatuses") List<String> payStatuses);
+       long countByLessonAndPayStatusAndExpireDtAfter(Lesson lesson, String payStatus, LocalDateTime expireDt);
 
-    // For monthly enrollment check (assuming this already exists and is correct)
-    // If it doesn't exist or needs specific logic, it would be defined here.
-    // Example: @Query("SELECT COUNT(e) FROM Enroll e WHERE e.user.uuid = :userUuid AND YEAR(e.lesson.startDate) = YEAR(:lessonStartDate) AND MONTH(e.lesson.startDate) = MONTH(:lessonStartDate) AND e.payStatus IN ('PAID', 'UNPAID')")
-    // long countUserEnrollmentsInMonth(@Param("userUuid") String userUuid, @Param("lessonStartDate") LocalDate lessonStartDate);
+       // Method to count active enrollments for a lesson (PAID or (UNPAID and APPLIED
+       // and not expired))
+       @Query("SELECT COUNT(e) FROM Enroll e WHERE e.lesson.lessonId = :lessonId AND (e.payStatus = 'PAID' OR (e.payStatus = 'UNPAID' AND e.status = 'APPLIED' AND e.expireDt > :now))")
+       long countActiveEnrollmentsForLesson(@Param("lessonId") Long lessonId, @Param("now") LocalDateTime now);
 
-    // For renewal locker transfer: find the latest paid enrollment with a locker for the user from the previous month
-    @Query("SELECT e FROM Enroll e " +
-           "WHERE e.user.uuid = :userUuid " +
-           "AND e.payStatus = 'PAID' " +
-           "AND e.lockerAllocated = true " +
-           "AND e.lesson.endDate < :currentLessonStartDate " +
-           "AND FUNCTION('YEAR', e.lesson.endDate) = FUNCTION('YEAR', :previousMonthDate) " +
-           "AND FUNCTION('MONTH', e.lesson.endDate) = FUNCTION('MONTH', :previousMonthDate) " +
-           "ORDER BY e.lesson.endDate DESC, e.createdAt DESC")
-    List<Enroll> findPreviousPaidLockerEnrollmentsForUser(
-            @Param("userUuid") String userUuid, 
-            @Param("currentLessonStartDate") LocalDate currentLessonStartDate, 
-            @Param("previousMonthDate") LocalDate previousMonthDate);
+       // Method to count UNPAID, APPLIED, active locker users for a lesson by gender
+       @Query("SELECT COUNT(e) FROM Enroll e WHERE e.lesson.lessonId = :lessonId AND e.user.gender = :gender AND e.usesLocker = true AND e.payStatus IN :payStatuses AND e.status = 'APPLIED' AND e.expireDt > :now")
+       long countByLessonLessonIdAndUserGenderAndUsesLockerTrueAndPayStatusInAndExpireDtAfter(
+                     @Param("lessonId") Long lessonId, @Param("gender") String gender,
+                     @Param("payStatuses") List<String> payStatuses, @Param("now") LocalDateTime now);
 
-    // For LessonCompletionLockerReleaseSweepJob: find enrollments for lessons ended before a certain date with lockers allocated.
-    @Query("SELECT e FROM Enroll e " +
-           "WHERE e.lesson.endDate < :date " +
-           "AND e.lockerAllocated = true")
-    List<Enroll> findByLesson_EndDateBeforeAndLockerAllocatedIsTrue(@Param("date") LocalDate date);
+       // Method to count PAID locker users for a lesson by gender
+       @Query("SELECT COUNT(e) FROM Enroll e WHERE e.lesson.lessonId = :lessonId AND e.user.gender = :gender AND e.usesLocker = true AND e.payStatus IN :payStatuses")
+       long countByLessonLessonIdAndUserGenderAndUsesLockerTrueAndPayStatusIn(@Param("lessonId") Long lessonId,
+                     @Param("gender") String gender, @Param("payStatuses") List<String> payStatuses);
 
-    // For checking if a lesson can be deleted
-    @Query("SELECT COUNT(e) FROM Enroll e WHERE e.lesson.lessonId = :lessonId AND e.status <> 'CANCELED' AND e.payStatus NOT IN ('REFUNDED', 'PARTIALLY_REFUNDED', 'CANCELED_UNPAID')")
-    long countActiveEnrollmentsForLessonDeletion(@Param("lessonId") Long lessonId);
+       // For monthly enrollment check (assuming this already exists and is correct)
+       // If it doesn't exist or needs specific logic, it would be defined here.
+       // Example: @Query("SELECT COUNT(e) FROM Enroll e WHERE e.user.uuid = :userUuid
+       // AND YEAR(e.lesson.startDate) = YEAR(:lessonStartDate) AND
+       // MONTH(e.lesson.startDate) = MONTH(:lessonStartDate) AND e.payStatus IN
+       // ('PAID', 'UNPAID')")
+       // long countUserEnrollmentsInMonth(@Param("userUuid") String userUuid,
+       // @Param("lessonStartDate") LocalDate lessonStartDate);
 
-    Optional<Enroll> findByUserAndLessonAndPayStatusNotIn(User user, Lesson lesson, List<String> excludedPayStatuses);
+       // For renewal locker transfer: find the latest paid enrollment with a locker
+       // for the user from the previous month
+       @Query("SELECT e FROM Enroll e " +
+                     "WHERE e.user.uuid = :userUuid " +
+                     "AND e.payStatus = 'PAID' " +
+                     "AND e.lockerAllocated = true " +
+                     "AND e.lesson.endDate < :currentLessonStartDate " +
+                     "AND FUNCTION('YEAR', e.lesson.endDate) = FUNCTION('YEAR', :previousMonthDate) " +
+                     "AND FUNCTION('MONTH', e.lesson.endDate) = FUNCTION('MONTH', :previousMonthDate) " +
+                     "ORDER BY e.lesson.endDate DESC, e.createdAt DESC")
+       List<Enroll> findPreviousPaidLockerEnrollmentsForUser(
+                     @Param("userUuid") String userUuid,
+                     @Param("currentLessonStartDate") LocalDate currentLessonStartDate,
+                     @Param("previousMonthDate") LocalDate previousMonthDate);
 
-    // Method that was missing or had an incorrect signature
-    long countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(Long lessonId, String status, String payStatus, LocalDateTime expireDt);
+       // For LessonCompletionLockerReleaseSweepJob: find enrollments for lessons ended
+       // before a certain date with lockers allocated.
+       @Query("SELECT e FROM Enroll e " +
+                     "WHERE e.lesson.endDate < :date " +
+                     "AND e.lockerAllocated = true")
+       List<Enroll> findByLesson_EndDateBeforeAndLockerAllocatedIsTrue(@Param("date") LocalDate date);
 
-    // For checking existing UNPAID enrollment before payment for a specific lesson by a user
-    Optional<Enroll> findByUserUuidAndLessonLessonIdAndPayStatusAndExpireDtAfter(
-        String userUuid, Long lessonId, String payStatus, LocalDateTime expireDt
-    );
+       // For checking if a lesson can be deleted
+       @Query("SELECT COUNT(e) FROM Enroll e WHERE e.lesson.lessonId = :lessonId AND e.status <> 'CANCELED' AND e.payStatus NOT IN ('REFUNDED', 'PARTIALLY_REFUNDED', 'CANCELED_UNPAID')")
+       long countActiveEnrollmentsForLessonDeletion(@Param("lessonId") Long lessonId);
 
-    // Check if a user has any enrollment (regardless of status) for a specific lesson that was admin-cancelled
-    boolean existsByUserUuidAndLessonLessonIdAndCancelStatusAndPayStatusIn(
-        String userUuid, 
-        Long lessonId, 
-        Enroll.CancelStatusType cancelStatus, 
-        List<String> payStatuses
-    );
+       Optional<Enroll> findByUserAndLessonAndPayStatusNotIn(User user, Lesson lesson,
+                     List<String> excludedPayStatuses);
 
-    // For the temp-enrollment-bypass branch: check for PAID status directly
-    // Removed duplicated findByUserUuidAndLessonLessonIdAndPayStatus from here
+       // Method that was missing or had an incorrect signature
+       long countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(Long lessonId, String status, String payStatus,
+                     LocalDateTime expireDt);
 
-    // For monthly enrollment limit check (counts any active/paid status for a given month)
-    @Query("SELECT count(e) FROM Enroll e WHERE e.user.uuid = :userUuid " +
-           "AND e.lesson.startDate >= :monthStart AND e.lesson.startDate <= :monthEnd " +
-           "AND e.payStatus IN ('PAID', 'UNPAID') AND e.status NOT IN ('CANCELED', 'EXPIRED')") // Consider only active states
-    long countUserEnrollmentsInMonthForDateRange(@Param("userUuid") String userUuid, 
-                                               @Param("monthStart") LocalDate monthStart, 
-                                               @Param("monthEnd") LocalDate monthEnd);
+       // For checking existing UNPAID enrollment before payment for a specific lesson
+       // by a user
+       Optional<Enroll> findByUserUuidAndLessonLessonIdAndPayStatusAndExpireDtAfter(
+                     String userUuid, Long lessonId, String payStatus, LocalDateTime expireDt);
 
-    // Simpler version if lesson.getStartDate() is sufficient for month grouping (assumes lessons are monthly)
-    @Query("SELECT count(e) FROM Enroll e WHERE e.user.uuid = :userUuid " +
-           "AND FUNCTION('YEAR', e.lesson.startDate) = FUNCTION('YEAR', :lessonMonthDate) " +
-           "AND FUNCTION('MONTH', e.lesson.startDate) = FUNCTION('MONTH', :lessonMonthDate) " +
-           "AND e.payStatus IN ('PAID', 'UNPAID') AND e.status NOT IN ('CANCELED', 'EXPIRED', 'CANCELED_UNPAID')")
-    long countUserEnrollmentsInMonth(@Param("userUuid") String userUuid, @Param("lessonMonthDate") LocalDate lessonMonthDate);
+       // Check if a user has any enrollment (regardless of status) for a specific
+       // lesson that was admin-cancelled
+       boolean existsByUserUuidAndLessonLessonIdAndCancelStatusAndPayStatusIn(
+                     String userUuid,
+                     Long lessonId,
+                     Enroll.CancelStatusType cancelStatus,
+                     List<String> payStatuses);
 
-    @Query("SELECT COUNT(e) FROM Enroll e " +
-           "WHERE e.user.gender = :gender " +
-           "AND e.payStatus = :payStatus " +
-           "AND e.usesLocker = :usesLocker " +
-           "AND e.lockerAllocated = :lockerAllocated " +
-           "AND e.lesson.startDate <= :periodEnd " +
-           "AND e.lesson.endDate >= :periodStart")
-    long countActiveLockerCommitmentsForPeriod(
-            @Param("gender") String gender,
-            @Param("payStatus") String payStatus,
-            @Param("usesLocker") boolean usesLocker,
-            @Param("lockerAllocated") boolean lockerAllocated,
-            @Param("periodStart") LocalDate periodStart,
-            @Param("periodEnd") LocalDate periodEnd
-    );
+       // For the temp-enrollment-bypass branch: check for PAID status directly
+       // Removed duplicated findByUserUuidAndLessonLessonIdAndPayStatus from here
 
-    // For ExpiredUnpaidEnrollmentCleanupJob
-    List<Enroll> findByPayStatusAndStatusAndExpireDtBefore(String payStatus, String status, LocalDateTime expireDt);
-} 
+       // For monthly enrollment limit check (counts any active/paid status for a given
+       // month)
+       @Query("SELECT count(e) FROM Enroll e WHERE e.user.uuid = :userUuid " +
+                     "AND e.lesson.startDate >= :monthStart AND e.lesson.startDate <= :monthEnd " +
+                     "AND e.payStatus IN ('PAID', 'UNPAID') AND e.status NOT IN ('CANCELED', 'EXPIRED')") // Consider
+                                                                                                          // only active
+                                                                                                          // states
+       long countUserEnrollmentsInMonthForDateRange(@Param("userUuid") String userUuid,
+                     @Param("monthStart") LocalDate monthStart,
+                     @Param("monthEnd") LocalDate monthEnd);
+
+       // Simpler version if lesson.getStartDate() is sufficient for month grouping
+       // (assumes lessons are monthly)
+       @Query("SELECT count(e) FROM Enroll e WHERE e.user.uuid = :userUuid " +
+                     "AND FUNCTION('YEAR', e.lesson.startDate) = FUNCTION('YEAR', :lessonMonthDate) " +
+                     "AND FUNCTION('MONTH', e.lesson.startDate) = FUNCTION('MONTH', :lessonMonthDate) " +
+                     "AND e.payStatus IN ('PAID', 'UNPAID') AND e.status NOT IN ('CANCELED', 'EXPIRED', 'CANCELED_UNPAID')")
+       long countUserEnrollmentsInMonth(@Param("userUuid") String userUuid,
+                     @Param("lessonMonthDate") LocalDate lessonMonthDate);
+
+       @Query("SELECT COUNT(e) FROM Enroll e " +
+                     "WHERE e.user.gender = :gender " +
+                     "AND e.payStatus = :payStatus " +
+                     "AND e.usesLocker = :usesLocker " +
+                     "AND e.lockerAllocated = :lockerAllocated " +
+                     "AND e.lesson.startDate <= :periodEnd " +
+                     "AND e.lesson.endDate >= :periodStart")
+       long countActiveLockerCommitmentsForPeriod(
+                     @Param("gender") String gender,
+                     @Param("payStatus") String payStatus,
+                     @Param("usesLocker") boolean usesLocker,
+                     @Param("lockerAllocated") boolean lockerAllocated,
+                     @Param("periodStart") LocalDate periodStart,
+                     @Param("periodEnd") LocalDate periodEnd);
+
+       // For ExpiredUnpaidEnrollmentCleanupJob
+       List<Enroll> findByPayStatusAndStatusAndExpireDtBefore(String payStatus, String status, LocalDateTime expireDt);
+
+       Optional<Enroll> findFirstByUserAndLesson(User user, Lesson lesson);
+
+       @Query("SELECT count(e) > 0 FROM Enroll e WHERE e.user.uuid = :userUuid AND e.lesson.lessonId = :lessonId AND e.payStatus NOT IN ('REFUNDED', 'PARTIALLY_REFUNDED', 'CANCELED_UNPAID')")
+       boolean existsActiveEnrollment(@Param("userUuid") String userUuid, @Param("lessonId") Long lessonId);
+}

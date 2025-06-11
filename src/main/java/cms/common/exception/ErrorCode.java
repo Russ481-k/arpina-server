@@ -19,6 +19,7 @@ public enum ErrorCode {
     REQUEST_TIMEOUT("CM_0008", "요청 처리 시간이 초과되었습니다.", HttpStatus.REQUEST_TIMEOUT),
     SERVICE_UNAVAILABLE("CM_0009", "현재 서비스를 사용할 수 없습니다. 잠시 후 다시 시도해주세요.", HttpStatus.SERVICE_UNAVAILABLE),
     DATA_INTEGRITY_VIOLATION("CM_0010", "데이터 무결성 제약조건을 위반했습니다. 입력값을 확인해주세요.", HttpStatus.CONFLICT),
+    INVALID_REQUEST("CM_0011", "잘못된 요청입니다.", HttpStatus.BAD_REQUEST),
 
     // User Errors (US_xxxx)
     USER_NOT_FOUND("US_0001", "해당 사용자를 찾을 수 없습니다.", HttpStatus.NOT_FOUND),
@@ -72,12 +73,12 @@ public enum ErrorCode {
     PAYMENT_WEBHOOK_INVALID_REQUEST("PM_0006", "잘못된 결제 웹훅 요청입니다.", HttpStatus.BAD_REQUEST),
     PAYMENT_ALREADY_PROCESSED("PM_0007", "이미 처리된 결제입니다.", HttpStatus.CONFLICT),
     PAYMENT_CANCEL_NOT_ALLOWED("PM_0008", "해당 결제는 현재 취소할 수 없는 상태입니다.", HttpStatus.BAD_REQUEST),
-    PAYMENT_REFUND_FAILED("PM_0009", "결제 환불 처리 중 오류가 발생했습니다.", HttpStatus.INTERNAL_SERVER_ERROR),
+    PAYMENT_REFUND_FAILED("PM_0009", "결제 환불 처리 중 내부 오류가 발생했습니다.", HttpStatus.INTERNAL_SERVER_ERROR),
     PAYMENT_GATEWAY_APPROVAL_FAILED("PM_0010", "결제 게이트웨이 승인에 실패했습니다.", HttpStatus.BAD_REQUEST),
     CANNOT_CALCULATE_REFUND("PM_0011", "환불액을 계산할 수 없는 상태입니다.", HttpStatus.BAD_REQUEST),
-    PAYMENT_CANCEL_FAILED("PM_0012", "PG사 결제 취소에 실패했습니다.", HttpStatus.INTERNAL_SERVER_ERROR),
-    PG_TRANSACTION_NOT_FOUND("PM_0012", "PG사에서 해당 거래를 찾을 수 없습니다.", HttpStatus.NOT_FOUND),
-    PAYMENT_GATEWAY_COMMUNICATION_ERROR("PM_0013", "PG사와의 통신 중 오류가 발생했습니다.", HttpStatus.INTERNAL_SERVER_ERROR),
+    PAYMENT_CANCEL_FAILED("PM_0012", "PG사 결제 취소에 실패했습니다. (PG사 거부)", HttpStatus.BAD_REQUEST),
+    PAYMENT_GATEWAY_ERROR("PM_0013", "PG사와의 통신 중 오류가 발생했습니다.", HttpStatus.INTERNAL_SERVER_ERROR),
+    PG_TRANSACTION_NOT_FOUND("PM_0014", "PG사에서 해당 거래를 찾을 수 없습니다.", HttpStatus.NOT_FOUND),
 
     // Locker Errors (LK_xxxx)
     LOCKER_NOT_AVAILABLE("LK_0001", "사용 가능한 사물함이 없습니다.", HttpStatus.CONFLICT),
@@ -90,7 +91,10 @@ public enum ErrorCode {
     FILE_UPLOAD_FAILED("FL_0001", "파일 업로드에 실패했습니다.", HttpStatus.INTERNAL_SERVER_ERROR),
     FILE_NOT_FOUND("FL_0002", "파일을 찾을 수 없습니다.", HttpStatus.NOT_FOUND),
     INVALID_FILE_FORMAT("FL_0003", "지원하지 않는 파일 형식입니다.", HttpStatus.BAD_REQUEST),
-    FILE_SIZE_EXCEEDED("FL_0004", "파일 크기가 너무 큽니다.", HttpStatus.PAYLOAD_TOO_LARGE);
+    FILE_SIZE_EXCEEDED("FL_0004", "파일 크기가 너무 큽니다.", HttpStatus.PAYLOAD_TOO_LARGE),
+
+    // Template Errors (TP_xxxx)
+    TEMPLATE_NOT_FOUND("TP_0001", "템플릿을 찾을 수 없습니다.", HttpStatus.NOT_FOUND);
 
     private final String code;
     private final String defaultMessage;

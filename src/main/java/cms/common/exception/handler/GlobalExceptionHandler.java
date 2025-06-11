@@ -19,8 +19,17 @@ import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import javax.persistence.EntityNotFoundException;
+import javax.validation.ConstraintViolationException;
 import java.util.Map;
 import java.util.stream.Collectors;
+
+// Merged custom exception imports
+import cms.template.exception.TemplateNotFoundException;
+import cms.template.exception.CannotDeleteFixedTemplateException;
+import cms.common.exception.DuplicateDiException;
+import cms.common.exception.DuplicateEmailException;
+import cms.common.exception.DuplicateUsernameException;
+import cms.common.exception.NiceVerificationException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
@@ -209,5 +218,108 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                                 request.getDescription(false).replace("uri=", ""),
                                 ErrorCode.INTERNAL_SERVER_ERROR.getCode());
                 return new ResponseEntity<>(errorResponse, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+
+        // --- Start of Merged Handlers from the old GlobalExceptionHandler ---
+
+        @ExceptionHandler(ConstraintViolationException.class)
+        public ResponseEntity<ErrorResponse> handleConstraintViolation(ConstraintViolationException ex,
+                        WebRequest request) {
+                log.warn("Constraint Violation: {}", ex.getMessage());
+                Map<String, String> errors = ex.getConstraintViolations().stream()
+                                .collect(Collectors.toMap(
+                                                violation -> violation.getPropertyPath().toString(),
+                                                violation -> violation.getMessage()));
+                ErrorResponse errorResponse = new ErrorResponse(
+                                HttpStatus.BAD_REQUEST.value(),
+                                HttpStatus.BAD_REQUEST.getReasonPhrase(),
+                                "입력 값에 제약 조건 위반이 있습니다.",
+                                request.getDescription(false).replace("uri=", ""),
+                                ErrorCode.INVALID_INPUT_VALUE.getCode());
+                errorResponse.setValidationErrors(errors);
+                return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+        }
+
+        @ExceptionHandler(TemplateNotFoundException.class)
+        public ResponseEntity<ErrorResponse> handleTemplateNotFoundException(TemplateNotFoundException ex,
+                        WebRequest request) {
+                log.warn("Template Not Found: {}. URI: {}", ex.getMessage(), request.getDescription(false));
+                ErrorCode ec = ErrorCode.TEMPLATE_NOT_FOUND; // Assuming this error code exists
+                ErrorResponse errorResponse = new ErrorResponse(
+                                ec.getHttpStatus().value(),
+                                ec.getHttpStatus().getReasonPhrase(),
+                                ex.getMessage(),
+                                request.getDescription(false).replace("uri=", ""),
+                                ec.getCode());
+                return new ResponseEntity<>(errorResponse, ec.getHttpStatus());
+        }
+
+        @ExceptionHandler(CannotDeleteFixedTemplateException.class)
+        public ResponseEntity<ErrorResponse> handleCannotDeleteFixedTemplateException(
+                        CannotDeleteFixedTemplateException ex, WebRequest request) {
+                log.warn("Cannot Delete Fixed Template: {}. URI: {}", ex.getMessage(), request.getDescription(false));
+                ErrorCode ec = ErrorCode.INVALID_REQUEST; // Using a generic code as a fallback
+                ErrorResponse errorResponse = new ErrorResponse(
+                                ec.getHttpStatus().value(),
+                                ec.getHttpStatus().getReasonPhrase(),
+                                ex.getMessage(),
+                                request.getDescription(false).replace("uri=", ""),
+                                ec.getCode());
+                return new ResponseEntity<>(errorResponse, ec.getHttpStatus());
+        }
+
+        @ExceptionHandler(DuplicateDiException.class)
+        public ResponseEntity<ErrorResponse> handleDuplicateDiException(DuplicateDiException ex, WebRequest request) {
+                log.warn("Duplicate DI: {}. URI: {}", ex.getMessage(), request.getDescription(false));
+                ErrorCode ec = ErrorCode.DUPLICATE_DI; // Assuming this error code exists
+                ErrorResponse errorResponse = new ErrorResponse(
+                                ec.getHttpStatus().value(),
+                                ec.getHttpStatus().getReasonPhrase(),
+                                ex.getMessage(),
+                                request.getDescription(false).replace("uri=", ""),
+                                ec.getCode());
+                return new ResponseEntity<>(errorResponse, ec.getHttpStatus());
+        }
+
+        @ExceptionHandler(DuplicateEmailException.class)
+        public ResponseEntity<ErrorResponse> handleDuplicateEmailException(DuplicateEmailException ex,
+                        WebRequest request) {
+                log.warn("Duplicate Email Exception: {}. URI: {}", ex.getMessage(), request.getDescription(false));
+                ErrorCode ec = ErrorCode.DUPLICATE_EMAIL;
+                ErrorResponse errorResponse = new ErrorResponse(
+                                ec.getHttpStatus().value(),
+                                ec.getHttpStatus().getReasonPhrase(),
+                                ex.getMessage(),
+                                request.getDescription(false).replace("uri=", ""),
+                                ec.getCode());
+                return new ResponseEntity<>(errorResponse, ec.getHttpStatus());
+        }
+
+        @ExceptionHandler(DuplicateUsernameException.class)
+        public ResponseEntity<ErrorResponse> handleDuplicateUsernameException(DuplicateUsernameException ex,
+                        WebRequest request) {
+                log.warn("Duplicate Username Exception: {}. URI: {}", ex.getMessage(), request.getDescription(false));
+                ErrorCode ec = ErrorCode.DUPLICATE_USERNAME;
+                ErrorResponse errorResponse = new ErrorResponse(
+                                ec.getHttpStatus().value(),
+                                ec.getHttpStatus().getReasonPhrase(),
+                                ex.getMessage(),
+                                request.getDescription(false).replace("uri=", ""),
+                                ec.getCode());
+                return new ResponseEntity<>(errorResponse, ec.getHttpStatus());
+        }
+
+        @ExceptionHandler(NiceVerificationException.class)
+        public ResponseEntity<ErrorResponse> handleNiceVerificationException(NiceVerificationException ex,
+                        WebRequest request) {
+                log.warn("NICE Verification Failed: {}. URI: {}", ex.getMessage(), request.getDescription(false));
+                ErrorCode ec = ErrorCode.NICE_VERIFICATION_FAILED; // Assuming this error code exists
+                ErrorResponse errorResponse = new ErrorResponse(
+                                ec.getHttpStatus().value(),
+                                ec.getHttpStatus().getReasonPhrase(),
+                                ex.getMessage(),
+                                request.getDescription(false).replace("uri=", ""),
+                                ec.getCode());
+                return new ResponseEntity<>(errorResponse, ec.getHttpStatus());
         }
 }

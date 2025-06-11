@@ -12,7 +12,7 @@ public interface PaymentService {
     void confirmPayment(Long enrollId, User currentUser, boolean wantsLocker, String pgToken); // pgToken 등 KISPG 결과
                                                                                                // 파라미터 추가 가능
 
-    KispgCancelResponseDto requestCancelPayment(Long paymentId, int cancelAmount, String reason);
+    KispgCancelResponseDto requestCancelPayment(Long paymentId, int cancelAmount, String reason, boolean isPartial);
 
     Payment createPaymentFromWebhook(KispgNotificationRequest notification);
 }

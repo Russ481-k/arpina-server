@@ -24,7 +24,6 @@ import cms.enroll.domain.Enroll;
 
 import cms.admin.enrollment.dto.AdminCancelRequestDto;
 import cms.admin.enrollment.dto.DiscountStatusUpdateRequestDto;
-import cms.admin.enrollment.dto.ApproveCancelRequestDto;
 import cms.admin.enrollment.dto.CalculatedRefundDetailsDto;
 import cms.admin.enrollment.dto.ManualUsedDaysRequestDto;
 import cms.admin.enrollment.model.dto.TemporaryEnrollmentRequestDto;
@@ -118,16 +117,20 @@ public class EnrollmentAdminController {
         return ResponseEntity.ok(ApiResponseSchema.success(updatedEnrollment, "신청 건 할인 상태 변경 성공"));
     }
 
-    @Operation(summary = "취소 요청 승인 (실사용일수 입력 가능)", description = "특정 신청의 취소 요청을 승인하고 환불 절차를 진행합니다. 관리자가 실사용일수를 직접 입력하여 환불액을 조정할 수 있습니다.")
+    @Operation(summary = "취소 요청 승인 (환불액 직접 지정 가능)", description = "사용자의 취소 요청을 승인하고 환불 절차를 시작합니다. 관리자는 실사용일수, 최종 환불액, 전액 환불 여부를 직접 지정하여 시스템 계산을 무시할 수 있습니다.")
     @PostMapping("/{enrollId}/approve-cancel")
-    public ResponseEntity<ApiResponseSchema<EnrollAdminResponseDto>> approveCancellation(
+    public ResponseEntity<ApiResponseSchema<Void>> approveCancellation(
             @Parameter(description = "신청 ID") @PathVariable Long enrollId,
-            @RequestBody(required = false) ApproveCancelRequestDto payload) {
-        String adminComment = (payload != null && payload.getAdminComment() != null) ? payload.getAdminComment() : "";
-        Integer manualUsedDays = (payload != null) ? payload.getManualUsedDays() : null;
-        EnrollAdminResponseDto enrollDto = enrollmentAdminService.approveCancellationWithManualDays(enrollId,
-                adminComment, manualUsedDays);
-        return ResponseEntity.ok(ApiResponseSchema.success(enrollDto, "취소 요청 승인 처리 성공 (실사용일수 반영)"));
+            @RequestBody(required = false) AdminCancelRequestDto payload) {
+
+        AdminCancelRequestDto requestDto = (payload != null) ? payload : new AdminCancelRequestDto();
+
+        enrollmentAdminService.approveCancellation(enrollId, requestDto);
+
+        // After approval, the state is changed. The client should refetch to see the
+        // updated status.
+        // Returning just success status without the full object.
+        return ResponseEntity.ok(ApiResponseSchema.success(null, "취소 요청이 성공적으로 승인되었습니다."));
     }
 
     @Operation(summary = "취소 요청 거부", description = "특정 신청의 취소 요청을 거부합니다.")
