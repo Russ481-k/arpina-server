@@ -1,5 +1,6 @@
 package cms.popup.controller;
 
+import cms.common.dto.ApiResponseSchema;
 import cms.popup.dto.PopupRes;
 import cms.popup.service.PopupService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -22,7 +23,8 @@ public class PopupController {
 
     @Operation(summary = "사용자 노출용 활성 팝업 리스트", description = "현재 시간 기준, 노출 가능한 팝업 목록만 반환합니다.")
     @GetMapping("/active")
-    public ResponseEntity<List<PopupRes>> getActivePopups() {
-        return ResponseEntity.ok(popupService.getActivePopups());
+    public ResponseEntity<ApiResponseSchema<List<PopupRes>>> getActivePopups() {
+        List<PopupRes> activePopups = popupService.getActivePopups();
+        return ResponseEntity.ok(ApiResponseSchema.success(activePopups, "활성 팝업 목록을 성공적으로 조회했습니다."));
     }
 }

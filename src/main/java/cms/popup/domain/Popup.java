@@ -64,6 +64,18 @@ public class Popup {
         this.content = content;
     }
 
+    public void setTitle(String title) {
+        this.title = title;
+    }
+
+    public void setStartDate(LocalDateTime startDate) {
+        this.startDate = startDate;
+    }
+
+    public void setEndDate(LocalDateTime endDate) {
+        this.endDate = endDate;
+    }
+
     @Builder
     public Popup(String title, String content, LocalDateTime startDate, LocalDateTime endDate, boolean isVisible,
             Integer displayOrder, String createdBy, String createdIp, String updatedBy, String updatedIp) {

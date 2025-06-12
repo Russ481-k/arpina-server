@@ -183,14 +183,23 @@ public class PopupServiceImpl implements PopupService {
                 .filter(fileId -> !newFileIds.contains(fileId))
                 .forEach(fileService::deleteFile);
 
-        // 5. 팝업 정보 업데이트
-        popup.update(
-                popupUpdateReq.getTitle(),
-                finalContentJson,
-                popupUpdateReq.getStartDate(),
-                popupUpdateReq.getEndDate(),
-                popupUpdateReq.getIsVisible(),
-                popupUpdateReq.getDisplayOrder());
+        // 5. 팝업 정보 업데이트 (Null-safe)
+        if (popupUpdateReq.getTitle() != null) {
+            popup.setTitle(popupUpdateReq.getTitle());
+        }
+        popup.setContent(finalContentJson); // 콘텐츠는 항상 업데이트 (파일 변경이 없어도 JSON 구조는 바뀔 수 있음)
+        if (popupUpdateReq.getStartDate() != null) {
+            popup.setStartDate(popupUpdateReq.getStartDate());
+        }
+        if (popupUpdateReq.getEndDate() != null) {
+            popup.setEndDate(popupUpdateReq.getEndDate());
+        }
+        if (popupUpdateReq.getIsVisible() != null) {
+            popup.updateVisibility(popupUpdateReq.getIsVisible());
+        }
+        if (popupUpdateReq.getDisplayOrder() != null) {
+            popup.updateDisplayOrder(popupUpdateReq.getDisplayOrder());
+        }
 
         Popup updatedPopup = popupRepository.save(popup);
         return PopupDto.from(updatedPopup);
