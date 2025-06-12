@@ -89,7 +89,8 @@ public class SecurityConfig {
 				"/api/v1/cms/schedule/**",
 				"/api/v1/cms/file/public/**",
 				"/api/v1/swimming/lessons/**",
-				"/api/v1/nice/checkplus/**");
+				"/api/v1/nice/checkplus/**",
+				"/api/v1/cms/popups/active");
 		for (String pattern : permitAllAntPatterns) {
 			matchers.add(new AntPathRequestMatcher(pattern));
 		}
@@ -128,7 +129,8 @@ public class SecurityConfig {
 								"/api/v1/cms/bbs/master/**",
 								"/api/v1/cms/content",
 								"/api/v1/cms/user",
-								"/api/v1/cms/file/private/**")
+								"/api/v1/cms/file/private/**",
+								"/api/v1/cms/popups**")
 						.authenticated()
 						.antMatchers("/api/v1/mypage/**").hasRole("USER")
 						.anyRequest().authenticated())
