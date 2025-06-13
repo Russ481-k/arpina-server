@@ -9,7 +9,6 @@ import cms.popup.dto.PopupDto;
 import cms.popup.dto.PopupRes;
 import cms.popup.repository.PopupRepository;
 import cms.popup.service.PopupService;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;

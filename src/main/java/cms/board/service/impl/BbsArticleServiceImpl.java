@@ -59,11 +59,17 @@ public class BbsArticleServiceImpl implements BbsArticleService {
 
     @Override
     @Transactional
-    public BbsArticleDto createArticle(BbsArticleDto articleDto, String editorContentJson, List<MultipartFile> mediaFiles, String[] mediaLocalIdsArray, List<MultipartFile> attachments) {
-        List<String> mediaLocalIds = (mediaLocalIdsArray != null) ? Arrays.asList(mediaLocalIdsArray) : Collections.emptyList();
+    public BbsArticleDto createArticle(BbsArticleDto articleDto, String editorContentJson,
+            List<MultipartFile> mediaFiles, String mediaLocalIds, List<MultipartFile> attachments) {
+        String[] mediaLocalIdsArray = (mediaLocalIds != null && !mediaLocalIds.isEmpty()) ? mediaLocalIds.split(",")
+                : new String[0];
 
-        log.debug("[createArticle] Received editorContentJson (length: {}): {}", editorContentJson != null ? editorContentJson.length() : "null", editorContentJson != null && editorContentJson.length() > 200 ? editorContentJson.substring(0, 200) + "..." : editorContentJson);
-        log.debug("[createArticle] Received mediaLocalIds (from array): {}", mediaLocalIds);
+        log.debug("[createArticle] Received DTO content (length: {}): {}",
+                articleDto.getContent() != null ? articleDto.getContent().length() : "null",
+                articleDto.getContent() != null && articleDto.getContent().length() > 200
+                        ? articleDto.getContent().substring(0, 200) + "..."
+                        : articleDto.getContent());
+        log.debug("[createArticle] Received mediaLocalIds (from array): {}", Arrays.toString(mediaLocalIdsArray));
         log.debug("[createArticle] Received mediaFiles count: {}", mediaFiles != null ? mediaFiles.size() : 0);
         log.debug("[createArticle] Received attachments count: {}", attachments != null ? attachments.size() : 0);
 
@@ -76,11 +82,11 @@ public class BbsArticleServiceImpl implements BbsArticleService {
 
         Menu menu = menuRepository.findById(articleDto.getMenuId())
                 .orElseThrow(() -> new RuntimeException("Menu not found with id: " + articleDto.getMenuId()));
-        
+
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         String writer = (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getName()))
-            ? auth.getName()
-            : (articleDto.getWriter() != null ? articleDto.getWriter() : "Guest");
+                ? auth.getName()
+                : (articleDto.getWriter() != null ? articleDto.getWriter() : "Guest");
 
         BbsArticleDomain parentArticle = null;
         if (articleDto.getParentNttId() != null) {
@@ -100,7 +106,7 @@ public class BbsArticleServiceImpl implements BbsArticleService {
             }
         }
 
-        boolean hasImage = checkContentForImages(editorContentJson);
+        boolean hasImage = checkContentForImages(articleDto.getContent());
 
         BbsArticleDomain article = BbsArticleDomain.builder()
                 .bbsMaster(bbsMaster)
@@ -109,6 +115,7 @@ public class BbsArticleServiceImpl implements BbsArticleService {
                 .threadDepth(parentArticle != null ? parentArticle.getThreadDepth() + 1 : 0)
                 .writer(writer)
                 .title(articleDto.getTitle())
+                .content(articleDto.getContent())
                 .hasImageInContent(hasImage)
                 .noticeState(articleDto.getNoticeState() != null ? articleDto.getNoticeState() : "N")
                 .publishState(articleDto.getPublishState() != null ? articleDto.getPublishState() : "Y")
@@ -117,37 +124,38 @@ public class BbsArticleServiceImpl implements BbsArticleService {
                 .externalLink(articleDto.getExternalLink())
                 .hits(0)
                 .build();
-        
+
         BbsArticleDomain savedArticle = bbsArticleRepository.save(article);
 
-        String finalContentJson = editorContentJson;
-        if (mediaFiles != null && !mediaFiles.isEmpty() && mediaLocalIds != null && mediaFiles.size() == mediaLocalIds.size()) {
-            List<CmsFile> uploadedMediaFiles = fileService.uploadFiles(EDITOR_EMBEDDED_MEDIA, savedArticle.getNttId(), mediaFiles);
-            
+        String finalContentJson = articleDto.getContent();
+        if (mediaFiles != null && !mediaFiles.isEmpty() && mediaLocalIdsArray.length > 0) {
+            List<CmsFile> uploadedMediaFiles = fileService.uploadFiles(EDITOR_EMBEDDED_MEDIA, savedArticle.getNttId(),
+                    mediaFiles);
+
             Map<String, Long> localIdToFileIdMap = new HashMap<>();
-            for (int i = 0; i < mediaLocalIds.size(); i++) {
+            for (int i = 0; i < mediaLocalIdsArray.length; i++) {
                 if (i < uploadedMediaFiles.size()) {
-                    localIdToFileIdMap.put(mediaLocalIds.get(i), uploadedMediaFiles.get(i).getFileId());
+                    localIdToFileIdMap.put(mediaLocalIdsArray[i], uploadedMediaFiles.get(i).getFileId());
                 } else {
                     log.warn("mediaLocalId at index {} does not have a corresponding uploaded file. Skipping.", i);
                 }
             }
             if (!localIdToFileIdMap.isEmpty()) {
                 log.debug("[createArticle] localIdToFileIdMap created: {}", localIdToFileIdMap);
-                finalContentJson = replaceLocalIdsInJson(editorContentJson, localIdToFileIdMap);
+                finalContentJson = replaceLocalIdsInJson(articleDto.getContent(), localIdToFileIdMap);
             } else {
                 log.debug("[createArticle] localIdToFileIdMap is empty or mediaLocalIds/mediaFiles were insufficient.");
             }
         }
-        
+
         savedArticle.setContent(finalContentJson);
-        
+
         BbsArticleDomain finalSavedArticle = bbsArticleRepository.save(savedArticle);
 
         if (attachments != null && !attachments.isEmpty()) {
             fileService.uploadFiles(ARTICLE_ATTACHMENT_MENU_TYPE, finalSavedArticle.getNttId(), attachments);
         }
-        
+
         return convertToDto(finalSavedArticle);
     }
 
@@ -159,8 +167,9 @@ public class BbsArticleServiceImpl implements BbsArticleService {
         Integer attachmentSizeMB = bbsMaster.getAttachmentSize();
 
         if (attachmentLimit == null || attachmentSizeMB == null) {
-            log.warn("BBS Master (ID: {}) attachment limit or size is not configured. Skipping file policy validation.", bbsMaster.getBbsId());
-            return; 
+            log.warn("BBS Master (ID: {}) attachment limit or size is not configured. Skipping file policy validation.",
+                    bbsMaster.getBbsId());
+            return;
         }
 
         if (files.size() > attachmentLimit) {
@@ -170,8 +179,8 @@ public class BbsArticleServiceImpl implements BbsArticleService {
         long totalSize = files.stream()
                 .mapToLong(MultipartFile::getSize)
                 .sum();
-        
-        long maxSizeInBytes = (long)attachmentSizeMB * 1024 * 1024;
+
+        long maxSizeInBytes = (long) attachmentSizeMB * 1024 * 1024;
         if (totalSize > maxSizeInBytes) {
             throw new FilePolicyViolationException("첨부 파일 총 용량이 제한을 초과했습니다. (제한: " + attachmentSizeMB + "MB)");
         }
@@ -192,7 +201,8 @@ public class BbsArticleServiceImpl implements BbsArticleService {
         if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getName())) {
             return false;
         }
-        return auth.getAuthorities().stream().anyMatch(grantedAuthority -> "ROLE_ADMIN".equals(grantedAuthority.getAuthority()));
+        return auth.getAuthorities().stream()
+                .anyMatch(grantedAuthority -> "ROLE_ADMIN".equals(grantedAuthority.getAuthority()));
     }
 
     private boolean checkContentForImages(String jsonContent) {
@@ -240,11 +250,17 @@ public class BbsArticleServiceImpl implements BbsArticleService {
 
     @Override
     @Transactional
-    public BbsArticleDto updateArticle(Long nttId, BbsArticleDto articleDto, String editorContentJson, List<MultipartFile> mediaFiles, String[] mediaLocalIdsArray, List<MultipartFile> attachments) {
-        List<String> mediaLocalIds = (mediaLocalIdsArray != null) ? Arrays.asList(mediaLocalIdsArray) : Collections.emptyList();
+    public BbsArticleDto updateArticle(Long nttId, BbsArticleDto articleDto, String editorContentJson,
+            List<MultipartFile> mediaFiles, String mediaLocalIds, List<MultipartFile> attachments) {
+        String[] mediaLocalIdsArray = (mediaLocalIds != null && !mediaLocalIds.isEmpty()) ? mediaLocalIds.split(",")
+                : new String[0];
 
-        log.debug("[updateArticle] nttId: {}, Received editorContentJson (length: {}): {}", nttId, editorContentJson != null ? editorContentJson.length() : "null", editorContentJson != null && editorContentJson.length() > 200 ? editorContentJson.substring(0, 200) + "..." : editorContentJson);
-        log.debug("[updateArticle] Received mediaLocalIds (from array): {}", mediaLocalIds);
+        log.debug("[updateArticle] nttId: {}, Received DTO content (length: {}): {}", nttId,
+                articleDto.getContent() != null ? articleDto.getContent().length() : "null",
+                articleDto.getContent() != null && articleDto.getContent().length() > 200
+                        ? articleDto.getContent().substring(0, 200) + "..."
+                        : articleDto.getContent());
+        log.debug("[updateArticle] Received mediaLocalIds (from array): {}", Arrays.toString(mediaLocalIdsArray));
         log.debug("[updateArticle] Received mediaFiles count: {}", mediaFiles != null ? mediaFiles.size() : 0);
         log.debug("[updateArticle] Received attachments count: {}", attachments != null ? attachments.size() : 0);
 
@@ -254,32 +270,35 @@ public class BbsArticleServiceImpl implements BbsArticleService {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         String currentUsername = (auth != null && auth.isAuthenticated()) ? auth.getName() : null;
         boolean isAdmin = auth != null && auth.getAuthorities().stream()
-                             .anyMatch(ga -> ga.getAuthority().equals("ROLE_ADMIN"));
+                .anyMatch(ga -> ga.getAuthority().equals("ROLE_ADMIN"));
         if (!isAdmin && (currentUsername == null || !article.getWriter().equals(currentUsername))) {
-             throw new UnauthorizedAccessException("게시글 수정 권한이 없습니다.");
+            throw new UnauthorizedAccessException("게시글 수정 권한이 없습니다.");
         }
-        
+
         if (attachments != null && !attachments.isEmpty()) {
             validateFilePolicy(article.getBbsMaster(), attachments);
         }
 
-        String finalContentJson = editorContentJson;
+        String finalContentJson = articleDto.getContent();
         Map<String, Long> newUploadedLocalIdToFileIdMap = new HashMap<>();
 
-        if (mediaFiles != null && !mediaFiles.isEmpty() && mediaLocalIds != null && mediaFiles.size() == mediaLocalIds.size()) {
+        if (mediaFiles != null && !mediaFiles.isEmpty() && mediaLocalIdsArray.length > 0) {
             List<CmsFile> uploadedNewMediaFiles = fileService.uploadFiles(EDITOR_EMBEDDED_MEDIA, nttId, mediaFiles);
-            for (int i = 0; i < mediaLocalIds.size(); i++) {
+            for (int i = 0; i < mediaLocalIdsArray.length; i++) {
                 if (i < uploadedNewMediaFiles.size()) {
-                    newUploadedLocalIdToFileIdMap.put(mediaLocalIds.get(i), uploadedNewMediaFiles.get(i).getFileId());
+                    newUploadedLocalIdToFileIdMap.put(mediaLocalIdsArray[i], uploadedNewMediaFiles.get(i).getFileId());
                 } else {
-                     log.warn("mediaLocalId at index {} does not have a corresponding uploaded file for update. Skipping.", i);
+                    log.warn(
+                            "mediaLocalId at index {} does not have a corresponding uploaded file for update. Skipping.",
+                            i);
                 }
             }
             if (!newUploadedLocalIdToFileIdMap.isEmpty()) {
-                 log.debug("[updateArticle] newUploadedLocalIdToFileIdMap created: {}", newUploadedLocalIdToFileIdMap);
-                 finalContentJson = replaceLocalIdsInJson(editorContentJson, newUploadedLocalIdToFileIdMap);
+                log.debug("[updateArticle] newUploadedLocalIdToFileIdMap created: {}", newUploadedLocalIdToFileIdMap);
+                finalContentJson = replaceLocalIdsInJson(articleDto.getContent(), newUploadedLocalIdToFileIdMap);
             } else {
-                log.debug("[updateArticle] newUploadedLocalIdToFileIdMap is empty or mediaLocalIds/mediaFiles were insufficient.");
+                log.debug(
+                        "[updateArticle] newUploadedLocalIdToFileIdMap is empty or mediaLocalIds/mediaFiles were insufficient.");
             }
         }
 
@@ -292,7 +311,8 @@ public class BbsArticleServiceImpl implements BbsArticleService {
                     fileService.deleteFile(dbFile.getFileId());
                     log.info("Deleted unused embedded media file: {} from article: {}", dbFile.getFileId(), nttId);
                 } catch (Exception e) {
-                    log.error("Error deleting unused embedded media file: {} for article: {}. Error: {}", dbFile.getFileId(), nttId, e.getMessage());
+                    log.error("Error deleting unused embedded media file: {} for article: {}. Error: {}",
+                            dbFile.getFileId(), nttId, e.getMessage());
                 }
             }
         }
@@ -304,11 +324,12 @@ public class BbsArticleServiceImpl implements BbsArticleService {
                     fileService.deleteFile(existingFile.getFileId());
                     log.info("Deleted existing attachment file: {} for article: {}", existingFile.getFileId(), nttId);
                 } catch (Exception e) {
-                    log.error("Error deleting existing attachment file: {} for article: {}. Error: {}", existingFile.getFileId(), nttId, e.getMessage());
+                    log.error("Error deleting existing attachment file: {} for article: {}. Error: {}",
+                            existingFile.getFileId(), nttId, e.getMessage());
                 }
             }
             if (!attachments.isEmpty()) {
-                 fileService.uploadFiles(ARTICLE_ATTACHMENT_MENU_TYPE, nttId, attachments);
+                fileService.uploadFiles(ARTICLE_ATTACHMENT_MENU_TYPE, nttId, attachments);
             }
         }
 
@@ -323,9 +344,8 @@ public class BbsArticleServiceImpl implements BbsArticleService {
                 articleDto.getPublishStartDt(),
                 articleDto.getPublishEndDt(),
                 articleDto.getExternalLink(),
-                checkContentForImages(finalContentJson)
-        );
-        
+                checkContentForImages(finalContentJson));
+
         return convertToDto(bbsArticleRepository.save(article));
     }
 
@@ -340,11 +360,13 @@ public class BbsArticleServiceImpl implements BbsArticleService {
             try {
                 fileService.deleteFile(file.getFileId());
             } catch (Exception e) {
-                log.error("Failed to delete file with ID {} for article {}: {}", file.getFileId(), nttId, e.getMessage());
+                log.error("Failed to delete file with ID {} for article {}: {}", file.getFileId(), nttId,
+                        e.getMessage());
             }
         }
 
-        List<BbsArticleDomain> replies = bbsArticleRepository.findRepliesByParentNttId(article.getBbsMaster().getBbsId(), nttId, Pageable.unpaged()).getContent();
+        List<BbsArticleDomain> replies = bbsArticleRepository
+                .findRepliesByParentNttId(article.getBbsMaster().getBbsId(), nttId, Pageable.unpaged()).getContent();
         for (BbsArticleDomain reply : replies) {
             deleteArticle(reply.getNttId());
         }
@@ -363,55 +385,27 @@ public class BbsArticleServiceImpl implements BbsArticleService {
 
     @Override
     @Transactional(readOnly = true)
-    public Page<BbsArticleDto> getArticles(Long bbsId, Long menuId, Pageable pageable) {
-        Page<BbsArticleDomain> articlePageDomain = bbsArticleRepository.findByBbsIdAndMenuId(bbsId, menuId, pageable);
-        
-        long totalNormalArticleCount = bbsArticleRepository.countByBbsIdAndMenuIdAndNoticeStateNot(bbsId, menuId, "Y");
-
-        Page<BbsArticleDto> articleDtoPage = articlePageDomain.map(this::convertToDto);
-
-        int offset = pageable.getPageNumber() * pageable.getPageSize();
-        AtomicInteger indexInPage = new AtomicInteger(0); 
-
-        List<BbsArticleDto> content = articleDtoPage.getContent();
-        for (BbsArticleDto dto : content) {
-            if ("Y".equals(dto.getNoticeState())) {
-                dto.setNo(0); 
-            } else {
-                dto.setNo((int) (totalNormalArticleCount - offset - indexInPage.getAndIncrement()));
-            }
+    public Page<BbsArticleDto> getArticles(Long bbsId, Long menuId, Pageable pageable, boolean isAdmin) {
+        Page<BbsArticleDomain> articlesPage;
+        if (isAdmin) {
+            articlesPage = bbsArticleRepository.findAllByBbsIdAndMenuId(bbsId, menuId, pageable);
+        } else {
+            articlesPage = bbsArticleRepository.findPublishedByBbsIdAndMenuId(bbsId, menuId, pageable);
         }
-        return articleDtoPage;
+        return articlesPage.map(this::convertToDto);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Page<BbsArticleDto> searchArticles(Long bbsId, Long menuId, String keyword, Pageable pageable) {
-        Page<BbsArticleDomain> articlePageDomain;
-        long totalNormalArticleCount;
-
-        if (keyword != null && !keyword.trim().isEmpty()) {
-            articlePageDomain = bbsArticleRepository.searchByKeywordAndMenuId(bbsId, menuId, keyword, pageable);
-            totalNormalArticleCount = bbsArticleRepository.countByBbsIdAndMenuIdAndKeywordAndNoticeStateNot(bbsId, menuId, keyword, "Y");
+    public Page<BbsArticleDto> searchArticles(Long bbsId, Long menuId, String keyword, Pageable pageable,
+            boolean isAdmin) {
+        Page<BbsArticleDomain> articlesPage;
+        if (isAdmin) {
+            articlesPage = bbsArticleRepository.searchAllByKeywordAndMenuId(bbsId, menuId, keyword, pageable);
         } else {
-            articlePageDomain = bbsArticleRepository.findByBbsIdAndMenuId(bbsId, menuId, pageable);
-            totalNormalArticleCount = bbsArticleRepository.countByBbsIdAndMenuIdAndNoticeStateNot(bbsId, menuId, "Y");
+            articlesPage = bbsArticleRepository.searchPublishedByKeywordAndMenuId(bbsId, menuId, keyword, pageable);
         }
-        
-        Page<BbsArticleDto> articleDtoPage = articlePageDomain.map(this::convertToDto);
-
-        int offset = pageable.getPageNumber() * pageable.getPageSize();
-        AtomicInteger indexInPage = new AtomicInteger(0);
-
-        List<BbsArticleDto> content = articleDtoPage.getContent();
-        for (BbsArticleDto dto : content) {
-            if ("Y".equals(dto.getNoticeState())) {
-                dto.setNo(0);
-            } else {
-                dto.setNo((int) (totalNormalArticleCount - offset - indexInPage.getAndIncrement()));
-            }
-        }
-        return articleDtoPage;
+        return articlesPage.map(this::convertToDto);
     }
 
     @Override
@@ -474,8 +468,7 @@ public class BbsArticleServiceImpl implements BbsArticleService {
                 boardDto.getPublishStartDt(),
                 boardDto.getPublishEndDt(),
                 boardDto.getExternalLink(),
-                hasImage
-        );
+                hasImage);
 
         return convertToDto(article);
     }
@@ -512,34 +505,34 @@ public class BbsArticleServiceImpl implements BbsArticleService {
         if (article.getNttId() != null) {
             try {
                 List<CmsFile> files = fileService.getList(
-                        ARTICLE_ATTACHMENT_MENU_TYPE, 
-                        article.getNttId(), 
-                        null 
-                );
+                        ARTICLE_ATTACHMENT_MENU_TYPE,
+                        article.getNttId(),
+                        null);
                 if (files != null && !files.isEmpty()) {
                     attachmentInfos = files.stream()
-                        .map(cmsFile -> AttachmentInfoDto.builder()
-                            .fileId(cmsFile.getFileId())
-                            .originName(cmsFile.getOriginName())
-                            .size(cmsFile.getSize())
-                            .mimeType(cmsFile.getMimeType())
-                            .ext(cmsFile.getExt())
-                            .downloadUrl(appApiBaseUrl + "/api/v1/cms/file/public/download/" + cmsFile.getFileId())
-                            .build())
-                        .collect(Collectors.toList());
+                            .map(cmsFile -> AttachmentInfoDto.builder()
+                                    .fileId(cmsFile.getFileId())
+                                    .originName(cmsFile.getOriginName())
+                                    .size(cmsFile.getSize())
+                                    .mimeType(cmsFile.getMimeType())
+                                    .ext(cmsFile.getExt())
+                                    .downloadUrl(
+                                            appApiBaseUrl + "/api/v1/cms/file/public/download/" + cmsFile.getFileId())
+                                    .build())
+                            .collect(Collectors.toList());
                 }
             } catch (Exception e) {
                 log.error("Failed to fetch attachments for article {}: {}", article.getNttId(), e.getMessage(), e);
             }
         }
-        
+
         String skinTypeName = null;
         if (article.getBbsMaster() != null && article.getBbsMaster().getSkinType() != null) {
             skinTypeName = article.getBbsMaster().getSkinType().name();
         }
 
         Long menuDomainId = null;
-        if (article.getMenu() != null && article.getMenu().getId() != null) { 
+        if (article.getMenu() != null && article.getMenu().getId() != null) {
             menuDomainId = article.getMenu().getId();
         }
 
@@ -564,8 +557,8 @@ public class BbsArticleServiceImpl implements BbsArticleService {
                 .createdAt(article.getCreatedAt())
                 .updatedAt(article.getUpdatedAt())
                 .attachments(attachmentInfos)
-                .skinType(skinTypeName) 
-                .menuId(menuDomainId) 
+                .skinType(skinTypeName)
+                .menuId(menuDomainId)
                 .build();
     }
 
@@ -573,13 +566,15 @@ public class BbsArticleServiceImpl implements BbsArticleService {
         if (bbsMaster == null) {
             return null;
         }
-        log.warn("Attempting to convert BbsMasterDomain (ID: {}) to BbsArticleDto. This is potentially an error in service logic.", bbsMaster.getBbsId());
-        
+        log.warn(
+                "Attempting to convert BbsMasterDomain (ID: {}) to BbsArticleDto. This is potentially an error in service logic.",
+                bbsMaster.getBbsId());
+
         String skinTypeName = null;
         if (bbsMaster.getSkinType() != null) {
             skinTypeName = bbsMaster.getSkinType().name();
         }
-        
+
         return BbsArticleDto.builder()
                 .bbsId(bbsMaster.getBbsId())
                 .title(bbsMaster.getBbsName())
@@ -594,11 +589,11 @@ public class BbsArticleServiceImpl implements BbsArticleService {
         try {
             JsonNode rootNode = objectMapper.readTree(editorContentJson);
             if (rootNode.has("root") && rootNode.get("root").has("children")) {
-                 traverseAndReplace(rootNode.get("root").get("children"), localIdToFileIdMap);
+                traverseAndReplace(rootNode.get("root").get("children"), localIdToFileIdMap);
             } else if (rootNode.isArray()) {
-                 traverseAndReplace(rootNode, localIdToFileIdMap);
+                traverseAndReplace(rootNode, localIdToFileIdMap);
             } else if (rootNode.has("children")) {
-                 traverseAndReplace(rootNode.get("children"), localIdToFileIdMap);
+                traverseAndReplace(rootNode.get("children"), localIdToFileIdMap);
             }
 
             return objectMapper.writeValueAsString(rootNode);
@@ -615,7 +610,8 @@ public class BbsArticleServiceImpl implements BbsArticleService {
             }
         } else if (node.isObject()) {
             ObjectNode objectNode = (ObjectNode) node;
-            if (objectNode.has("type") && (objectNode.get("type").asText().equals("image") || objectNode.get("type").asText().equals("video"))) {
+            if (objectNode.has("type") && (objectNode.get("type").asText().equals("image")
+                    || objectNode.get("type").asText().equals("video"))) {
                 if (objectNode.has("src")) {
                     String srcValue = objectNode.get("src").asText();
                     log.debug("[traverseAndReplace] Found media node with src: {}", srcValue);
@@ -623,9 +619,12 @@ public class BbsArticleServiceImpl implements BbsArticleService {
                         Long fileId = localIdToFileIdMap.get(srcValue);
                         String newSrc = appApiBaseUrl + "/api/v1/cms/file/public/view/" + fileId;
                         objectNode.put("src", newSrc);
-                        log.debug("[traverseAndReplace] Replaced src '{}' with '{}' (File ID: {})", srcValue, newSrc, fileId);
+                        log.debug("[traverseAndReplace] Replaced src '{}' with '{}' (File ID: {})", srcValue, newSrc,
+                                fileId);
                     } else {
-                        log.warn("[traverseAndReplace] No mapping found for src: '{}'. It will not be replaced. Map keys: {}", srcValue, localIdToFileIdMap.keySet());
+                        log.warn(
+                                "[traverseAndReplace] No mapping found for src: '{}'. It will not be replaced. Map keys: {}",
+                                srcValue, localIdToFileIdMap.keySet());
                     }
                 }
             }
@@ -656,7 +655,7 @@ public class BbsArticleServiceImpl implements BbsArticleService {
             return fileIds;
         } catch (IOException e) {
             log.error("Error parsing JSON for extractFileIdsFromJson: {}", e.getMessage());
-            return fileIds; 
+            return fileIds;
         }
     }
 
@@ -667,21 +666,23 @@ public class BbsArticleServiceImpl implements BbsArticleService {
             }
         } else if (node.isObject()) {
             ObjectNode objectNode = (ObjectNode) node;
-            if (objectNode.has("type") && 
-                ("image".equals(objectNode.get("type").asText()) || "video".equals(objectNode.get("type").asText()))) {
+            if (objectNode.has("type") &&
+                    ("image".equals(objectNode.get("type").asText())
+                            || "video".equals(objectNode.get("type").asText()))) {
                 if (objectNode.has("src")) {
                     String srcValue = objectNode.get("src").asText();
-                    if (srcValue != null && !srcValue.startsWith("blob:")) { 
+                    if (srcValue != null && !srcValue.startsWith("blob:")) {
                         Long fileId = parseFileIdFromSrc(srcValue);
                         if (fileId != null) {
                             fileIds.add(fileId);
                         } else {
-                            log.warn("[traverseAndExtractFileIdsRecursive] Could not parse fileId from src: {}", srcValue);
+                            log.warn("[traverseAndExtractFileIdsRecursive] Could not parse fileId from src: {}",
+                                    srcValue);
                         }
                     }
                 }
             }
-            
+
             objectNode.fields().forEachRemaining(entry -> {
                 if (entry.getValue().isContainerNode()) {
                     traverseAndExtractFileIdsRecursive(entry.getValue(), fileIds);
@@ -691,8 +692,9 @@ public class BbsArticleServiceImpl implements BbsArticleService {
     }
 
     private Long parseFileIdFromSrc(String src) {
-        if (src == null) return null;
-        
+        if (src == null)
+            return null;
+
         // Handle "fileId:123" pattern (for backward compatibility if ever used)
         String fileIdPrefix = "fileId:";
         if (src.startsWith(fileIdPrefix)) {
@@ -700,7 +702,7 @@ public class BbsArticleServiceImpl implements BbsArticleService {
                 return Long.parseLong(src.substring(fileIdPrefix.length()));
             } catch (NumberFormatException e) {
                 log.warn("Could not parse fileId from prefixed src: {}", src, e);
-                return null; 
+                return null;
             }
         }
 
@@ -708,29 +710,32 @@ public class BbsArticleServiceImpl implements BbsArticleService {
         // A more robust way might involve java.net.URI if URLs can be complex
         String viewPathSegment = "/api/v1/cms/file/public/view/";
         int lastSegmentIndex = src.lastIndexOf(viewPathSegment);
-        
+
         if (lastSegmentIndex != -1) {
             String potentialIdWithPath = src.substring(lastSegmentIndex + viewPathSegment.length());
-            // Extract only the numeric part, handling potential query params or extra path segments if any
-            String numericId = potentialIdWithPath.split("[^0-9]")[0]; 
+            // Extract only the numeric part, handling potential query params or extra path
+            // segments if any
+            String numericId = potentialIdWithPath.split("[^0-9]")[0];
             if (!numericId.isEmpty()) {
                 try {
                     return Long.parseLong(numericId);
                 } catch (NumberFormatException e) {
-                    log.warn("Could not parse numeric fileId from URL segment: {}. Original src: {}", numericId, src, e);
+                    log.warn("Could not parse numeric fileId from URL segment: {}. Original src: {}", numericId, src,
+                            e);
                     return null;
                 }
             }
         }
-        
-        // If it's just a number string, assume it's a fileId directly (less likely for src)
+
+        // If it's just a number string, assume it's a fileId directly (less likely for
+        // src)
         // try {
-        //     return Long.parseLong(src);
+        // return Long.parseLong(src);
         // } catch (NumberFormatException e) {
-        //     // Not a simple number
+        // // Not a simple number
         // }
 
         log.debug("FileId could not be parsed from src: {}", src);
-        return null; 
+        return null;
     }
-} 
+}

@@ -79,14 +79,8 @@ public class SecurityConfig {
 				"/api/v1/cms/menu/public/**/page-details",
 				"/api/v1/cms/template/public",
 				"/api/v1/cms/template",
-				"/api/v1/cms/bbs/article",
-				"/api/v1/cms/bbs/article/**",
-				"/api/v1/cms/bbs/article/board/**",
-				"/api/v1/cms/bbs",
-				"/api/v1/cms/bbs/**",
 				"/api/v1/cms/bbs/master",
 				"/api/v1/cms/schedule/public**",
-				"/api/v1/cms/schedule/**",
 				"/api/v1/cms/file/public/**",
 				"/api/v1/swimming/lessons/**",
 				"/api/v1/nice/checkplus/**",
@@ -95,8 +89,20 @@ public class SecurityConfig {
 			matchers.add(new AntPathRequestMatcher(pattern));
 		}
 
-		matchers.add(new AntPathRequestMatcher("/api/v1/cms/enterprises", HttpMethod.GET.toString()));
-		matchers.add(new AntPathRequestMatcher("/api/v1/cms/enterprises/{id}", HttpMethod.GET.toString()));
+		// GET 요청에 대해서만 허용할 경로 목록
+		List<String> getOnlyPatterns = Arrays.asList(
+				"/api/v1/cms/bbs/article",
+				"/api/v1/cms/bbs/article/**",
+				"/api/v1/cms/bbs/article/board/**",
+				"/api/v1/cms/bbs",
+				"/api/v1/cms/bbs/**",
+				"/api/v1/cms/schedule/**",
+				"/api/v1/cms/enterprises",
+				"/api/v1/cms/enterprises/{id}");
+
+		for (String pattern : getOnlyPatterns) {
+			matchers.add(new AntPathRequestMatcher(pattern, HttpMethod.GET.toString()));
+		}
 
 		return new OrRequestMatcher(matchers);
 	}
@@ -111,6 +117,10 @@ public class SecurityConfig {
 				.and()
 				.authorizeHttpRequests(authz -> authz
 						.requestMatchers(this.permitAllRequestMatcher).permitAll()
+						.antMatchers(HttpMethod.GET, "/api/v1/cms/bbs/**").permitAll()
+						.antMatchers(HttpMethod.POST, "/api/v1/cms/bbs/article").authenticated()
+						.antMatchers(HttpMethod.PUT, "/api/v1/cms/bbs/article/**").authenticated()
+						.antMatchers(HttpMethod.DELETE, "/api/v1/cms/bbs/article/**").authenticated()
 						.antMatchers(
 								HttpMethod.POST, "/api/v1/cms/enterprises")
 						.hasRole("ADMIN")

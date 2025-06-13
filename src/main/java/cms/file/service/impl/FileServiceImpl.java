@@ -53,9 +53,9 @@ public class FileServiceImpl implements FileService {
                 String uuidFileName = generateUUIDFileName(ext);
 
                 String dateSubDir = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-                                     
+
                 // DB에 저장될 상대 경로: "<uploadPath>/<date>/<uuid.ext>"
-                String relativeSavePath = Paths.get( dateSubDir, uuidFileName).toString().replace("\\", "/");
+                String relativeSavePath = Paths.get(dateSubDir, uuidFileName).toString().replace("\\", "/");
 
                 try {
                     // 물리적 파일 저장 경로: "<basePath>/<uploadPath>/<date>/<uuid.ext>"
@@ -80,7 +80,8 @@ public class FileServiceImpl implements FileService {
 
                     uploadedFiles.add(fileRepository.save(fileEntity));
                 } catch (IOException ex) {
-                    throw new RuntimeException("Could not store file " + originalFilename + ". Error: " + ex.getMessage(), ex);
+                    throw new RuntimeException(
+                            "Could not store file " + originalFilename + ". Error: " + ex.getMessage(), ex);
                 }
             }
         }
@@ -117,12 +118,12 @@ public class FileServiceImpl implements FileService {
     public CmsFile updateFile(Long fileId, CmsFile fileDetails) {
         CmsFile existingFile = fileRepository.findById(fileId)
                 .orElseThrow(() -> new RuntimeException("파일을 찾을 수 없습니다. ID: " + fileId));
-        
+
         validatePublicYn(fileDetails.getPublicYn());
-        
+
         existingFile.setPublicYn(fileDetails.getPublicYn());
         existingFile.setFileOrder(fileDetails.getFileOrder());
-        
+
         return fileRepository.save(existingFile);
     }
 
@@ -177,16 +178,16 @@ public class FileServiceImpl implements FileService {
     @Override
     public List<CmsFile> getAllFiles(String menu, String publicYn, int page, int size) {
         Specification<CmsFile> spec = Specification.where(null);
-        
+
         if (menu != null && !menu.isEmpty()) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("menu"), menu));
         }
-        
+
         if (publicYn != null && !publicYn.isEmpty()) {
             validatePublicYn(publicYn);
             spec = spec.and((root, query, cb) -> cb.equal(root.get("publicYn"), publicYn));
         }
-        
+
         Pageable pageable = PageRequest.of(page, size, Sort.by("createdDate").descending());
         return fileRepository.findAll(spec, pageable).getContent();
     }
@@ -202,7 +203,7 @@ public class FileServiceImpl implements FileService {
     public int deleteOrphanedFilesByMissingArticle(List<String> menuTypes) {
         log.info("Starting deletion of orphaned files for menu types: {}", menuTypes);
         List<CmsFile> candidateFiles = fileRepository.findByMenuIn(menuTypes);
-        
+
         int deletedCount = 0;
         List<CmsFile> filesToDelete = new ArrayList<>();
 
@@ -228,14 +229,17 @@ public class FileServiceImpl implements FileService {
                 Files.deleteIfExists(filePath);
                 fileRepository.delete(file);
                 deletedCount++;
-                log.info("Orphaned file deleted (Article ID: {} not found): File ID={}, Stored Name={}", file.getMenuId(), file.getFileId(), file.getSavedName());
+                log.info("Orphaned file deleted (Article ID: {} not found): File ID={}, Stored Name={}",
+                        file.getMenuId(), file.getFileId(), file.getSavedName());
             } catch (IOException e) {
-                log.error("Error deleting physical orphaned file: {}. File ID: {}, Stored Name: {}", e.getMessage(), file.getFileId(), file.getSavedName(), e);
+                log.error("Error deleting physical orphaned file: {}. File ID: {}, Stored Name: {}", e.getMessage(),
+                        file.getFileId(), file.getSavedName(), e);
             } catch (Exception e) {
-                log.error("Error deleting orphaned file record from DB: {}. File ID: {}, Stored Name: {}", e.getMessage(), file.getFileId(), file.getSavedName(), e);
+                log.error("Error deleting orphaned file record from DB: {}. File ID: {}, Stored Name: {}",
+                        e.getMessage(), file.getFileId(), file.getSavedName(), e);
             }
         }
         log.info("Finished deletion of orphaned files. Total deleted: {}", deletedCount);
         return deletedCount;
     }
-} 
+}
