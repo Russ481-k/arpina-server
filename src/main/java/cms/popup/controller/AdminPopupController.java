@@ -45,7 +45,7 @@ public class AdminPopupController {
             @RequestPart("popupData") @Valid PopupDataReq popupData,
             @RequestPart("content") String contentJson,
             @RequestPart(value = "mediaFiles", required = false) List<MultipartFile> mediaFiles,
-            @RequestPart(value = "mediaLocalIds", required = false) String[] mediaLocalIds) {
+            @RequestPart(value = "mediaLocalIds", required = false) String mediaLocalIds) {
 
         PopupDto createdPopup = popupService.createPopup(popupData, contentJson, mediaFiles, mediaLocalIds);
         Map<String, Object> responseData = new HashMap<>();
@@ -60,9 +60,9 @@ public class AdminPopupController {
     public ResponseEntity<ApiResponseSchema<Void>> updatePopup(
             @PathVariable Long popupId,
             @RequestPart("popupData") @Valid PopupUpdateReq popupUpdateReq,
-            @RequestPart("content") String contentJson,
+            @RequestPart(value = "content", required = false) String contentJson,
             @RequestPart(value = "mediaFiles", required = false) List<MultipartFile> mediaFiles,
-            @RequestPart(value = "mediaLocalIds", required = false) String[] mediaLocalIds) {
+            @RequestPart(value = "mediaLocalIds", required = false) String mediaLocalIds) {
 
         popupService.updatePopup(popupId, popupUpdateReq, contentJson, mediaFiles, mediaLocalIds);
         return ResponseEntity.ok(ApiResponseSchema.success("팝업이 성공적으로 수정되었습니다."));

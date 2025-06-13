@@ -76,6 +76,10 @@ public class Popup {
         this.endDate = endDate;
     }
 
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
+    }
+
     @Builder
     public Popup(String title, String content, LocalDateTime startDate, LocalDateTime endDate, boolean isVisible,
             Integer displayOrder, String createdBy, String createdIp, String updatedBy, String updatedIp) {

@@ -39,7 +39,10 @@ public class PopupServiceImpl implements PopupService {
     @Override
     @Transactional
     public PopupDto createPopup(PopupDataReq popupData, String contentJson, List<MultipartFile> mediaFiles,
-            String[] mediaLocalIdsArray) {
+            String mediaLocalIds) {
+
+        String[] mediaLocalIdsArray = (mediaLocalIds != null && !mediaLocalIds.isEmpty()) ? mediaLocalIds.split(",")
+                : new String[0];
 
         LocalDateTime startDate = popupData.getStartDate() != null ? popupData.getStartDate() : LocalDateTime.now();
         LocalDateTime endDate = popupData.getEndDate() != null ? popupData.getEndDate()
@@ -59,17 +62,16 @@ public class PopupServiceImpl implements PopupService {
 
         // 2. 파일 업로드 및 content JSON 업데이트
         String finalContentJson = contentJson;
-        List<String> mediaLocalIds = (mediaLocalIdsArray != null) ? Arrays.asList(mediaLocalIdsArray)
+        List<String> mediaLocalIdsList = (mediaLocalIdsArray != null) ? Arrays.asList(mediaLocalIdsArray)
                 : Collections.emptyList();
 
-        if (mediaFiles != null && !mediaFiles.isEmpty()) {
+        if (mediaFiles != null && !mediaFiles.isEmpty() && !mediaLocalIdsList.isEmpty()
+                && mediaFiles.size() == mediaLocalIdsList.size()) {
             List<CmsFile> uploadedFiles = fileService.uploadFiles(POPUP_FILE_CATEGORY, popupId, mediaFiles);
 
             Map<String, Long> localIdToFileIdMap = new HashMap<>();
-            for (int i = 0; i < mediaLocalIds.size(); i++) {
-                if (i < uploadedFiles.size()) {
-                    localIdToFileIdMap.put(mediaLocalIds.get(i), uploadedFiles.get(i).getFileId());
-                }
+            for (int i = 0; i < mediaLocalIdsList.size(); i++) {
+                localIdToFileIdMap.put(mediaLocalIdsList.get(i), uploadedFiles.get(i).getFileId());
             }
 
             if (!localIdToFileIdMap.isEmpty()) {
@@ -150,7 +152,11 @@ public class PopupServiceImpl implements PopupService {
     @Override
     @Transactional
     public PopupDto updatePopup(Long popupId, cms.popup.dto.PopupUpdateReq popupUpdateReq, String contentJson,
-            List<MultipartFile> mediaFiles, String[] mediaLocalIdsArray) {
+            List<MultipartFile> mediaFiles, String mediaLocalIds) {
+
+        String[] mediaLocalIdsArray = (mediaLocalIds != null && !mediaLocalIds.isEmpty()) ? mediaLocalIds.split(",")
+                : new String[0];
+
         Popup popup = popupRepository.findById(popupId)
                 .orElseThrow(() -> new EntityNotFoundException("Popup not found with id: " + popupId));
 
@@ -159,16 +165,15 @@ public class PopupServiceImpl implements PopupService {
 
         // 2. 새 파일 업로드 및 새 콘텐츠 생성
         String finalContentJson = contentJson;
-        List<String> mediaLocalIds = (mediaLocalIdsArray != null) ? Arrays.asList(mediaLocalIdsArray)
+        List<String> mediaLocalIdsList = (mediaLocalIdsArray != null) ? Arrays.asList(mediaLocalIdsArray)
                 : Collections.emptyList();
 
-        if (mediaFiles != null && !mediaFiles.isEmpty()) {
+        if (mediaFiles != null && !mediaFiles.isEmpty() && !mediaLocalIdsList.isEmpty()
+                && mediaFiles.size() == mediaLocalIdsList.size()) {
             List<CmsFile> uploadedFiles = fileService.uploadFiles(POPUP_FILE_CATEGORY, popupId, mediaFiles);
             Map<String, Long> localIdToFileIdMap = new HashMap<>();
-            for (int i = 0; i < mediaLocalIds.size(); i++) {
-                if (i < uploadedFiles.size()) {
-                    localIdToFileIdMap.put(mediaLocalIds.get(i), uploadedFiles.get(i).getFileId());
-                }
+            for (int i = 0; i < mediaLocalIdsList.size(); i++) {
+                localIdToFileIdMap.put(mediaLocalIdsList.get(i), uploadedFiles.get(i).getFileId());
             }
             if (!localIdToFileIdMap.isEmpty()) {
                 finalContentJson = replaceLocalIdsInJson(contentJson, localIdToFileIdMap);
@@ -187,7 +192,9 @@ public class PopupServiceImpl implements PopupService {
         if (popupUpdateReq.getTitle() != null) {
             popup.setTitle(popupUpdateReq.getTitle());
         }
-        popup.setContent(finalContentJson); // 콘텐츠는 항상 업데이트 (파일 변경이 없어도 JSON 구조는 바뀔 수 있음)
+        if (contentJson != null) {
+            popup.setContent(finalContentJson);
+        }
         if (popupUpdateReq.getStartDate() != null) {
             popup.setStartDate(popupUpdateReq.getStartDate());
         }
@@ -201,8 +208,13 @@ public class PopupServiceImpl implements PopupService {
             popup.updateDisplayOrder(popupUpdateReq.getDisplayOrder());
         }
 
-        Popup updatedPopup = popupRepository.save(popup);
-        return PopupDto.from(updatedPopup);
+        // 변경 시간을 수동으로 갱신하여 Dirty-checking이 동작하도록 함
+        popup.setUpdatedAt(LocalDateTime.now());
+
+        // 6. 변경 사항 저장 (JPA Dirty-checking)
+        popupRepository.save(popup);
+
+        return PopupDto.from(popup);
     }
 
     @Override

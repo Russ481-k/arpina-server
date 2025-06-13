@@ -12,10 +12,10 @@ public interface PopupService {
     PopupDto getPopup(Long popupId);
 
     PopupDto createPopup(PopupDataReq popupData, String contentJson, List<MultipartFile> mediaFiles,
-            String[] mediaLocalIds);
+            String mediaLocalIds);
 
     PopupDto updatePopup(Long popupId, PopupUpdateReq popupUpdateReq, String contentJson,
-            List<MultipartFile> mediaFiles, String[] mediaLocalIds);
+            List<MultipartFile> mediaFiles, String mediaLocalIds);
 
     void deletePopup(Long popupId);
 
