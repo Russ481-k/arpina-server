@@ -14,6 +14,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -32,6 +33,9 @@ public class PopupServiceImpl implements PopupService {
     private final PopupRepository popupRepository;
     private final FileService fileService;
     private final ObjectMapper objectMapper;
+
+    @Value("${app.api.base-url}")
+    private String appApiBaseUrl;
 
     private static final String POPUP_FILE_CATEGORY = "POPUP_CONTENT";
 
@@ -119,7 +123,6 @@ public class PopupServiceImpl implements PopupService {
             return objectMapper.writeValueAsString(rootNode);
         } catch (IOException e) {
             log.error("Error processing JSON for replacing local IDs: {}", e.getMessage(), e);
-            // In case of an error, return the original JSON to avoid data loss.
             return editorContentJson;
         }
     }
@@ -127,23 +130,16 @@ public class PopupServiceImpl implements PopupService {
     private void traverseAndReplace(JsonNode node, Map<String, Long> localIdToFileIdMap) {
         if (node.isObject()) {
             ObjectNode objectNode = (ObjectNode) node;
-            // Check if the node is an image and has a localId
-            if ("image".equals(objectNode.path("type").asText()) && objectNode.has("localId")) {
-                String localId = objectNode.get("localId").asText();
-                if (localIdToFileIdMap.containsKey(localId)) {
-                    long fileId = localIdToFileIdMap.get(localId);
-                    // Replace src with the permanent URL/path and add fileId
-                    objectNode.put("src", "/api/files/" + fileId); // Or your file serving URL structure
+            if ("image".equals(objectNode.path("type").asText()) && objectNode.has("src")) {
+                String src = objectNode.get("src").asText();
+                if (localIdToFileIdMap.containsKey(src)) {
+                    long fileId = localIdToFileIdMap.get(src);
+                    objectNode.put("src", appApiBaseUrl + "/api/v1/cms/file/public/view/" + fileId);
                     objectNode.put("fileId", fileId);
-                    objectNode.remove("localId"); // Remove the temporary localId
                 }
             }
-
-            // Traverse children
-            objectNode.fields().forEachRemaining(entry -> traverseAndReplace(entry.getValue(), localIdToFileIdMap));
-
+            node.fields().forEachRemaining(entry -> traverseAndReplace(entry.getValue(), localIdToFileIdMap));
         } else if (node.isArray()) {
-            // Traverse array elements
             node.forEach(element -> traverseAndReplace(element, localIdToFileIdMap));
         }
     }
@@ -153,9 +149,6 @@ public class PopupServiceImpl implements PopupService {
     public PopupDto updatePopup(Long popupId, cms.popup.dto.PopupUpdateReq popupUpdateReq, String contentJson,
             List<MultipartFile> mediaFiles, String mediaLocalIds) {
 
-        String[] mediaLocalIdsArray = (mediaLocalIds != null && !mediaLocalIds.isEmpty()) ? mediaLocalIds.split(",")
-                : new String[0];
-
         Popup popup = popupRepository.findById(popupId)
                 .orElseThrow(() -> new EntityNotFoundException("Popup not found with id: " + popupId));
 
@@ -164,18 +157,20 @@ public class PopupServiceImpl implements PopupService {
 
         // 2. 새 파일 업로드 및 새 콘텐츠 생성
         String finalContentJson = contentJson;
-        List<String> mediaLocalIdsList = (mediaLocalIdsArray != null) ? Arrays.asList(mediaLocalIdsArray)
-                : Collections.emptyList();
+        if (mediaFiles != null && !mediaFiles.isEmpty()) {
+            String[] mediaLocalIdsArray = (mediaLocalIds != null && !mediaLocalIds.isEmpty()) ? mediaLocalIds.split(",")
+                    : new String[0];
+            List<String> mediaLocalIdsList = Arrays.asList(mediaLocalIdsArray);
 
-        if (mediaFiles != null && !mediaFiles.isEmpty() && !mediaLocalIdsList.isEmpty()
-                && mediaFiles.size() == mediaLocalIdsList.size()) {
-            List<CmsFile> uploadedFiles = fileService.uploadFiles(POPUP_FILE_CATEGORY, popupId, mediaFiles);
-            Map<String, Long> localIdToFileIdMap = new HashMap<>();
-            for (int i = 0; i < mediaLocalIdsList.size(); i++) {
-                localIdToFileIdMap.put(mediaLocalIdsList.get(i), uploadedFiles.get(i).getFileId());
-            }
-            if (!localIdToFileIdMap.isEmpty()) {
-                finalContentJson = replaceLocalIdsInJson(contentJson, localIdToFileIdMap);
+            if (!mediaLocalIdsList.isEmpty() && mediaFiles.size() == mediaLocalIdsList.size()) {
+                List<CmsFile> uploadedFiles = fileService.uploadFiles(POPUP_FILE_CATEGORY, popupId, mediaFiles);
+                Map<String, Long> localIdToFileIdMap = new HashMap<>();
+                for (int i = 0; i < mediaLocalIdsList.size(); i++) {
+                    localIdToFileIdMap.put(mediaLocalIdsList.get(i), uploadedFiles.get(i).getFileId());
+                }
+                if (!localIdToFileIdMap.isEmpty()) {
+                    finalContentJson = replaceLocalIdsInJson(contentJson, localIdToFileIdMap);
+                }
             }
         }
 
@@ -266,21 +261,21 @@ public class PopupServiceImpl implements PopupService {
         if (jsonContent == null || jsonContent.isEmpty()) {
             return Collections.emptySet();
         }
+        Set<Long> fileIds = new HashSet<>();
         try {
-            Set<Long> fileIds = new HashSet<>();
             JsonNode rootNode = objectMapper.readTree(jsonContent);
             traverseAndExtract(rootNode, fileIds);
-            return fileIds;
         } catch (IOException e) {
-            log.error("Error extracting file IDs from JSON: {}", e.getMessage(), e);
-            return Collections.emptySet();
+            log.error("Error parsing JSON for extracting file IDs: {}", e.getMessage(), e);
         }
+        return fileIds;
     }
 
     private void traverseAndExtract(JsonNode node, Set<Long> fileIds) {
         if (node.isObject()) {
-            if (node.has("fileId")) {
-                fileIds.add(node.get("fileId").asLong());
+            ObjectNode objectNode = (ObjectNode) node;
+            if ("image".equals(objectNode.path("type").asText()) && objectNode.has("fileId")) {
+                fileIds.add(objectNode.get("fileId").asLong());
             }
             node.fields().forEachRemaining(entry -> traverseAndExtract(entry.getValue(), fileIds));
         } else if (node.isArray()) {

@@ -65,21 +65,26 @@ public class NiceController {
             }
             // Validate serviceType (optional, can be done in service layer too)
             String serviceType = requestDto.getServiceType().toUpperCase();
-            if (!serviceType.equals("REGISTER") && !serviceType.equals("FIND_ID") && !serviceType.equals("RESET_PASSWORD")) {
-                return ResponseEntity.badRequest().body(Collections.singletonMap("error", "Invalid serviceType. Allowed values: REGISTER, FIND_ID, RESET_PASSWORD"));
+            if (!serviceType.equals("REGISTER") && !serviceType.equals("FIND_ID")
+                    && !serviceType.equals("RESET_PASSWORD")) {
+                return ResponseEntity.badRequest().body(Collections.singletonMap("error",
+                        "Invalid serviceType. Allowed values: REGISTER, FIND_ID, RESET_PASSWORD"));
             }
 
             Map<String, String> initData = niceService.initiateVerification(serviceType);
             // reqSeq is now stored and managed by NiceService
-            NiceInitiateResponseDto responseDto = new NiceInitiateResponseDto(initData.get("encodeData"), initData.get("reqSeq"));
+            NiceInitiateResponseDto responseDto = new NiceInitiateResponseDto(initData.get("encodeData"),
+                    initData.get("reqSeq"));
             return ResponseEntity.ok(responseDto);
         } catch (Exception e) {
-            log.error("Error initiating NICE verification for serviceType: {}", requestDto != null ? requestDto.getServiceType() : "null", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Collections.singletonMap("error", "본인인증 초기화 실패: " + e.getMessage()));
+            log.error("Error initiating NICE verification for serviceType: {}",
+                    requestDto != null ? requestDto.getServiceType() : "null", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Collections.singletonMap("error", "본인인증 초기화 실패: " + e.getMessage()));
         }
     }
 
-    @RequestMapping(value = "/success", method = {RequestMethod.GET, RequestMethod.POST})
+    @RequestMapping(value = "/success", method = { RequestMethod.GET, RequestMethod.POST })
     public ResponseEntity<Void> successCallback(@RequestParam("EncodeData") String encodeData) {
         String reqSeqFromNice = null;
         String resultKey = null;
@@ -113,17 +118,20 @@ public class NiceController {
                     urlBuilder.queryParam("joined", String.valueOf(userData.isAlreadyJoined()));
                     if (userData.isAlreadyJoined() && userData.getExistingUsername() != null) {
                         urlBuilder.queryParam("username", userData.getExistingUsername());
-                        log.info("[NICE] REGISTER - User with DI already joined. Username: {}", userData.getExistingUsername());
+                        log.info("[NICE] REGISTER - User with DI already joined. Username: {}",
+                                userData.getExistingUsername());
                     } else {
                         log.info("[NICE] REGISTER - New user identified.");
                     }
                 }
-                log.info("[NICE] Success callback processed. Redirecting with params from NiceCallbackResultDto. ServiceType: {}, Status: {}", 
-                    callbackResult.getServiceType(), callbackResult.getStatus());
+                log.info(
+                        "[NICE] Success callback processed. Redirecting with params from NiceCallbackResultDto. ServiceType: {}, Status: {}",
+                        callbackResult.getServiceType(), callbackResult.getStatus());
 
             } else {
-                log.warn("[NICE] Success callback rawResult is not NiceCallbackResultDto. Type: {}. Redirecting with generic success.", 
-                    rawResult != null ? rawResult.getClass().getName() : "null");
+                log.warn(
+                        "[NICE] Success callback rawResult is not NiceCallbackResultDto. Type: {}. Redirecting with generic success.",
+                        rawResult != null ? rawResult.getClass().getName() : "null");
                 urlBuilder.queryParam("status", "success");
             }
 
@@ -134,17 +142,19 @@ public class NiceController {
         } catch (Exception e) {
             log.error("Exception in NICE successCallback. Initial reqSeqFromNice: {}", reqSeqFromNice, e);
             String errorRedirectUrl = UriComponentsBuilder.fromUriString(frontendRedirectFailUrl)
-                                        .queryParam("status", "fail")
-                                        .queryParam("error", "processing_failed")
-                                        .queryParam("detail", e.getMessage() != null ? e.getClass().getSimpleName() + ": " + e.getMessage() : e.getClass().getSimpleName())
-                                        .toUriString();
+                    .queryParam("status", "fail")
+                    .queryParam("error", "processing_failed")
+                    .queryParam("detail",
+                            e.getMessage() != null ? e.getClass().getSimpleName() + ": " + e.getMessage()
+                                    : e.getClass().getSimpleName())
+                    .toUriString();
             HttpHeaders headers = new HttpHeaders();
             headers.setLocation(URI.create(errorRedirectUrl));
             return new ResponseEntity<>(headers, HttpStatus.FOUND);
         }
     }
 
-    @RequestMapping(value = "/fail", method = {RequestMethod.GET, RequestMethod.POST})
+    @RequestMapping(value = "/fail", method = { RequestMethod.GET, RequestMethod.POST })
     public ResponseEntity<Void> failCallback(@RequestParam("EncodeData") String encodeData) {
         String reqSeqFromNice = null;
         String resultKey = null;
@@ -153,7 +163,7 @@ public class NiceController {
             resultKey = niceService.storeErrorData(encodeData);
 
             UriComponentsBuilder urlBuilder = UriComponentsBuilder.fromUriString(frontendRedirectFailUrl)
-                                                .queryParam("key", resultKey);
+                    .queryParam("key", resultKey);
 
             Object rawError = niceService.peekRawNiceData(resultKey);
             if (rawError instanceof NiceErrorDataDto) {
@@ -164,26 +174,30 @@ public class NiceController {
                 if (errorData.getServiceType() != null) {
                     urlBuilder.queryParam("serviceType", errorData.getServiceType());
                 }
-                log.info("[NICE] Fail callback processed. Redirecting with params from NiceErrorDataDto. ErrorCode: {}, ServiceType: {}", 
-                    errorData.getErrorCode(), errorData.getServiceType());
+                log.info(
+                        "[NICE] Fail callback processed. Redirecting with params from NiceErrorDataDto. ErrorCode: {}, ServiceType: {}",
+                        errorData.getErrorCode(), errorData.getServiceType());
             } else {
-                log.warn("[NICE] Fail callback rawError is not NiceErrorDataDto. Type: {}. Redirecting with generic fail.", 
-                    rawError != null ? rawError.getClass().getName() : "null");
+                log.warn(
+                        "[NICE] Fail callback rawError is not NiceErrorDataDto. Type: {}. Redirecting with generic fail.",
+                        rawError != null ? rawError.getClass().getName() : "null");
                 urlBuilder.queryParam("status", "fail");
                 urlBuilder.queryParam("error", "unknown_error_type");
             }
-                                         
-            String redirectUrl = urlBuilder.toUriString();                           
+
+            String redirectUrl = urlBuilder.toUriString();
             HttpHeaders headers = new HttpHeaders();
             headers.setLocation(URI.create(redirectUrl));
             return new ResponseEntity<>(headers, HttpStatus.FOUND);
         } catch (Exception e) {
             log.error("Exception in NICE failCallback. Initial reqSeqFromNice: {}", reqSeqFromNice, e);
             String errorRedirectUrl = UriComponentsBuilder.fromUriString(frontendRedirectFailUrl)
-                                        .queryParam("status", "fail")
-                                        .queryParam("error", "processing_failed_on_fail")
-                                         .queryParam("detail", e.getMessage() != null ? e.getClass().getSimpleName() + ": " + e.getMessage() : e.getClass().getSimpleName())
-                                        .toUriString();
+                    .queryParam("status", "fail")
+                    .queryParam("error", "processing_failed_on_fail")
+                    .queryParam("detail",
+                            e.getMessage() != null ? e.getClass().getSimpleName() + ": " + e.getMessage()
+                                    : e.getClass().getSimpleName())
+                    .toUriString();
             HttpHeaders headers = new HttpHeaders();
             headers.setLocation(URI.create(errorRedirectUrl));
             return new ResponseEntity<>(headers, HttpStatus.FOUND);
@@ -195,14 +209,17 @@ public class NiceController {
         try {
             Object resultData = niceService.peekRawNiceData(resultKey);
             if (resultData == null) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Collections.singletonMap("error", "결과를 찾을 수 없거나 만료되었습니다."));
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Collections.singletonMap("error", "결과를 찾을 수 없거나 만료되었습니다."));
             }
 
             return ResponseEntity.ok(resultData);
         } catch (Exception e) {
             log.error("Error retrieving NICE verification result for key {}: {}", resultKey, e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Collections.singletonMap("error", "결과 조회 처리 중 에러 발생: " + e.getMessage()));
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Collections.singletonMap("error", "결과 조회 처리 중 에러 발생: " + e.getMessage()));
         }
     }
-    // isValidReqSeq method is removed as its logic is now within NiceService's consumeAndValidateReqSeq
+    // isValidReqSeq method is removed as its logic is now within NiceService's
+    // consumeAndValidateReqSeq
 }
