@@ -5,6 +5,7 @@ import cms.groupreservation.domain.GroupReservationInquiry;
 import cms.groupreservation.domain.InquiryRoomReservation;
 import cms.groupreservation.dto.GroupReservationInquiryDto;
 import cms.groupreservation.dto.GroupReservationRequest;
+import cms.groupreservation.dto.GroupReservationUpdateRequestDto;
 import cms.groupreservation.repository.GroupReservationInquiryRepository;
 import cms.groupreservation.service.GroupReservationService;
 import lombok.RequiredArgsConstructor;
@@ -127,7 +128,7 @@ public class GroupReservationServiceImpl implements GroupReservationService {
 
     @Override
     @Transactional
-    public GroupReservationInquiryDto updateInquiry(Long id, String status, String adminMemo,
+    public GroupReservationInquiryDto updateInquiry(Long id, GroupReservationUpdateRequestDto requestDto,
             HttpServletRequest servletRequest) {
         GroupReservationInquiry inquiry = inquiryRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("GroupReservationInquiry", id));
@@ -135,11 +136,11 @@ public class GroupReservationServiceImpl implements GroupReservationService {
         String adminUsername = SecurityContextHolder.getContext().getAuthentication().getName();
         String clientIp = servletRequest.getRemoteAddr();
 
-        if (status != null) {
-            inquiry.setStatus(status);
+        if (requestDto.getStatus() != null) {
+            inquiry.setStatus(requestDto.getStatus());
         }
-        if (adminMemo != null) {
-            inquiry.setAdminMemo(adminMemo);
+        if (requestDto.getMemo() != null) {
+            inquiry.setAdminMemo(requestDto.getMemo());
         }
         inquiry.setUpdatedBy(adminUsername);
         inquiry.setUpdatedIp(clientIp);

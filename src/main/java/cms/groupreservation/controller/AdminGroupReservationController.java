@@ -2,6 +2,7 @@ package cms.groupreservation.controller;
 
 import cms.common.dto.ApiResponseSchema;
 import cms.groupreservation.dto.GroupReservationInquiryDto;
+import cms.groupreservation.dto.GroupReservationUpdateRequestDto;
 import cms.groupreservation.service.GroupReservationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -11,7 +12,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletRequest;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/cms/group-reservations")
@@ -41,11 +41,9 @@ public class AdminGroupReservationController {
     @PatchMapping("/{id}")
     public ResponseEntity<ApiResponseSchema<GroupReservationInquiryDto>> updateInquiry(
             @PathVariable Long id,
-            @RequestBody Map<String, String> payload,
+            @RequestBody GroupReservationUpdateRequestDto requestDto,
             HttpServletRequest servletRequest) {
-        String status = payload.get("status");
-        String adminMemo = payload.get("adminMemo");
-        GroupReservationInquiryDto updatedInquiry = groupReservationService.updateInquiry(id, status, adminMemo,
+        GroupReservationInquiryDto updatedInquiry = groupReservationService.updateInquiry(id, requestDto,
                 servletRequest);
         return ResponseEntity.ok(ApiResponseSchema.success(updatedInquiry));
     }
