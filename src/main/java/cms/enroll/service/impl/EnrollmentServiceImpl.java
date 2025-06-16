@@ -681,7 +681,13 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                     .divide(BigDecimal.valueOf(totalLessonDays), 0, RoundingMode.DOWN);
         }
 
-        BigDecimal finalRefundAmount = totalPaidAmount.subtract(lessonUsageDeduction);
+        // 사물함을 하루라도 사용했으면 사물함 비용은 환불금액에서 제외
+        BigDecimal lockerDeduction = BigDecimal.ZERO;
+        if (effectiveUsedDays > 0 && paidLockerAmount.compareTo(BigDecimal.ZERO) > 0) {
+            lockerDeduction = paidLockerAmount;
+        }
+
+        BigDecimal finalRefundAmount = totalPaidAmount.subtract(lessonUsageDeduction).subtract(lockerDeduction);
         if (finalRefundAmount.compareTo(BigDecimal.ZERO) < 0) {
             finalRefundAmount = BigDecimal.ZERO;
         }
@@ -696,6 +702,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 .paidLessonAmount(paidLessonAmount)
                 .paidLockerAmount(paidLockerAmount)
                 .lessonUsageDeduction(lessonUsageDeduction)
+                .lockerDeduction(lockerDeduction)
                 .finalRefundAmount(finalRefundAmount)
                 .isFullRefund(isFullRefund)
                 .build();

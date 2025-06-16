@@ -16,6 +16,7 @@ public class CalculatedRefundDetailsDto {
     private BigDecimal paidLockerAmount;
 
     private BigDecimal lessonUsageDeduction;
+    private BigDecimal lockerDeduction;
 
     private BigDecimal finalRefundAmount;
 
