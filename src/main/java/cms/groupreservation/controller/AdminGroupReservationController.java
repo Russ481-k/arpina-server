@@ -22,8 +22,13 @@ public class AdminGroupReservationController {
 
     @GetMapping
     public ResponseEntity<ApiResponseSchema<Page<GroupReservationInquiryDto>>> getInquiries(
+            @RequestParam(required = false) String type,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String eventType,
             @PageableDefault(sort = "createdDate", direction = org.springframework.data.domain.Sort.Direction.DESC) Pageable pageable) {
-        Page<GroupReservationInquiryDto> inquiries = groupReservationService.getInquiries(pageable);
+        Page<GroupReservationInquiryDto> inquiries = groupReservationService.getInquiries(pageable, type,
+                search, status, eventType);
         return ResponseEntity.ok(ApiResponseSchema.success(inquiries));
     }
 

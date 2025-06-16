@@ -24,7 +24,8 @@ public interface GroupReservationService {
      * @param pageable 페이징 정보
      * @return 문의 목록
      */
-    Page<GroupReservationInquiryDto> getInquiries(Pageable pageable);
+    Page<GroupReservationInquiryDto> getInquiries(Pageable pageable, String type, String search,
+            String status, String eventType);
 
     /**
      * 관리자용 문의 상세 조회

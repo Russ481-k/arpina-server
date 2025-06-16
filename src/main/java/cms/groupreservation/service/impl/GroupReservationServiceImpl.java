@@ -10,11 +10,15 @@ import cms.groupreservation.service.GroupReservationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
+import javax.persistence.criteria.Predicate;
 import javax.servlet.http.HttpServletRequest;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -71,8 +75,47 @@ public class GroupReservationServiceImpl implements GroupReservationService {
     }
 
     @Override
-    public Page<GroupReservationInquiryDto> getInquiries(Pageable pageable) {
-        return inquiryRepository.findAll(pageable).map(GroupReservationInquiryDto::new);
+    public Page<GroupReservationInquiryDto> getInquiries(Pageable pageable, String type, String search,
+            String status, String eventType) {
+        Specification<GroupReservationInquiry> spec = (root, query, criteriaBuilder) -> {
+            List<Predicate> predicates = new ArrayList<>();
+
+            if (StringUtils.hasText(status)) {
+                predicates.add(criteriaBuilder.equal(root.get("status"), status));
+            }
+
+            if (StringUtils.hasText(eventType)) {
+                predicates.add(criteriaBuilder.equal(root.get("eventType"), eventType));
+            }
+
+            if (StringUtils.hasText(search)) {
+                String pattern = "%" + search + "%";
+                if ("ALL".equalsIgnoreCase(type) || !StringUtils.hasText(type)) {
+                    predicates.add(criteriaBuilder.or(
+                            criteriaBuilder.like(root.get("eventName"), pattern),
+                            criteriaBuilder.like(root.get("customerGroupName"), pattern),
+                            criteriaBuilder.like(root.get("contactPersonName"), pattern),
+                            criteriaBuilder.like(root.get("contactPersonPhone"), pattern)));
+                } else {
+                    switch (type) {
+                        case "eventName":
+                            predicates.add(criteriaBuilder.like(root.get("eventName"), pattern));
+                            break;
+                        case "customerGroupName":
+                            predicates.add(criteriaBuilder.like(root.get("customerGroupName"), pattern));
+                            break;
+                        case "contactPersonName":
+                            predicates.add(criteriaBuilder.like(root.get("contactPersonName"), pattern));
+                            break;
+                        case "contactPersonPhone":
+                            predicates.add(criteriaBuilder.like(root.get("contactPersonPhone"), pattern));
+                            break;
+                    }
+                }
+            }
+            return criteriaBuilder.and(predicates.toArray(new Predicate[0]));
+        };
+        return inquiryRepository.findAll(spec, pageable).map(GroupReservationInquiryDto::new);
     }
 
     @Override
