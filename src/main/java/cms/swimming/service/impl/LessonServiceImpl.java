@@ -5,8 +5,6 @@ import cms.swimming.dto.LessonDto;
 import cms.swimming.repository.LessonRepository;
 import cms.swimming.service.LessonService;
 import cms.enroll.repository.EnrollRepository;
-import cms.common.exception.InvalidInputException;
-import cms.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,7 +35,8 @@ public class LessonServiceImpl implements LessonService {
     private final EnrollRepository enrollRepository;
 
     private LessonDto convertToLessonDto(Lesson lesson) {
-        if (lesson == null) return null;
+        if (lesson == null)
+            return null;
 
         Integer remainingSpots = null;
         if (lesson.getCapacity() != null) {
@@ -45,7 +44,8 @@ public class LessonServiceImpl implements LessonService {
             long unpaidActiveEnrollments = enrollRepository.countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(
                     lesson.getLessonId(), "APPLIED", "UNPAID", LocalDateTime.now());
             remainingSpots = lesson.getCapacity() - (int) paidEnrollments - (int) unpaidActiveEnrollments;
-            if (remainingSpots < 0) remainingSpots = 0;
+            if (remainingSpots < 0)
+                remainingSpots = 0;
         }
 
         String days = null;
@@ -53,17 +53,20 @@ public class LessonServiceImpl implements LessonService {
         String timeSlot = null;
         if (lesson.getLessonTime() != null && !lesson.getLessonTime().isEmpty()) {
             String lessonTimeString = lesson.getLessonTime();
-            Pattern pattern = Pattern.compile("^(?:(\\(.*?\\))\\s*)?(?:(오전|오후)\\s*)?(\\d{1,2}:\\d{2}\\s*[~-]\\s*\\d{1,2}:\\d{2})$");
+            Pattern pattern = Pattern
+                    .compile("^(?:(\\(.*?\\))\\s*)?(?:(오전|오후)\\s*)?(\\d{1,2}:\\d{2}\\s*[~-]\\s*\\d{1,2}:\\d{2})$");
             Matcher matcher = pattern.matcher(lessonTimeString.trim());
             if (matcher.find()) {
                 days = matcher.group(1);
                 timePrefix = matcher.group(2);
                 timeSlot = matcher.group(3);
             } else {
-                 if (lessonTimeString.matches("^\\d{1,2}:\\d{2}\\s*[~-]\\s*\\d{1,2}:\\d{2}$")) {
+                if (lessonTimeString.matches("^\\d{1,2}:\\d{2}\\s*[~-]\\s*\\d{1,2}:\\d{2}$")) {
                     timeSlot = lessonTimeString.trim();
                 } else {
-                    logger.warn("LessonTime '{}' did not match expected patterns in LessonServiceImpl. Full string used in lessonTime field.", lessonTimeString);
+                    logger.warn(
+                            "LessonTime '{}' did not match expected patterns in LessonServiceImpl. Full string used in lessonTime field.",
+                            lessonTimeString);
                 }
             }
         }
@@ -81,12 +84,14 @@ public class LessonServiceImpl implements LessonService {
             }
 
             // Logic for date range: finds lessons that *overlap* with the given range.
-            // A lesson (ls, le) overlaps with query range (qs, qe) if lesson_start_date <= query_end_date AND lesson_end_date >= query_start_date.
+            // A lesson (ls, le) overlaps with query range (qs, qe) if lesson_start_date <=
+            // query_end_date AND lesson_end_date >= query_start_date.
             if (startDate != null && endDate != null) {
                 predicates.add(criteriaBuilder.lessThanOrEqualTo(root.get("startDate"), endDate));
                 predicates.add(criteriaBuilder.greaterThanOrEqualTo(root.get("endDate"), startDate));
             } else if (startDate != null) {
-                // If only startDate is given, find lessons that are ongoing or start after this date (i.e., their endDate is after this startDate).
+                // If only startDate is given, find lessons that are ongoing or start after this
+                // date (i.e., their endDate is after this startDate).
                 predicates.add(criteriaBuilder.greaterThanOrEqualTo(root.get("endDate"), startDate));
             } else if (endDate != null) {
                 // If only endDate is given, find lessons that start on or before this date.
@@ -97,8 +102,8 @@ public class LessonServiceImpl implements LessonService {
         };
         Page<Lesson> lessonPage = lessonRepository.findAll(spec, pageable);
         List<LessonDto> dtoList = lessonPage.getContent().stream()
-                                        .map(this::convertToLessonDto)
-                                        .collect(Collectors.toList());
+                .map(this::convertToLessonDto)
+                .collect(Collectors.toList());
         return new PageImpl<>(dtoList, pageable, lessonPage.getTotalElements());
     }
 
@@ -113,7 +118,8 @@ public class LessonServiceImpl implements LessonService {
     public long countCurrentEnrollments(Long lessonId) {
         // This counts only PAID enrollments for the specific lessonId.
         // It does not consider lesson status or date ranges directly.
-        // If "current" means active lessons, additional checks on Lesson status/dates might be needed here or in calling code.
+        // If "current" means active lessons, additional checks on Lesson status/dates
+        // might be needed here or in calling code.
         return enrollRepository.countByLessonLessonIdAndPayStatus(lessonId, "PAID");
     }
 
@@ -128,4 +134,4 @@ public class LessonServiceImpl implements LessonService {
         }
         return enrollRepository.countUsedLockersByLessonAndUserGender(lessonId, gender.toUpperCase());
     }
-} 
+}
