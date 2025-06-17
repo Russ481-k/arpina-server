@@ -52,6 +52,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import java.util.ArrayList;
+import java.util.stream.Stream;
 
 import cms.common.exception.BusinessRuleException;
 import cms.common.exception.ErrorCode;
@@ -128,36 +130,159 @@ public class EnrollmentServiceImpl implements EnrollmentService {
     @Override
     @Transactional(readOnly = true)
     public Page<EnrollDto> getEnrollments(User user, String payStatusFilter, Pageable pageable) {
-        // 현재는 user 객체가 null이 아니라고 가정하고 진행.
-        List<Enroll> enrolls;
-        if (StringUtils.hasText(payStatusFilter)) {
-            enrolls = enrollRepository.findByUserUuid(user.getUuid()).stream()
-                    .filter(e -> payStatusFilter.equalsIgnoreCase(e.getPayStatus()))
-                    .sorted(Comparator.comparing(Enroll::getCreatedAt).reversed())
-                    .collect(Collectors.toList());
-        } else {
-            enrolls = enrollRepository.findByUserUuid(user.getUuid());
-            // enrolls.sort(Comparator.comparing(Enroll::getCreatedAt).reversed()); //
-            // findByUserUuid가 정렬을 보장하지 않으면 필요
-        }
-
-        if (user == null || user.getUuid() == null) { // 방어 코드 추가
-            // 이 경우는 사실상 Controller 단에서 @AuthenticationPrincipal에 의해 걸러지거나,
-            // Spring Security 설정 오류로 인해 발생할 수 있습니다.
-            // USER_NOT_FOUND 또는 AUTHENTICATION_FAILED가 적절할 수 있습니다.
+        if (user == null || user.getUuid() == null) {
             throw new BusinessRuleException(ErrorCode.AUTHENTICATION_FAILED, HttpStatus.UNAUTHORIZED);
         }
 
-        // enrolls 리스트가 비어있을 경우 ResourceNotFoundException을 던질지, 아니면 빈 페이지를 반환할지는 정책에 따라
-        // 다름.
-        // 현재 코드는 빈 페이지를 반환하므로 그대로 둡니다.
+        List<Enroll> userEnrollments = enrollRepository.findByUserUuid(user.getUuid());
+
+        List<EnrollDto> dtoList = userEnrollments.stream()
+                .map(this::convertToMypageEnrollDto)
+                .collect(Collectors.toList());
+
+        LocalDate today = LocalDate.now();
+        YearMonth currentMonth = YearMonth.from(today);
+
+        boolean isRenewalWindowActive = today.getDayOfMonth() >= 20 && today.getDayOfMonth() <= 25;
+
+        if (isRenewalWindowActive) {
+            List<EnrollDto> renewalPreviews = userEnrollments.stream()
+                    .filter(enroll -> "PAID".equals(enroll.getPayStatus())
+                            && YearMonth.from(enroll.getLesson().getStartDate()).equals(currentMonth))
+                    .map(Enroll::getLesson)
+                    .distinct()
+                    .flatMap(currentLesson -> {
+                        LocalDate nextMonthStart = currentMonth.plusMonths(1).atDay(1);
+                        LocalDate nextMonthEnd = currentMonth.plusMonths(1).atEndOfMonth();
+
+                        return lessonRepository.findNextMonthLesson(
+                                currentLesson.getTitle(),
+                                currentLesson.getInstructorName(),
+                                currentLesson.getLessonTime(),
+                                currentLesson.getLocationName(),
+                                nextMonthStart,
+                                nextMonthEnd).map(Stream::of).orElseGet(Stream::empty);
+                    })
+                    .map(nextMonthLesson -> createRenewalPreviewDto(nextMonthLesson, true))
+                    .collect(Collectors.toList());
+
+            dtoList.addAll(renewalPreviews);
+        }
+
+        dtoList.sort(Comparator.comparing(dto -> dto.getLesson().getStartDate(), Comparator.reverseOrder()));
+
         int start = (int) pageable.getOffset();
-        int end = Math.min((start + pageable.getPageSize()), enrolls.size());
-        List<EnrollDto> dtoList = enrolls.isEmpty() ? Collections.emptyList()
-                : enrolls.subList(start, end).stream()
-                        .map(this::convertToMypageEnrollDto)
-                        .collect(Collectors.toList());
-        return new PageImpl<>(dtoList, pageable, enrolls.size());
+        int end = Math.min((start + pageable.getPageSize()), dtoList.size());
+        List<EnrollDto> pagedDtoList = dtoList.isEmpty() ? Collections.emptyList()
+                : dtoList.subList(start, end);
+
+        return new PageImpl<>(pagedDtoList, pageable, dtoList.size());
+    }
+
+    private EnrollDto createRenewalPreviewDto(Lesson lesson, boolean isRenewalOpen) {
+
+        EnrollDto.LessonDetails lessonDetails = convertToLessonDetails(lesson);
+
+        EnrollDto.RenewalWindow renewalWindow = null;
+        if (lesson.getStartDate() != null) {
+            YearMonth lessonStartMonth = YearMonth.from(lesson.getStartDate());
+            LocalDate renewalStart = lessonStartMonth.minusMonths(1).atDay(20);
+            LocalDate renewalEnd = lessonStartMonth.minusMonths(1).atDay(25);
+
+            renewalWindow = EnrollDto.RenewalWindow.builder()
+                    .isOpen(isRenewalOpen)
+                    .open(renewalStart.atStartOfDay().atOffset(ZoneOffset.UTC))
+                    .close(renewalEnd.atTime(23, 59, 59).atOffset(ZoneOffset.UTC))
+                    .build();
+        }
+
+        return EnrollDto.builder()
+                .enrollId(null) // 실제 수강신청이 아니므로 ID는 null
+                .lesson(lessonDetails)
+                .status("RENEWAL_AVAILABLE") // 재수강 가능 상태
+                .applicationDate(null)
+                .usesLocker(false)
+                .membershipType(null)
+                .renewalWindow(renewalWindow)
+                .isRenewal(true) // 재수강 항목임을 명시
+                .cancelStatus(Enroll.CancelStatusType.NONE.name())
+                .canAttemptPayment(false)
+                .build();
+    }
+
+    private EnrollDto.LessonDetails convertToLessonDetails(Lesson lesson) {
+        if (lesson == null) {
+            logger.error("Attempted to convert a null Lesson to LessonDetails.");
+            return EnrollDto.LessonDetails.builder().build();
+        }
+
+        String periodString = null;
+        if (lesson.getStartDate() != null && lesson.getEndDate() != null) {
+            periodString = lesson.getStartDate().toString() + " ~ " + lesson.getEndDate().toString();
+        }
+
+        Integer remainingSpots = null;
+        if (lesson.getCapacity() != null) {
+            long paidEnrollments = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
+            long unpaidActiveEnrollments = enrollRepository.countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(
+                    lesson.getLessonId(), "APPLIED", "UNPAID", LocalDateTime.now());
+            remainingSpots = lesson.getCapacity() - (int) paidEnrollments - (int) unpaidActiveEnrollments;
+            if (remainingSpots < 0)
+                remainingSpots = 0;
+        }
+
+        String days = null;
+        String timePrefix = null;
+        String timeSlot = null;
+        if (lesson.getLessonTime() != null && !lesson.getLessonTime().isEmpty()) {
+            String lessonTimeString = lesson.getLessonTime();
+            Pattern pattern = Pattern
+                    .compile("^(?:(\\(.*?\\))\\s*)?(?:(오전|오후)\\s*)?(\\d{1,2}:\\d{2}\\s*[~-]\\s*\\d{1,2}:\\d{2})$");
+            Matcher matcher = pattern.matcher(lessonTimeString.trim());
+            if (matcher.find()) {
+                days = matcher.group(1);
+                timePrefix = matcher.group(2);
+                timeSlot = matcher.group(3);
+            } else if (lessonTimeString.matches("^\\d{1,2}:\\d{2}\\s*[~-]\\s*\\d{1,2}:\\d{2}$")) {
+                timeSlot = lessonTimeString.trim();
+            } else {
+                logger.warn("LessonTime '{}' did not match expected patterns. Full string stored in time field.",
+                        lessonTimeString);
+            }
+        }
+
+        String displayName = (lesson.getDisplayName() != null && !lesson.getDisplayName().isEmpty())
+                ? lesson.getDisplayName()
+                : lesson.getTitle();
+        String instructorDisplay = lesson.getInstructorName();
+        String locationNameValue = lesson.getLocationName();
+        String reservationIdString = (lesson.getRegistrationStartDateTime() != null)
+                ? lesson.getRegistrationStartDateTime().format(DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm:ss"))
+                        + " 부터"
+                : null;
+        String receiptIdString = (lesson.getRegistrationEndDateTime() != null)
+                ? lesson.getRegistrationEndDateTime().format(DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm:ss")) + " 까지"
+                : null;
+
+        return EnrollDto.LessonDetails.builder()
+                .lessonId(lesson.getLessonId())
+                .title(lesson.getTitle())
+                .name(displayName)
+                .period(periodString)
+                .startDate(lesson.getStartDate() != null ? lesson.getStartDate().toString() : null)
+                .endDate(lesson.getEndDate() != null ? lesson.getEndDate().toString() : null)
+                .time(lesson.getLessonTime())
+                .days(days)
+                .timePrefix(timePrefix)
+                .timeSlot(timeSlot)
+                .capacity(lesson.getCapacity())
+                .remaining(remainingSpots)
+                .price(lesson.getPrice() != null ? new BigDecimal(lesson.getPrice()) : null)
+                .instructor(instructorDisplay)
+                .location(locationNameValue)
+                .reservationId(reservationIdString)
+                .receiptId(receiptIdString)
+                .build();
     }
 
     @Override
@@ -935,104 +1060,9 @@ public class EnrollmentServiceImpl implements EnrollmentService {
 
     private EnrollDto convertToMypageEnrollDto(Enroll enroll) {
         Lesson lesson = enroll.getLesson();
-        EnrollDto.LessonDetails lessonDetails = null;
+        EnrollDto.LessonDetails lessonDetails = convertToLessonDetails(lesson);
 
-        if (lesson != null) {
-            String periodString = null;
-            if (lesson.getStartDate() != null && lesson.getEndDate() != null) {
-                periodString = lesson.getStartDate().toString() + " ~ " + lesson.getEndDate().toString();
-            }
-
-            Integer remainingSpots = null;
-            if (lesson.getCapacity() != null) {
-                long paidEnrollments = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
-                long unpaidActiveEnrollments = enrollRepository
-                        .countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(lesson.getLessonId(), "APPLIED",
-                                "UNPAID", LocalDateTime.now());
-                remainingSpots = lesson.getCapacity() - (int) paidEnrollments - (int) unpaidActiveEnrollments;
-                if (remainingSpots < 0)
-                    remainingSpots = 0;
-            }
-
-            String days = null;
-            String timePrefix = null;
-            String timeSlot = null;
-            if (lesson.getLessonTime() != null && !lesson.getLessonTime().isEmpty()) {
-                String lessonTimeString = lesson.getLessonTime();
-                Pattern pattern = Pattern
-                        .compile("^(?:(\\(.*?\\))\\s*)?(?:(오전|오후)\\s*)?(\\d{1,2}:\\d{2}\\s*[~-]\\s*\\d{1,2}:\\d{2})$");
-                Matcher matcher = pattern.matcher(lessonTimeString.trim());
-                if (matcher.find()) {
-                    days = matcher.group(1);
-                    timePrefix = matcher.group(2);
-                    timeSlot = matcher.group(3);
-                } else {
-                    if (lessonTimeString.matches("^\\d{1,2}:\\d{2}\\s*[~-]\\s*\\d{1,2}:\\d{2}$")) {
-                        timeSlot = lessonTimeString.trim();
-                    } else {
-                        logger.warn(
-                                "LessonTime '{}' did not match expected patterns. Full string stored in time field.",
-                                lessonTimeString);
-                    }
-                }
-            }
-
-            // Assumes Lesson.java now has getDisplayName() returning specific display name
-            // like "힐링수영반"
-            String displayName = (lesson.getDisplayName() != null && !lesson.getDisplayName().isEmpty())
-                    ? lesson.getDisplayName()
-                    : lesson.getTitle(); // Fallback to title if getDisplayName is null/empty
-
-            // Assumes Lesson.java has getInstructorName() or similar for "성인(온라인)" like
-            // data.
-            // If "성인(온라인)" is more of a target audience, a different field in Lesson.java
-            // might be appropriate.
-            String instructorDisplay = lesson.getInstructorName();
-
-            // Assumes Lesson.java now has getRegistrationStartDateTime() of type
-            // LocalDateTime.
-            String reservationIdString = null;
-            if (lesson.getRegistrationStartDateTime() != null) {
-                reservationIdString = lesson.getRegistrationStartDateTime()
-                        .format(DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm:ss")) + " 부터";
-            }
-
-            // Assumes Lesson.java now has getRegistrationEndDateTime() of type
-            // LocalDateTime.
-            String receiptIdString = null;
-            if (lesson.getRegistrationEndDateTime() != null) {
-                receiptIdString = lesson.getRegistrationEndDateTime()
-                        .format(DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm:ss")) + " 까지";
-            }
-
-            // Assumes Lesson.java now has getLocationName().
-            String locationNameValue = lesson.getLocationName();
-
-            lessonDetails = EnrollDto.LessonDetails.builder()
-                    .lessonId(lesson.getLessonId())
-                    .title(lesson.getTitle())
-                    .name(displayName) // From Lesson.getDisplayName() or fallback
-                    .period(periodString)
-                    .startDate(lesson.getStartDate() != null ? lesson.getStartDate().toString() : null)
-                    .endDate(lesson.getEndDate() != null ? lesson.getEndDate().toString() : null)
-                    .time(lesson.getLessonTime()) // Full original time string
-                    .days(days) // Parsed
-                    .timePrefix(timePrefix) // Parsed
-                    .timeSlot(timeSlot) // Parsed
-                    .capacity(lesson.getCapacity())
-                    .remaining(remainingSpots) // Calculated
-                    .price(lesson.getPrice() != null ? new BigDecimal(lesson.getPrice()) : null)
-                    .instructor(instructorDisplay) // From Lesson.getInstructorName()
-                    .location(locationNameValue) // From Lesson.getLocationName()
-                    .reservationId(reservationIdString) // From Lesson.getRegistrationStartDateTime()
-                    .receiptId(receiptIdString) // From Lesson.getRegistrationEndDateTime()
-                    .build();
-        } else {
-            logger.error("Enrollment with ID {} has a null lesson associated.", enroll.getEnrollId());
-            lessonDetails = EnrollDto.LessonDetails.builder().build();
-        }
-
-        // Renewal window logic (remains as previously corrected)
+        // Renewal window logic
         EnrollDto.RenewalWindow renewalWindowDto = null;
         LocalDate today = LocalDate.now();
         if (lesson != null && lesson.getStartDate() != null) {
