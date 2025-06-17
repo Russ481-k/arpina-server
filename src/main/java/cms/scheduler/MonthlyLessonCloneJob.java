@@ -9,7 +9,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.List;
 
@@ -20,7 +20,7 @@ public class MonthlyLessonCloneJob {
 
     private final LessonRepository lessonRepository;
 
-    @Scheduled(cron = "0 0 15 6 * ?")
+    @Scheduled(cron = "0 0 0 20 * ?")
     @Transactional
     public void cloneMonthlyLessons() {
         YearMonth currentMonth = YearMonth.now();
@@ -38,6 +38,14 @@ public class MonthlyLessonCloneJob {
         log.info("Found {} lessons from {} to clone for {}.", lessonsToClone.size(), currentMonth, nextMonth);
 
         for (Lesson originalLesson : lessonsToClone) {
+            LocalDateTime nextMonthRegistrationStart = nextMonth
+                    .atDay(20)
+                    .atStartOfDay();
+
+            LocalDateTime nextMonthRegistrationEnd = nextMonth
+                    .atEndOfMonth()
+                    .atTime(23, 59, 59);
+
             Lesson clonedLesson = Lesson.builder()
                     .title(originalLesson.getTitle())
                     .displayName(originalLesson.getDisplayName())
@@ -48,18 +56,21 @@ public class MonthlyLessonCloneJob {
                     .instructorName(originalLesson.getInstructorName())
                     .lessonTime(originalLesson.getLessonTime())
                     .locationName(originalLesson.getLocationName())
-                    .registrationStartDateTime(originalLesson.getRegistrationStartDateTime() != null
-                            ? originalLesson.getRegistrationStartDateTime().plusMonths(1)
-                            : null)
-                    .registrationEndDateTime(originalLesson.getRegistrationEndDateTime().plusMonths(1))
+                    .registrationStartDateTime(nextMonthRegistrationStart)
+                    .registrationEndDateTime(nextMonthRegistrationEnd)
                     .createdBy("SYSTEM_SCHEDULER")
                     .createdIp("127.0.0.1")
                     .build();
 
             lessonRepository.save(clonedLesson);
-            log.debug("Cloned lesson ID {} to new lesson for next month.", originalLesson.getLessonId());
+            log.debug("Cloned lesson ID {} to new lesson for next month with registration period: {} ~ {}",
+                    originalLesson.getLessonId(),
+                    nextMonthRegistrationStart,
+                    nextMonthRegistrationEnd);
         }
 
-        log.info("Successfully cloned {} lessons for {}.", lessonsToClone.size(), nextMonth);
+        log.info("Successfully cloned {} lessons for {} with updated registration periods.",
+                lessonsToClone.size(),
+                nextMonth);
     }
 }
