@@ -17,11 +17,11 @@ import java.util.Optional;
 
 @Repository
 public interface LessonRepository extends JpaRepository<Lesson, Long>, JpaSpecificationExecutor<Lesson> {
-    
+
     // 기간 내 수업 목록 조회
     @Query("SELECT l FROM Lesson l WHERE l.startDate >= :startDate AND l.endDate <= :endDate")
     List<Lesson> findByDateRange(LocalDate startDate, LocalDate endDate);
-        
+
     // 특정 수업의 현재 신청 인원 카운트 쿼리
     @Query("SELECT COUNT(e) FROM Enroll e WHERE e.lesson.lessonId = :lessonId AND e.status = 'APPLIED'")
     long countCurrentEnrollments(Long lessonId);
@@ -33,4 +33,12 @@ public interface LessonRepository extends JpaRepository<Lesson, Long>, JpaSpecif
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT l FROM Lesson l WHERE l.lessonId = :lessonId")
     Optional<Lesson> findByIdWithLock(@Param("lessonId") Long lessonId);
-} 
+
+    @Query("SELECT l FROM Lesson l WHERE l.title = :title AND l.instructorName = :instructorName AND l.lessonTime = :lessonTime AND l.locationName = :locationName AND l.startDate >= :nextMonthStart AND l.startDate <= :nextMonthEnd")
+    Optional<Lesson> findNextMonthLesson(@Param("title") String title,
+            @Param("instructorName") String instructorName,
+            @Param("lessonTime") String lessonTime,
+            @Param("locationName") String locationName,
+            @Param("nextMonthStart") LocalDate nextMonthStart,
+            @Param("nextMonthEnd") LocalDate nextMonthEnd);
+}
