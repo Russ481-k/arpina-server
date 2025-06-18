@@ -9,6 +9,8 @@ import org.springframework.security.core.userdetails.UserDetails;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.List;
+import cms.enroll.domain.Enroll;
 
 @Entity
 @Table(name = "user")
@@ -23,6 +25,9 @@ public class User implements UserDetails {
     @Id
     @Column(name = "uuid", nullable = false, length = 36)
     private String uuid;
+
+    @OneToMany(mappedBy = "user", fetch = FetchType.LAZY)
+    private List<Enroll> enrolls;
 
     @Column(nullable = false, unique = true, length = 50)
     private String username;
@@ -160,4 +165,4 @@ public class User implements UserDetails {
         this.email = email;
         this.password = password;
     }
-} 
+}

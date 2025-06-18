@@ -341,45 +341,27 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
         Lesson lesson = lessonRepository.findById(requestDto.getLessonId())
                 .orElseThrow(() -> new ResourceNotFoundException("강습 정보를 찾을 수 없습니다.", ErrorCode.LESSON_NOT_FOUND));
 
-        User user;
-        if (requestDto.getUserPhone() != null && !requestDto.getUserPhone().trim().isEmpty()) {
-            user = userRepository.findByPhone(requestDto.getUserPhone()).orElse(null);
-        } else {
-            // To prevent multiple enrollments for users with no phone, we could disallow
-            // this
-            // or generate a truly unique anonymous user each time.
-            // For now, let's assume phone is highly recommended or a different unique
-            // identifier is used if phone is absent.
-            // If phone is not provided, we cannot reliably find an existing user.
-            user = null;
-        }
-
-        if (user == null) {
-            // Create a new temporary user
-            String tempUsername = "temp_" + UUID.randomUUID().toString().substring(0, 8);
-            user = User.builder()
-                    .uuid(UUID.randomUUID().toString())
-                    .username(tempUsername)
-                    .name(requestDto.getUserName())
-                    .phone(requestDto.getUserPhone())
-                    .email(tempUsername + "@temporary.com") // Placeholder email
-                    .password("tempPassword") // Placeholder, should not be used for login
-                    .role(UserRoleType.USER) // Default role
-                    .status("TEMP_USER_PROFILE") // Specific status for temporary users
-                    .gender(requestDto.getUserGender() != null ? requestDto.getUserGender().toUpperCase() : null)
-                    .isTemporary(true)
-                    .createdAt(LocalDateTime.now())
-                    .updatedAt(LocalDateTime.now())
-                    .build();
-            user = userRepository.save(user);
-        } else {
-            // Update existing user's gender if provided and different, or if not set
-            if (requestDto.getUserGender() != null &&
-                    (user.getGender() == null || !user.getGender().equalsIgnoreCase(requestDto.getUserGender()))) {
-                user.setGender(requestDto.getUserGender().toUpperCase());
-                user = userRepository.save(user);
-            }
-        }
+        User user = userRepository.findByPhone(requestDto.getUserPhone())
+                .orElseGet(() -> {
+                    // Create a new temporary user
+                    String tempUsername = "temp_" + UUID.randomUUID().toString().substring(0, 8);
+                    User newUser = User.builder()
+                            .uuid(UUID.randomUUID().toString())
+                            .username(tempUsername)
+                            .name(requestDto.getUserName())
+                            .phone(requestDto.getUserPhone())
+                            .email(tempUsername + "@temporary.com") // Placeholder email
+                            .password("tempPassword") // Placeholder, should not be used for login
+                            .role(UserRoleType.USER) // Default role
+                            .status("TEMP_USER_PROFILE") // Specific status for temporary users
+                            .gender(requestDto.getUserGender() != null ? requestDto.getUserGender().toUpperCase()
+                                    : null)
+                            .isTemporary(true)
+                            .createdAt(LocalDateTime.now())
+                            .updatedAt(LocalDateTime.now())
+                            .build();
+                    return userRepository.save(newUser);
+                });
 
         // Check for existing active enrollment for this user and lesson
         enrollRepository
@@ -389,7 +371,7 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
                     throw new BusinessRuleException(ErrorCode.DUPLICATE_ENROLLMENT, "이미 해당 강습에 신청 내역이 존재합니다.");
                 });
 
-        Enroll enroll = Enroll.builder()
+        Enroll newEnrollment = Enroll.builder()
                 .user(user)
                 .lesson(lesson)
                 .status("APPLIED") // Standard status, payStatus will differentiate
@@ -405,7 +387,7 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
                 .cancelReason(requestDto.getMemo() != null ? "임시등록 메모: " + requestDto.getMemo() : null)
                 .build();
 
-        if (enroll.isUsesLocker()) {
+        if (newEnrollment.isUsesLocker()) {
             if (user.getGender() == null || user.getGender().trim().isEmpty()) {
                 throw new BusinessRuleException(ErrorCode.LOCKER_GENDER_REQUIRED,
                         "사물함 사용 시 사용자의 성별 정보가 필요합니다. 사용자 정보에 성별을 먼저 등록하거나, 임시 등록 시 성별을 지정해주세요.");
@@ -429,23 +411,49 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
                         "Attempting to increment locker count for temp enrollment. User-gender: {}, mapped-locker-gender: {} (User: {})",
                         user.getGender(), lockerGender, user.getUuid());
                 lockerService.incrementUsedQuantity(lockerGender);
-                enroll.setLockerAllocated(true);
+                newEnrollment.setLockerAllocated(true);
                 logger.info("Locker count incremented successfully for temp enrollment. Mapped-locker-gender: {}",
                         lockerGender);
             } catch (BusinessRuleException e) {
                 logger.warn("임시 등록 중 사물함 할당 실패 (사용자: {}, user-gender: {}, mapped-locker-gender: {}): {}",
                         user.getUuid(), user.getGender(), lockerGender, e.getMessage());
-                enroll.setUsesLocker(false);
-                enroll.setLockerAllocated(false);
+                newEnrollment.setUsesLocker(false);
+                newEnrollment.setLockerAllocated(false);
             } catch (Exception e) { // Catch broader exceptions during locker allocation
                 logger.error("임시 등록 중 사물함 할당 시 예외 발생 (사용자: {}, user-gender: {}, mapped-locker-gender: {}): {}",
                         user.getUuid(), user.getGender(), lockerGender, e.getMessage(), e);
-                enroll.setUsesLocker(false);
-                enroll.setLockerAllocated(false);
+                newEnrollment.setUsesLocker(false);
+                newEnrollment.setLockerAllocated(false);
             }
         }
 
-        Enroll savedEnroll = enrollRepository.save(enroll);
-        return convertToEnrollAdminResponseDto(savedEnroll);
+        Enroll savedEnrollment = enrollRepository.save(newEnrollment);
+        return convertToEnrollAdminResponseDto(savedEnrollment);
+    }
+
+    @Override
+    @Transactional
+    public EnrollAdminResponseDto changeLesson(Long enrollmentId, Long newLessonId) {
+        if (newLessonId == null) {
+            throw new BusinessRuleException("새로운 강습 ID가 필요합니다.", ErrorCode.INVALID_INPUT_VALUE);
+        }
+
+        Enroll enroll = enrollRepository.findById(enrollmentId)
+                .orElseThrow(() -> new ResourceNotFoundException("수강 정보를 찾을 수 없습니다.", ErrorCode.ENROLLMENT_NOT_FOUND));
+
+        Lesson newLesson = lessonRepository.findById(newLessonId)
+                .orElseThrow(() -> new ResourceNotFoundException("새로운 강습 정보를 찾을 수 없습니다.", ErrorCode.LESSON_NOT_FOUND));
+
+        // 정원 체크 (실시간 카운트)
+        long currentEnrolledCount = enrollRepository.countByLesson(newLesson);
+        if (currentEnrolledCount >= newLesson.getCapacity()) {
+            throw new BusinessRuleException("해당 강습의 정원이 가득 찼습니다.", ErrorCode.LESSON_CAPACITY_EXCEEDED);
+        }
+
+        // 강습 정보 변경
+        enroll.setLesson(newLesson);
+        Enroll updatedEnroll = enrollRepository.save(enroll);
+
+        return convertToEnrollAdminResponseDto(updatedEnroll);
     }
 }
