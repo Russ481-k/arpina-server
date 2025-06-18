@@ -973,30 +973,28 @@ public class EnrollmentServiceImpl implements EnrollmentService {
     @Transactional(readOnly = true) // DB 변경 없음
     public CalculatedRefundDetailsDto getRefundPreview(Long enrollId, Integer manualUsedDaysPreview) {
         Enroll enroll = enrollRepository.findById(enrollId)
-                .orElseThrow(() -> new ResourceNotFoundException("신청 정보를 찾을 수 없습니다. (ID: " + enrollId + ")",
-                        ErrorCode.ENROLLMENT_NOT_FOUND));
+                .orElseThrow(() -> new ResourceNotFoundException("신청 정보를 찾을 수 없습니다.", ErrorCode.ENROLLMENT_NOT_FOUND));
 
-        // 환불 계산이 불가능한 상태(UNPAID, FAILED, CANCELED 등)에 대한 사전 예외 처리
-        if (enroll.getPayStatus() == null ||
-                Arrays.asList("UNPAID", "FAILED", "CANCELED", "REFUNDED")
-                        .contains(enroll.getPayStatus().toUpperCase())) {
-            throw new BusinessRuleException(
-                    "현재 상태에서는 환불 금액을 계산할 수 없습니다. (상태: " + enroll.getPayStatus() + ")",
-                    ErrorCode.CANNOT_CALCULATE_REFUND,
-                    HttpStatus.BAD_REQUEST);
+        if ("UNPAID".equalsIgnoreCase(enroll.getPayStatus())
+                || "CANCELED_UNPAID".equalsIgnoreCase(enroll.getPayStatus())) {
+            logger.info("미결제(UNPAID or CANCELED_UNPAID) 건(ID: {})에 대한 환불 미리보기 요청. 빈 값(0원)을 반환합니다.", enrollId);
+            return CalculatedRefundDetailsDto.createEmpty();
         }
 
-        // 환불의 기준이 되는 원본 결제(PAID 또는 PARTIAL_REFUNDED) 내역을 찾습니다.
-        Payment payment = paymentRepository.findByEnrollOrderByCreatedAtDesc(enroll)
+        Payment payment = paymentRepository.findByEnroll_EnrollIdOrderByCreatedAtDesc(enroll.getEnrollId())
                 .stream()
-                .filter(p -> p.getStatus() == PaymentStatus.PAID || p.getStatus() == PaymentStatus.PARTIAL_REFUNDED)
                 .findFirst()
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "환불 처리에 필요한 결제 원본 내역을 찾을 수 없습니다. 데이터 확인이 필요합니다. (신청 ID: " + enrollId + ")",
-                        ErrorCode.PAYMENT_INFO_NOT_FOUND));
+                .orElse(null);
 
-        // 이 payment 객체를 사용하여 환불액 계산 로직을 수행합니다.
-        return calculateRefundInternal(enroll, payment, manualUsedDaysPreview, LocalDate.now());
+        // 결제 원본이 없는 PAID/REFUNDED 건은 로직상 문제. 하지만 에러 대신 빈 값 처리.
+        if (payment == null) {
+            logger.error("환불 처리에 필요한 결제 원본 내역을 찾을 수 없습니다. 데이터 확인이 필요합니다. (신청 ID: {})", enrollId);
+            return CalculatedRefundDetailsDto.createEmpty();
+        }
+
+        // manualUsedDaysPreview가 null이면, 시스템 로직에 따라 사용일수를 다시 계산
+        LocalDate today = LocalDate.now();
+        return calculateRefundInternal(enroll, payment, manualUsedDaysPreview, today);
     }
 
     @Override

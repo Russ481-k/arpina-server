@@ -21,4 +21,19 @@ public class CalculatedRefundDetailsDto {
     private BigDecimal finalRefundAmount;
 
     private boolean isFullRefund;
+
+    public static CalculatedRefundDetailsDto createEmpty() {
+        return CalculatedRefundDetailsDto.builder()
+                .systemCalculatedUsedDays(0)
+                .manualUsedDays(null)
+                .effectiveUsedDays(0)
+                .originalLessonPrice(BigDecimal.ZERO)
+                .paidLessonAmount(BigDecimal.ZERO)
+                .paidLockerAmount(BigDecimal.ZERO)
+                .lessonUsageDeduction(BigDecimal.ZERO)
+                .lockerDeduction(BigDecimal.ZERO)
+                .finalRefundAmount(BigDecimal.ZERO)
+                .isFullRefund(false)
+                .build();
+    }
 }
