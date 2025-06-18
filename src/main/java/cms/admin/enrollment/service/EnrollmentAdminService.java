@@ -39,4 +39,6 @@ public interface EnrollmentAdminService {
         CalculatedRefundDetailsDto getRefundPreview(Long enrollId, Integer manualUsedDays);
 
         EnrollAdminResponseDto createTemporaryEnrollment(TemporaryEnrollmentRequestDto requestDto);
+
+        EnrollAdminResponseDto changeLesson(Long enrollmentId, Long newLessonId);
 }

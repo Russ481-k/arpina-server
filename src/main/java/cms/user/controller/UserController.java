@@ -16,6 +16,7 @@ import cms.user.dto.PasswordChangeDto;
 import cms.user.dto.SiteInfo;
 import cms.user.dto.SiteManagerRegisterRequest;
 import cms.user.dto.UserDto;
+import cms.user.dto.UserEnrollmentHistoryDto;
 import cms.user.dto.UserRegisterRequest;
 import cms.user.service.UserService;
 import cms.common.dto.ApiResponseSchema;
@@ -67,11 +68,20 @@ public class UserController {
         return ResponseEntity.ok(ApiResponseSchema.success(user));
     }
 
-    @Operation(summary = "Get all users")
+    @Operation(summary = "Get all users with enrollment history")
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ApiResponseSchema<Page<UserDto>>> getUsers(Pageable pageable) {
-        Page<UserDto> users = userService.getUsers(pageable);
+    public ResponseEntity<ApiResponseSchema<Page<UserEnrollmentHistoryDto>>> getUsers(
+            @RequestParam(required = false) String username,
+            @RequestParam(required = false) String name,
+            @RequestParam(required = false) String phone,
+            @RequestParam(required = false) String lessonTime,
+            @RequestParam(required = false) String payStatus,
+            @RequestParam(required = false) String searchKeyword,
+            Pageable pageable) {
+        Page<UserEnrollmentHistoryDto> users = userService.getUsers(username, name, phone, lessonTime, payStatus,
+                searchKeyword,
+                pageable);
         return ResponseEntity.ok(ApiResponseSchema.success(users));
     }
 
@@ -81,8 +91,8 @@ public class UserController {
     public ResponseEntity<ApiResponseSchema<Void>> changePassword(
             @Parameter(description = "User ID") @PathVariable String userId,
             @Validated @RequestBody PasswordChangeDto passwordChangeDto) {
-        userService.changePassword(userId, passwordChangeDto.getNewPassword(), 
-            SecurityContextHolder.getContext().getAuthentication().getName(), null);
+        userService.changePassword(userId, passwordChangeDto.getNewPassword(),
+                SecurityContextHolder.getContext().getAuthentication().getName(), null);
         return ResponseEntity.ok(ApiResponseSchema.success("비밀번호가 성공적으로 변경되었습니다."));
     }
 
@@ -92,24 +102,25 @@ public class UserController {
     public ResponseEntity<ApiResponseSchema<UserDto>> updateStatus(
             @Parameter(description = "User ID") @PathVariable String userId,
             @RequestParam String status) {
-        UserDto updatedUser = userService.updateStatus(userId, status, 
-            SecurityContextHolder.getContext().getAuthentication().getName(), null);
+        UserDto updatedUser = userService.updateStatus(userId, status,
+                SecurityContextHolder.getContext().getAuthentication().getName(), null);
         return ResponseEntity.ok(ApiResponseSchema.success(updatedUser, "사용자 상태가 성공적으로 변경되었습니다."));
     }
 
     @Operation(summary = "Register a new user")
     @PostMapping("/register")
     public ResponseEntity<ApiResponseSchema<UserDto>> register(@Validated @RequestBody UserRegisterRequest request) {
-        UserDto registeredUser = userService.registerUser(request, 
-            SecurityContextHolder.getContext().getAuthentication().getName(), null);
+        UserDto registeredUser = userService.registerUser(request,
+                SecurityContextHolder.getContext().getAuthentication().getName(), null);
         return ResponseEntity.ok(ApiResponseSchema.success(registeredUser, "사용자가 성공적으로 등록되었습니다."));
     }
 
     @Operation(summary = "Register a site manager")
     @PostMapping("/site-managers")
-    public ResponseEntity<ApiResponseSchema<UserDto>> registerSiteManager(@Validated @RequestBody SiteManagerRegisterRequest request) {
-        UserDto registeredManager = userService.registerSiteManager(request, 
-            SecurityContextHolder.getContext().getAuthentication().getName(), null);
+    public ResponseEntity<ApiResponseSchema<UserDto>> registerSiteManager(
+            @Validated @RequestBody SiteManagerRegisterRequest request) {
+        UserDto registeredManager = userService.registerSiteManager(request,
+                SecurityContextHolder.getContext().getAuthentication().getName(), null);
         return ResponseEntity.ok(ApiResponseSchema.success(registeredManager, "사이트 관리자가 성공적으로 등록되었습니다."));
     }
 
@@ -119,4 +130,4 @@ public class UserController {
         SiteInfo siteInfo = userService.getSiteInfo();
         return ResponseEntity.ok(ApiResponseSchema.success(siteInfo));
     }
-} 
+}

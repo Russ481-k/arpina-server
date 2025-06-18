@@ -100,4 +100,4 @@ public class Lesson {
         this.registrationStartDateTime = registrationStartDateTime;
         this.registrationEndDateTime = registrationEndDateTime;
     }
-} 
+}

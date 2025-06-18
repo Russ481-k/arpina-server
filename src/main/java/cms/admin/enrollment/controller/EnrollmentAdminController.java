@@ -39,6 +39,16 @@ public class EnrollmentAdminController {
 
     private final EnrollmentAdminService enrollmentAdminService;
 
+    @Operation(summary = "관리자 수강 정보 변경", description = "관리자가 특정 수강 등록 정보를 새로운 강습으로 변경합니다.")
+    @PatchMapping("/{enrollmentId}/change-lesson")
+    public ResponseEntity<ApiResponseSchema<EnrollAdminResponseDto>> changeLesson(
+            @Parameter(description = "변경할 대상의 수강 등록 ID") @PathVariable Long enrollmentId,
+            @RequestBody Map<String, Long> payload) {
+        Long newLessonId = payload.get("newLessonId");
+        EnrollAdminResponseDto updatedEnrollment = enrollmentAdminService.changeLesson(enrollmentId, newLessonId);
+        return ResponseEntity.ok(ApiResponseSchema.success(updatedEnrollment, "수강 정보가 성공적으로 변경되었습니다."));
+    }
+
     @Operation(summary = "모든 신청 내역 조회", description = "필터(연도, 월, 강습ID, 사용자ID, 결제상태) 및 페이징을 적용하여 신청 내역을 조회합니다.")
     @GetMapping
     public ResponseEntity<ApiResponseSchema<Page<EnrollAdminResponseDto>>> getAllEnrollments(

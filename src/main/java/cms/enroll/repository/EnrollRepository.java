@@ -24,6 +24,8 @@ public interface EnrollRepository extends JpaRepository<Enroll, Long>, JpaSpecif
 
        List<Enroll> findByUserUuid(String userUuid);
 
+       List<Enroll> findByUserUuidAndPayStatusInOrderByLesson_StartDateDesc(String userUuid, List<String> payStatuses);
+
        List<Enroll> findByUserUuidAndLessonLessonId(String userUuid, Long lessonId);
 
        Page<Enroll> findByUserUuidAndStatus(String userUuid, String status, Pageable pageable);
@@ -171,4 +173,6 @@ public interface EnrollRepository extends JpaRepository<Enroll, Long>, JpaSpecif
 
        @Query("SELECT count(e) > 0 FROM Enroll e WHERE e.user.uuid = :userUuid AND e.lesson.lessonId = :lessonId AND e.payStatus NOT IN ('REFUNDED', 'PARTIALLY_REFUNDED', 'CANCELED_UNPAID')")
        boolean existsActiveEnrollment(@Param("userUuid") String userUuid, @Param("lessonId") Long lessonId);
+
+       long countByLesson(Lesson lesson);
 }
