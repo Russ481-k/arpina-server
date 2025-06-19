@@ -678,49 +678,11 @@ public class EnrollmentServiceImpl implements EnrollmentService {
             } else {
                 logger.info("UNPAID enrollment cancellation request (enrollId: {}). Deleting enrollment record.",
                         enrollId);
-                // If somehow allocated, release locker before deleting.
-                if (enroll.isLockerAllocated()) {
-                    String userGender = enroll.getUser().getGender();
-                    if (userGender != null && !userGender.trim().isEmpty()) {
-                        logger.warn(
-                                "Locker was allocated for an UNPAID enrollment (enrollId: {}) being deleted. Releasing.",
-                                enrollId);
-                        String lockerGenderString; // Renamed for clarity
-                        if ("0".equals(userGender)) {
-                            lockerGenderString = "FEMALE";
-                        } else if ("1".equals(userGender)) {
-                            lockerGenderString = "MALE";
-                        } else {
-                            logger.warn(
-                                    "Unknown gender code '{}' for user with enrollId {} during UNPAID cancellation. Cannot determine locker gender for decrement.",
-                                    userGender, enrollId);
-                            lockerGenderString = null;
-                        }
-                        if (lockerGenderString != null) {
-                            try {
-                                logger.info(
-                                        "Attempting to decrement locker count for UNPAID cancellation. User-gender: {}, mapped-locker-gender: {} (EnrollId: {})",
-                                        userGender, lockerGenderString, enrollId);
-                                lockerService.decrementUsedQuantity(lockerGenderString);
-                                logger.info(
-                                        "Locker decremented successfully for UNPAID cancellation. Mapped-locker-gender: {} (EnrollId: {})",
-                                        lockerGenderString, enrollId);
-                            } catch (Exception e) {
-                                logger.error(
-                                        "Failed to decrement locker for UNPAID cancellation (EnrollId: {}, mapped-locker-gender: {}). Reason: {}",
-                                        enrollId, lockerGenderString, e.getMessage(), e);
-                            }
-                        } else {
-                            logger.warn(
-                                    "Skipping locker decrement for UNPAID cancellation (EnrollId: {}) due to unknown gender code: {}",
-                                    enrollId, userGender);
-                        }
-                    } else {
-                        logger.warn(
-                                "Cannot decrement locker for UNPAID cancellation (EnrollId: {}) due to missing gender info.",
-                                enrollId);
-                    }
-                }
+
+                // ❌ 사용자 취소는 환불이 아니므로 사물함 재고에 영향을 주지 않음
+                // 미결제 건 삭제 시에도 사물함 재고는 변경하지 않음
+                logger.info("미결제 건(enrollId: {}) 사용자 취소 - 사물함 재고는 변경하지 않음 (환불이 아님)", enrollId);
+
                 enrollRepository.delete(enroll); // Delete the enrollment record
                 // No need to save 'enroll' object after deletion.
                 return; // Exit after deletion
@@ -1020,16 +982,108 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         Enroll enroll = enrollRepository.findById(enrollId)
                 .orElseThrow(() -> new EntityNotFoundException("Enrollment not found with ID: " + enrollId));
 
-        if (enroll.getCancelStatus() != Enroll.CancelStatusType.REQ) {
+        // 거부 가능한 상태 확인: REQ(요청), DENIED(이미 거부됨), ADMIN_CANCELED(관리자 취소됨) - 모두 재처리 허용
+        if (enroll.getCancelStatus() != Enroll.CancelStatusType.REQ &&
+                enroll.getCancelStatus() != Enroll.CancelStatusType.DENIED &&
+                enroll.getCancelStatus() != Enroll.CancelStatusType.ADMIN_CANCELED) {
             throw new BusinessRuleException(ErrorCode.ENROLLMENT_CANCELLATION_NOT_ALLOWED,
-                    "취소 요청 상태가 아니거나 이미 처리된 건입니다. 현재 상태: " + enroll.getCancelStatus());
+                    "취소 요청 거부가 불가능한 상태입니다. 현재 상태: " + enroll.getCancelStatus());
         }
 
+        // 이미 정상 상태로 복원된 경우 추가 처리 불필요
+        if (enroll.getCancelStatus() == Enroll.CancelStatusType.DENIED &&
+                "APPLIED".equals(enroll.getStatus()) &&
+                ("PAID".equals(enroll.getPayStatus()) || "PAID_OFFLINE".equals(enroll.getPayStatus())) &&
+                enroll.isLockerAllocated() == enroll.isUsesLocker()) {
+            logger.info("이미 거부 처리 및 상태 복원이 완료된 건입니다. enrollId: {}", enrollId);
+            // 코멘트만 업데이트
+            enroll.setCancelReason(comment);
+            enroll.setUpdatedBy("ADMIN");
+            enroll.setUpdatedAt(LocalDateTime.now());
+            enrollRepository.save(enroll);
+            return;
+        }
+
+        logger.info(
+                "환불 거부 처리 시작. enrollId: {}, 현재 cancelStatus: {}, status: {}, payStatus: {}, usesLocker: {}, lockerAllocated: {}",
+                enrollId, enroll.getCancelStatus(), enroll.getStatus(), enroll.getPayStatus(),
+                enroll.isUsesLocker(), enroll.isLockerAllocated());
+
+        // 환불 거부 시 원래 상태로 복원
         enroll.setCancelStatus(Enroll.CancelStatusType.DENIED);
         enroll.setCancelReason(comment);
-        enroll.setUpdatedBy("ADMIN"); // 또는 현재 로그인한 관리자 ID
+
+        // 원래 결제 상태로 복원 (취소 요청 전 상태로)
+        String originalPayStatus = enroll.getOriginalPayStatusBeforeCancel();
+        if (originalPayStatus != null && !originalPayStatus.trim().isEmpty()) {
+            enroll.setPayStatus(originalPayStatus);
+            logger.info("환불 거부로 인한 payStatus 복원: {} -> {}", enroll.getPayStatus(), originalPayStatus);
+        } else {
+            // 원래 상태 정보가 없는 경우 현재 상태에 따라 적절히 설정
+            if ("REFUND_REQUESTED".equals(enroll.getPayStatus()) ||
+                    "REFUND_PENDING_ADMIN_CANCEL".equals(enroll.getPayStatus()) ||
+                    "CANCELED_UNPAID".equals(enroll.getPayStatus())) {
+                enroll.setPayStatus("PAID");
+                logger.info("환불 거부로 인한 payStatus 복원: 원래 상태 불명으로 PAID로 설정. enrollId: {}", enrollId);
+            }
+        }
+
+        // status도 정상 상태로 복원
+        if ("CANCELED".equals(enroll.getStatus()) ||
+                "CANCELED_REQ".equals(enroll.getStatus()) ||
+                "EXPIRED".equals(enroll.getStatus())) {
+            enroll.setStatus("APPLIED");
+            logger.info("환불 거부로 인한 status 복원: APPLIED로 설정. enrollId: {}", enrollId);
+        }
+
+        // === 사물함 재고 복원 로직 추가 ===
+        // 환불 거부 시 사물함을 사용하려고 했으나 할당되지 않은 경우 재할당 시도
+        if (enroll.isUsesLocker() && !enroll.isLockerAllocated()) {
+            User user = enroll.getUser();
+            if (user != null && user.getGender() != null && !user.getGender().isEmpty()) {
+                String lockerGender;
+                if ("0".equals(user.getGender())) {
+                    lockerGender = "FEMALE";
+                } else if ("1".equals(user.getGender())) {
+                    lockerGender = "MALE";
+                } else {
+                    lockerGender = null;
+                    logger.warn("환불 거부 처리(enrollId: {})에 따른 사물함 재할당 실패: 사용자의 성별 코드가 유효하지 않음 (gender: {})",
+                            enrollId, user.getGender());
+                }
+
+                if (lockerGender != null) {
+                    try {
+                        lockerService.incrementUsedQuantity(lockerGender);
+                        enroll.setLockerAllocated(true);
+                        logger.info("환불 거부 처리(enrollId: {})에 따라 {} 사물함이 성공적으로 재할당되었습니다.", enrollId, lockerGender);
+                    } catch (Exception e) {
+                        // 사물함 재할당에 실패하더라도 환불 거부 절차는 계속 진행
+                        logger.error("환불 거부 처리(enrollId: {}) 중 사물함 재할당에 실패했습니다. (gender: {}): {}",
+                                enrollId, lockerGender, e.getMessage(), e);
+                        // 사물함 할당에 실패한 경우 usesLocker를 false로 설정
+                        enroll.setUsesLocker(false);
+                    }
+                }
+            } else {
+                logger.warn("환불 거부 처리(enrollId: {})에 따른 사물함 재할당 실패: 사용자 정보 또는 성별이 없습니다.", enrollId);
+                enroll.setUsesLocker(false);
+            }
+        }
+        // === 사물함 재고 복원 로직 완료 ===
+
+        // 취소 요청 관련 정보 초기화
+        enroll.setCancelRequestedAt(null);
+        enroll.setOriginalPayStatusBeforeCancel(null);
+        enroll.setCancelApprovedAt(null); // 관리자 취소 승인 시간도 초기화
+
+        enroll.setUpdatedBy("ADMIN");
         enroll.setUpdatedAt(LocalDateTime.now());
+
         enrollRepository.save(enroll);
+
+        logger.info("환불 요청 거부 완료. enrollId: {}, 복원된 상태: status={}, payStatus={}, usesLocker={}, lockerAllocated={}",
+                enrollId, enroll.getStatus(), enroll.getPayStatus(), enroll.isUsesLocker(), enroll.isLockerAllocated());
     }
 
     private EnrollResponseDto convertToSwimmingEnrollResponseDto(Enroll enroll) {

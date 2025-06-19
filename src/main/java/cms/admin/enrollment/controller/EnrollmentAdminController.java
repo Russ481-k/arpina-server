@@ -157,6 +157,20 @@ public class EnrollmentAdminController {
         return ResponseEntity.ok(ApiResponseSchema.success(enrollDto, "취소 요청 거부 처리 성공"));
     }
 
+    @Operation(summary = "환불 요청 거부 (대체 URL)", description = "특정 신청의 환불 요청을 거부합니다. (기존 deny-cancel과 동일한 기능)")
+    @PostMapping("/{enrollId}/cancel/deny")
+    public ResponseEntity<ApiResponseSchema<EnrollAdminResponseDto>> denyRefundRequest(
+            @Parameter(description = "신청 ID") @PathVariable Long enrollId,
+            @Valid @RequestBody Map<String, String> payload) {
+        String adminComment = payload.get("adminComment");
+        if (adminComment == null || adminComment.trim().isEmpty()) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponseSchema.error("환불 요청 거부 시 관리자 코멘트는 필수입니다.", "MISSING_ADMIN_COMMENT"));
+        }
+        EnrollAdminResponseDto enrollDto = enrollmentAdminService.denyCancellation(enrollId, adminComment);
+        return ResponseEntity.ok(ApiResponseSchema.success(enrollDto, "환불 요청 거부 처리 성공"));
+    }
+
     @Operation(summary = "취소/환불 처리 시 예상 환불액 미리보기", description = "관리자가 실사용일수를 변경하며 예상 환불액을 미리 계산해봅니다. DB는 변경되지 않습니다.")
     @PostMapping("/{enrollId}/calculate-refund-preview")
     public ResponseEntity<ApiResponseSchema<CalculatedRefundDetailsDto>> calculateRefundPreview(

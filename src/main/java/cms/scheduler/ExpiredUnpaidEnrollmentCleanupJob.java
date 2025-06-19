@@ -3,6 +3,7 @@ package cms.scheduler;
 import cms.enroll.domain.Enroll;
 import cms.enroll.repository.EnrollRepository;
 import cms.locker.service.LockerService;
+import cms.user.domain.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -26,7 +27,8 @@ public class ExpiredUnpaidEnrollmentCleanupJob {
     }
 
     /**
-     * Periodically checks for UNPAID enrollments that have passed their expiration time.
+     * Periodically checks for UNPAID enrollments that have passed their expiration
+     * time.
      * Updates their status to EXPIRED and releases any allocated lockers.
      * Runs every 5 minutes, for example.
      */
@@ -37,7 +39,8 @@ public class ExpiredUnpaidEnrollmentCleanupJob {
         logger.debug("Running ExpiredUnpaidEnrollmentCleanupJob at {}", now);
 
         // Find UNPAID enrollments that are APPLIED and whose expireDt has passed
-        List<Enroll> expiredEnrollments = enrollRepository.findByPayStatusAndStatusAndExpireDtBefore("UNPAID", "APPLIED", now);
+        List<Enroll> expiredEnrollments = enrollRepository.findByPayStatusAndStatusAndExpireDtBefore("UNPAID",
+                "APPLIED", now);
 
         if (expiredEnrollments.isEmpty()) {
             logger.debug("No expired UNPAID enrollments found to clean up.");
@@ -46,33 +49,25 @@ public class ExpiredUnpaidEnrollmentCleanupJob {
 
         logger.info("Found {} expired UNPAID enrollments to process.", expiredEnrollments.size());
 
+        int processedCount = 0;
+
         for (Enroll enroll : expiredEnrollments) {
-            logger.info("Processing expired UNPAID enrollment ID: {}, User: {}, Lesson: {}, Expires: {}", 
-                        enroll.getEnrollId(), enroll.getUser().getUuid(), enroll.getLesson().getLessonId(), enroll.getExpireDt());
+            logger.info("Processing expired UNPAID enrollment ID: {}, User: {}, Lesson: {}, Expires: {}",
+                    enroll.getEnrollId(), enroll.getUser().getUuid(), enroll.getLesson().getLessonId(),
+                    enroll.getExpireDt());
 
-            enroll.setStatus("EXPIRED"); 
-            // enroll.setPayStatus("EXPIRED"); // Consider if payStatus should also change, or remain UNPAID with status EXPIRED
+            enroll.setStatus("EXPIRED");
+            // enroll.setPayStatus("EXPIRED"); // Consider if payStatus should also change,
+            // or remain UNPAID with status EXPIRED
 
-            // FIXME: Temporarily commented out locker release logic until payment module is fully implemented and UNPAID expiry policy is active.
-            /*
-            if (enroll.isLockerAllocated()) {
-                if (enroll.getUser() != null && enroll.getUser().getGender() != null && !enroll.getUser().getGender().trim().isEmpty()) {
-                    try {
-                        logger.info("Releasing locker for expired UNPAID enrollment ID: {}. Gender: {}", enroll.getEnrollId(), enroll.getUser().getGender());
-                        lockerService.decrementUsedQuantity(enroll.getUser().getGender().toUpperCase());
-                        enroll.setLockerAllocated(false);
-                        logger.info("Locker released for enrollment ID: {}", enroll.getEnrollId());
-                    } catch (Exception e) {
-                        logger.error("Error decrementing locker quantity for expired UNPAID enrollment ID: {}. Error: {}", enroll.getEnrollId(), e.getMessage(), e);
-                        // Decide if the job should fail or continue with other enrollments
-                    }
-                } else {
-                    logger.warn("Expired UNPAID enrollment ID: {} had lockerAllocated=true but user or gender was null. Cannot release locker automatically.", enroll.getEnrollId());
-                }
-            }
-            */
+            // ❌ 만료 처리는 환불이 아니므로 사물함 재고에 영향을 주지 않음
+            // 만료된 미결제 건도 사물함 재고는 변경하지 않음 (향후 실제 환불 시에만 처리)
+            logger.info("만료된 UNPAID enrollment ID: {} - 사물함 재고는 변경하지 않음 (환불이 아님)", enroll.getEnrollId());
+
             enrollRepository.save(enroll);
+            processedCount++;
         }
-        logger.info("Finished ExpiredUnpaidEnrollmentCleanupJob for this run.");
+
+        logger.info("ExpiredUnpaidEnrollmentCleanupJob 완료. 처리된 enrollment: {}", processedCount);
     }
-} 
+}
