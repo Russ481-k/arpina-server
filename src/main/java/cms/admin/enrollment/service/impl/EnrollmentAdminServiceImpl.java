@@ -277,24 +277,10 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
             // 미결제 건은 즉시 취소 완료.
             enroll.setPayStatus("CANCELED_UNPAID");
             logger.info("미결제 건 (ID: {}) -> 즉시 취소 완료 상태로 변경합니다.", enrollId);
-            // 미결제 건에 할당된 사물함이 있다면 반납
-            if (enroll.isLockerAllocated()) {
-                User user = enroll.getUser();
-                if (user != null && user.getGender() != null && !user.getGender().isEmpty()) {
-                    String lockerGender = "0".equals(user.getGender()) ? "FEMALE"
-                            : ("1".equals(user.getGender()) ? "MALE" : null);
-                    if (lockerGender != null) {
-                        try {
-                            lockerService.decrementUsedQuantity(lockerGender);
-                            enroll.setLockerAllocated(false);
-                            enroll.setUsesLocker(false);
-                            logger.info("미결제 건(ID:{}) 관리자 취소에 따라 {} 사물함 반납 처리.", enrollId, lockerGender);
-                        } catch (Exception e) {
-                            logger.error("미결제 건(ID:{}) 관리자 취소 중 사물함 반납 실패: {}", enrollId, e.getMessage(), e);
-                        }
-                    }
-                }
-            }
+
+            // ❌ 관리자 취소는 환불이 아니므로 사물함 재고에 영향을 주지 않음
+            // 사물함 할당 상태는 유지하되, 향후 실제 환불 시에만 재고 반납
+            logger.info("미결제 건(ID:{}) 관리자 취소 - 사물함 재고는 변경하지 않음 (환불이 아님)", enrollId);
 
         } else {
             // 사용자가 취소 요청한 상태(REFUND_REQUESTED) 등 다른 모든 상태도 강제로 관리자 취소 상태로 덮어씀
@@ -387,41 +373,57 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
                 .cancelReason(requestDto.getMemo() != null ? "임시등록 메모: " + requestDto.getMemo() : null)
                 .build();
 
+        // 사물함 할당 로직 (사용자가 요청한 경우)
         if (newEnrollment.isUsesLocker()) {
-            if (user.getGender() == null || user.getGender().trim().isEmpty()) {
-                throw new BusinessRuleException(ErrorCode.LOCKER_GENDER_REQUIRED,
-                        "사물함 사용 시 사용자의 성별 정보가 필요합니다. 사용자 정보에 성별을 먼저 등록하거나, 임시 등록 시 성별을 지정해주세요.");
-            }
-
-            String lockerGender;
-            if ("0".equals(user.getGender())) {
-                lockerGender = "FEMALE";
-            } else if ("1".equals(user.getGender())) {
-                lockerGender = "MALE";
+            if (user != null && user.getGender() != null && !user.getGender().isEmpty()) {
+                String lockerGender = "0".equals(user.getGender()) ? "FEMALE"
+                        : ("1".equals(user.getGender()) ? "MALE" : null);
+                if (lockerGender != null) {
+                    try {
+                        logger.info(
+                                "Attempting to increment locker count for temp enrollment. User-gender: {}, mapped-locker-gender: {} (User: {})",
+                                user.getGender(), lockerGender, user.getUuid());
+                        lockerService.incrementUsedQuantity(lockerGender);
+                        newEnrollment.setLockerAllocated(true);
+                        logger.info(
+                                "Locker count incremented successfully for temp enrollment. Mapped-locker-gender: {}",
+                                lockerGender);
+                    } catch (BusinessRuleException e) {
+                        logger.warn("임시 등록 중 사물함 할당 실패 (사용자: {}, user-gender: {}, mapped-locker-gender: {}): {}",
+                                user.getUuid(), user.getGender(), lockerGender, e.getMessage());
+                        newEnrollment.setUsesLocker(false);
+                        newEnrollment.setLockerAllocated(false);
+                        // 사물함 할당 실패를 관리자에게 알리기 위해 메모에 추가
+                        String originalMemo = newEnrollment.getCancelReason();
+                        String failureNote = "[사물함 할당 실패: " + e.getMessage() + "]";
+                        if (originalMemo != null && !originalMemo.isEmpty()) {
+                            newEnrollment.setCancelReason(originalMemo + " " + failureNote);
+                        } else {
+                            newEnrollment.setCancelReason("임시등록 " + failureNote);
+                        }
+                    } catch (Exception e) { // Catch broader exceptions during locker allocation
+                        logger.error("임시 등록 중 사물함 할당 시 예외 발생 (사용자: {}, user-gender: {}, mapped-locker-gender: {}): {}",
+                                user.getUuid(), user.getGender(), lockerGender, e.getMessage(), e);
+                        newEnrollment.setUsesLocker(false);
+                        newEnrollment.setLockerAllocated(false);
+                        // 예외 상황도 메모에 기록
+                        String originalMemo = newEnrollment.getCancelReason();
+                        String errorNote = "[사물함 할당 오류: " + e.getMessage() + "]";
+                        if (originalMemo != null && !originalMemo.isEmpty()) {
+                            newEnrollment.setCancelReason(originalMemo + " " + errorNote);
+                        } else {
+                            newEnrollment.setCancelReason("임시등록 " + errorNote);
+                        }
+                    }
+                } else {
+                    logger.warn("임시 등록에서 사물함 할당 불가: 유효하지 않은 성별 코드 (사용자: {}, gender: {})",
+                            user.getUuid(), user.getGender());
+                    newEnrollment.setUsesLocker(false);
+                    newEnrollment.setLockerAllocated(false);
+                }
             } else {
-                logger.warn(
-                        "Unknown gender code '{}' for user {} during temporary enrollment. Cannot determine locker gender.",
-                        user.getGender(), user.getUuid());
-                throw new BusinessRuleException(ErrorCode.INVALID_USER_GENDER,
-                        "사용자의 성별 코드가 유효하지 않습니다: " + user.getGender());
-            }
-
-            try {
-                logger.info(
-                        "Attempting to increment locker count for temp enrollment. User-gender: {}, mapped-locker-gender: {} (User: {})",
-                        user.getGender(), lockerGender, user.getUuid());
-                lockerService.incrementUsedQuantity(lockerGender);
-                newEnrollment.setLockerAllocated(true);
-                logger.info("Locker count incremented successfully for temp enrollment. Mapped-locker-gender: {}",
-                        lockerGender);
-            } catch (BusinessRuleException e) {
-                logger.warn("임시 등록 중 사물함 할당 실패 (사용자: {}, user-gender: {}, mapped-locker-gender: {}): {}",
-                        user.getUuid(), user.getGender(), lockerGender, e.getMessage());
-                newEnrollment.setUsesLocker(false);
-                newEnrollment.setLockerAllocated(false);
-            } catch (Exception e) { // Catch broader exceptions during locker allocation
-                logger.error("임시 등록 중 사물함 할당 시 예외 발생 (사용자: {}, user-gender: {}, mapped-locker-gender: {}): {}",
-                        user.getUuid(), user.getGender(), lockerGender, e.getMessage(), e);
+                logger.warn("임시 등록에서 사물함 할당 불가: 사용자 정보 또는 성별 정보 없음 (사용자: {})",
+                        user != null ? user.getUuid() : "null");
                 newEnrollment.setUsesLocker(false);
                 newEnrollment.setLockerAllocated(false);
             }
