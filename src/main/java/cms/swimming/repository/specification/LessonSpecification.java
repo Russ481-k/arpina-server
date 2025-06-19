@@ -21,25 +21,35 @@ public class LessonSpecification {
 
             if (year != null) {
                 try {
+                    YearMonth targetMonth = YearMonth.of(year, month != null && month >= 1 && month <= 12 ? month : 1);
+                    YearMonth currentMonth = YearMonth.now();
+                    LocalDate today = LocalDate.now();
+
+                    // 1. Target the correct date range based on year/month input
+                    LocalDate startDate;
+                    LocalDate endDate;
                     if (month != null && month >= 1 && month <= 12) {
-                        // Filter by lessons starting in the specific year and month
-                        YearMonth yearMonth = YearMonth.of(year, month);
-                        LocalDate monthStart = yearMonth.atDay(1);
-                        LocalDate monthEnd = yearMonth.atEndOfMonth();
-                        predicates.add(criteriaBuilder.between(root.get("startDate"), monthStart, monthEnd));
+                        startDate = targetMonth.atDay(1);
+                        endDate = targetMonth.atEndOfMonth();
                     } else {
-                        // Filter by lessons starting in the specific year
-                        LocalDate yearStart = LocalDate.of(year, 1, 1);
-                        LocalDate yearEnd = LocalDate.of(year, 12, 31);
-                        predicates.add(criteriaBuilder.between(root.get("startDate"), yearStart, yearEnd));
+                        startDate = targetMonth.atDay(1);
+                        endDate = targetMonth.with(YearMonth.of(year, 12)).atEndOfMonth();
                     }
-                } catch (DateTimeException e) { 
-                    logger.error("DateTimeException in LessonSpecification for year: {}, month: {}. Error: {}", year, month, e.getMessage(), e);
-                    // To make the error propagation clear during debugging and ensure transaction rollback
-                    throw new RuntimeException("Error processing date/time in LessonSpecification for year: " + year + ", month: " + month + ". Original error: " + e.getMessage(), e);
+                    predicates.add(criteriaBuilder.between(root.get("startDate"), startDate, endDate));
+
+                    // 2. Add visibility rule for future (next month's) lessons - REMOVED FOR ADMIN
+                    // VIEW
+                    // The logic that hid future lessons before the 26th of the month
+                    // has been removed to allow administrators to see all lessons at any time.
+
+                } catch (DateTimeException e) {
+                    logger.error("DateTimeException in LessonSpecification for year: {}, month: {}. Error: {}", year,
+                            month, e.getMessage(), e);
+                    throw new RuntimeException("Error processing date/time in LessonSpecification for year: " + year
+                            + ", month: " + month + ". Original error: " + e.getMessage(), e);
                 }
             }
-            
+
             // Default sort order if none provided by Pageable
             if (query.getResultType().equals(Lesson.class) && query.getOrderList().isEmpty()) {
                 query.orderBy(criteriaBuilder.desc(root.get("startDate")));
@@ -48,4 +58,4 @@ public class LessonSpecification {
             return criteriaBuilder.and(predicates.toArray(new Predicate[0]));
         };
     }
-} 
+}
