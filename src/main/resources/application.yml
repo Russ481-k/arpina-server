@@ -6,8 +6,8 @@ spring:
   servlet:
     multipart:
       enabled: true
-      max-file-size: 10MB
-      max-request-size: 10MB
+      max-file-size: 100MB
+      max-request-size: 100MB
   file:
     upload-base-path: ${FILE_UPLOAD_DIR:./uploads}
     storage:
@@ -19,7 +19,7 @@ spring:
         region: ${FILE_STORAGE_S3_REGION:ap-northeast-2}
         cdn-url: ${FILE_STORAGE_S3_CDN_URL:}
     policy:
-      max-size: ${FILE_POLICY_MAX_SIZE:10485760} # 10MB
+      max-size: ${FILE_POLICY_MAX_SIZE:52428800} # 50MB
       allowed-types: ${FILE_POLICY_ALLOWED_TYPES:image/*,application/pdf,application/msword,application/vnd.ms-excel}
     thumbnail:
       enabled: ${FILE_THUMBNAIL_ENABLED:true}
