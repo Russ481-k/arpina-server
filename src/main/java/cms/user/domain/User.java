@@ -12,6 +12,8 @@ import java.util.Collections;
 import java.util.List;
 import cms.enroll.domain.Enroll;
 
+import javax.persistence.Lob;
+
 @Entity
 @Table(name = "user")
 @Getter
@@ -109,6 +111,16 @@ public class User implements UserDetails {
 
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
+
+    @Lob
+    @Column(name = "memo")
+    private String memo;
+
+    @Column(name = "memo_updated_at")
+    private LocalDateTime memoUpdatedAt;
+
+    @Column(name = "memo_updated_by", length = 36)
+    private String memoUpdatedBy;
 
     @PrePersist
     protected void onCreate() {

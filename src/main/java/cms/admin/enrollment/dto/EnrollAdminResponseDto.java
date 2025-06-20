@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class EnrollAdminResponseDto {
     private Long enrollId;
+    private String userId; // 사용자 UUID
     private String userLoginId; // 사용자 로그인 ID (username)
     private String userName;
     private String userPhone;
@@ -24,6 +25,7 @@ public class EnrollAdminResponseDto {
     private LocalDateTime expireDt;
     private Long lessonId;
     private String lessonTitle;
+    private String lessonTime;
     private PaymentInfoForEnrollAdmin payment; // Nested Payment Info
     private String membershipType; // Added to display membership/discount type
     private String cancelStatus; // NONE, REQ, APPROVED, DENIED

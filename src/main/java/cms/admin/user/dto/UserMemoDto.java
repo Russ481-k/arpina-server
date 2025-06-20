@@ -14,7 +14,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class UserMemoDto {
     private String userUuid;
-    private String memoContent;
-    private LocalDateTime updatedAt;
-    private String updatedByAdminId; // 관리자 식별자 (ID 또는 이름 등)
-} 
+    private String memo;
+    private LocalDateTime memoUpdatedAt;
+    private String memoUpdatedBy;
+}

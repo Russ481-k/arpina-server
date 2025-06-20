@@ -82,6 +82,7 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
 
         return EnrollAdminResponseDto.builder()
                 .enrollId(enroll.getEnrollId())
+                .userId(enroll.getUser() != null ? enroll.getUser().getUuid() : null)
                 .userLoginId(enroll.getUser() != null ? enroll.getUser().getUsername() : null)
                 .userName(enroll.getUser() != null ? enroll.getUser().getName() : null)
                 .userPhone(enroll.getUser() != null ? enroll.getUser().getPhone() : null)
@@ -94,6 +95,7 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
                 .expireDt(enroll.getExpireDt())
                 .lessonId(enroll.getLesson() != null ? enroll.getLesson().getLessonId() : null)
                 .lessonTitle(enroll.getLesson() != null ? enroll.getLesson().getTitle() : null)
+                .lessonTime(enroll.getLesson() != null ? enroll.getLesson().getLessonTime() : null)
                 .payment(paymentInfo)
                 .membershipType(enroll.getMembershipType() != null ? enroll.getMembershipType().getValue() : null)
                 .cancelStatus(enroll.getCancelStatus() != null ? enroll.getCancelStatus().name() : null)

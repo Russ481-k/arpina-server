@@ -20,10 +20,8 @@ public class UserAdminServiceImpl implements UserAdminService {
     public UserMemoDto getUserMemo(String userUuid) {
         User user = userRepository.findByUuid(userUuid)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with UUID: " + userUuid));
-        // Assuming User entity has a getMemo() method or similar
-        // return new UserMemoDto(userUuid, user.getMemo(), user.getMemoUpdatedAt(), user.getMemoUpdatedByAdminId());
-        // Placeholder:
-        return new UserMemoDto(userUuid, "Memo content placeholder", null, null);
+        // Real implementation:
+        return new UserMemoDto(userUuid, user.getMemo(), user.getMemoUpdatedAt(), user.getMemoUpdatedBy());
     }
 
     @Override
@@ -31,15 +29,14 @@ public class UserAdminServiceImpl implements UserAdminService {
     public UserMemoDto updateUserMemo(String userUuid, String memoContent, String adminId) {
         User user = userRepository.findByUuid(userUuid)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with UUID: " + userUuid));
-        
-        // Assuming User entity has methods like setMemo(), setMemoUpdatedAt(), setMemoUpdatedByAdminId()
-        // user.setMemo(memoContent);
-        // user.setMemoUpdatedAt(java.time.LocalDateTime.now());
-        // user.setMemoUpdatedByAdminId(adminId); // Need to fetch admin user if storing actual admin user object
-        // userRepository.save(user);
-        
-        // Placeholder:
-        return new UserMemoDto(userUuid, memoContent, java.time.LocalDateTime.now(), adminId);
+
+        // Real implementation:
+        user.setMemo(memoContent);
+        user.setMemoUpdatedAt(java.time.LocalDateTime.now());
+        user.setMemoUpdatedBy(adminId); // Need to fetch admin user if storing actual admin user object
+        userRepository.save(user);
+
+        return new UserMemoDto(userUuid, user.getMemo(), user.getMemoUpdatedAt(), user.getMemoUpdatedBy());
     }
 
     @Override
@@ -47,13 +44,11 @@ public class UserAdminServiceImpl implements UserAdminService {
     public void deleteUserMemo(String userUuid, String adminId) {
         User user = userRepository.findByUuid(userUuid)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with UUID: " + userUuid));
-        
-        // Assuming User entity has methods like setMemo(null) or clearMemo()
-        // user.setMemo(null);
-        // user.setMemoUpdatedAt(java.time.LocalDateTime.now());
-        // user.setMemoUpdatedByAdminId(adminId); // Log who deleted it
-        // userRepository.save(user);
 
-        // For now, this method does nothing as a placeholder
+        // Real implementation:
+        user.setMemo(null);
+        user.setMemoUpdatedAt(java.time.LocalDateTime.now());
+        user.setMemoUpdatedBy(adminId); // Log who deleted it
+        userRepository.save(user);
     }
-} 
+}
