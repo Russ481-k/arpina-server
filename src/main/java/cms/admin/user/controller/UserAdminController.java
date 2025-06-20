@@ -40,7 +40,13 @@ public class UserAdminController {
             @Valid @RequestBody UserMemoDto memoDto,
             /* @AuthenticationPrincipal User adminUser */ String adminId) { // 실제로는 인증된 관리자 ID 사용
         // 임시로 adminId를 파라미터로 받지만, 실제로는 SecurityContext에서 가져와야 함
-        UserMemoDto updatedMemo = userAdminService.updateUserMemo(userUuid, memoDto.getMemoContent(), adminId /* 실제로는 adminUser.getUsername() 또는 adminUser.getUuid() */);
+        UserMemoDto updatedMemo = userAdminService.updateUserMemo(userUuid, memoDto.getMemo(), adminId /*
+                                                                                                        * 실제로는
+                                                                                                        * adminUser.
+                                                                                                        * getUsername()
+                                                                                                        * 또는 adminUser.
+                                                                                                        * getUuid()
+                                                                                                        */);
         return ResponseEntity.status(HttpStatus.OK).body(ApiResponseSchema.success(updatedMemo, "사용자 메모 업데이트 성공"));
     }
 
@@ -52,4 +58,4 @@ public class UserAdminController {
         userAdminService.deleteUserMemo(userUuid, adminId /* 실제로는 adminUser.getUsername() 또는 adminUser.getUuid() */);
         return ResponseEntity.ok(ApiResponseSchema.success(null, "사용자 메모 삭제 성공"));
     }
-} 
+}
