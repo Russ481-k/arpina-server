@@ -175,4 +175,11 @@ public interface EnrollRepository extends JpaRepository<Enroll, Long>, JpaSpecif
        boolean existsActiveEnrollment(@Param("userUuid") String userUuid, @Param("lessonId") Long lessonId);
 
        long countByLesson(Lesson lesson);
+
+       @Query("SELECT e FROM Enroll e JOIN FETCH e.user u JOIN e.lesson l WHERE e.payStatus = 'PAID' AND e.lockerAllocated = true AND l.startDate <= :endDate AND l.endDate >= :startDate")
+       List<Enroll> findPaidAndLockerAllocatedInDateRange(@Param("startDate") LocalDate startDate,
+                     @Param("endDate") LocalDate endDate);
+
+       @Query("SELECT e FROM Enroll e WHERE e.payStatus = 'UNPAID' AND e.expireDt < :now")
+       List<Enroll> findExpiredUnpaidEnrollments(@Param("now") LocalDateTime now);
 }
