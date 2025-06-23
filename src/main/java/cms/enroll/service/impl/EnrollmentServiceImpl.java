@@ -534,16 +534,6 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                     ErrorCode.LESSON_NOT_FOUND);
         }
 
-        // Locker logic starts here -- 이 부분의 레거시 사물함 로직 제거
-        // if (Boolean.TRUE.equals(checkoutRequest.getWantsLocker())) { ... } 부분 전체 삭제
-        // 최종 사물함 선택은 /api/v1/payment/confirm 에서 처리.
-
-        // BigDecimal finalAmount = BigDecimal.valueOf(lesson.getPrice()); // 기본 강습료
-        // // 사물함 요금 로직이 필요하다면 여기서 CheckoutDto에 반영할 수 있으나, 현재 스키마는 그렇지 않음.
-        // // if (Boolean.TRUE.equals(checkoutRequest.getWantsLocker()) && 사물함요금 > 0) {
-        // // finalAmount = finalAmount.add(BigDecimal.valueOf(사물함요금));
-        // // }
-
         CheckoutDto checkoutDto = new CheckoutDto();
         // merchantUid는 실제 PG 연동 시 더 견고한 방식으로 생성해야 함.
         checkoutDto.setMerchantUid("enroll_" + enroll.getEnrollId() + "_" + System.currentTimeMillis());
@@ -1158,7 +1148,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         enroll.setExpireDt(LocalDateTime.now().plusMinutes(5));
         enroll.setRenewalFlag(true);
         enroll.setCancelStatus(CancelStatusType.NONE);
-        enroll.setUsesLocker(renewalRequestDto.isWantsLocker());
+        enroll.setUsesLocker(renewalRequestDto.isUsesLocker());
         enroll.setCreatedBy(user.getName());
         enroll.setUpdatedBy(user.getName());
         enroll.setCreatedIp("UNKNOWN_IP_RENEWAL");

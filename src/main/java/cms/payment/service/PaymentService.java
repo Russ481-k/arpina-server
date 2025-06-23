@@ -9,8 +9,8 @@ import cms.payment.domain.Payment;
 public interface PaymentService {
     PaymentPageDetailsDto getPaymentPageDetails(Long enrollId, User currentUser); // 사용자 권한 검증 등을 위해 User 추가
 
-    void confirmPayment(Long enrollId, User currentUser, boolean wantsLocker, String pgToken); // pgToken 등 KISPG 결과
-                                                                                               // 파라미터 추가 가능
+    void confirmPayment(Long enrollId, User currentUser, boolean usesLocker, String pgToken); // pgToken 등 KISPG 결과
+                                                                                              // 파라미터 추가 가능
 
     KispgCancelResponseDto requestCancelPayment(Long paymentId, int cancelAmount, String reason, boolean isPartial);
 
