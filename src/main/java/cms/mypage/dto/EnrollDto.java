@@ -18,9 +18,9 @@ public class EnrollDto {
   private LessonDetails lesson;
   private String status; // e.g., UNPAID, PAID, CANCELED (pay_status from Enroll entity)
   // Fields from EnrollmentServiceImpl's convertToMypageEnrollDto
-  private OffsetDateTime applicationDate; 
+  private OffsetDateTime applicationDate;
   private OffsetDateTime paymentExpireDt; // Renamed from expireDt to be specific
-  private boolean usesLocker;      // Added to indicate locker usage
+  private boolean usesLocker; // Added to indicate locker usage
   private String membershipType; // Added to show the applied membership/discount type
   private RenewalWindow renewalWindow;
   private boolean isRenewal;
@@ -65,4 +65,4 @@ public class EnrollDto {
     private OffsetDateTime open;
     private OffsetDateTime close;
   }
-} 
+}

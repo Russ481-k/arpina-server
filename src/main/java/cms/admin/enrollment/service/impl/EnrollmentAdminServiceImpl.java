@@ -378,13 +378,26 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
         // 사물함 할당 로직 (사용자가 요청한 경우)
         if (newEnrollment.isUsesLocker()) {
             if (user != null && user.getGender() != null && !user.getGender().isEmpty()) {
-                String lockerGender = "0".equals(user.getGender()) ? "FEMALE"
-                        : ("1".equals(user.getGender()) ? "MALE" : null);
+                String lockerGender;
+                switch (user.getGender()) {
+                    case "0":
+                        lockerGender = "FEMALE";
+                        break;
+                    case "1":
+                        lockerGender = "MALE";
+                        break;
+                    default:
+                        lockerGender = null;
+                        logger.warn("임시 등록에서 사물함 할당 불가: 유효하지 않은 성별 코드 (사용자: {}, gender: {})",
+                                user.getUuid(), user.getGender());
+                        break;
+                }
+
                 if (lockerGender != null) {
                     try {
                         logger.info(
-                                "Attempting to increment locker count for temp enrollment. User-gender: {}, mapped-locker-gender: {} (User: {})",
-                                user.getGender(), lockerGender, user.getUuid());
+                                "Attempting to increment locker count for temp enrollment. Mapped-locker-gender: {} (User: {})",
+                                lockerGender, user.getUuid());
                         lockerService.incrementUsedQuantity(lockerGender);
                         newEnrollment.setLockerAllocated(true);
                         logger.info(
@@ -417,11 +430,6 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
                             newEnrollment.setCancelReason("임시등록 " + errorNote);
                         }
                     }
-                } else {
-                    logger.warn("임시 등록에서 사물함 할당 불가: 유효하지 않은 성별 코드 (사용자: {}, gender: {})",
-                            user.getUuid(), user.getGender());
-                    newEnrollment.setUsesLocker(false);
-                    newEnrollment.setLockerAllocated(false);
                 }
             } else {
                 logger.warn("임시 등록에서 사물함 할당 불가: 사용자 정보 또는 성별 정보 없음 (사용자: {})",

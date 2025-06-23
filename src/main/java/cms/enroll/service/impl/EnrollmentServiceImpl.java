@@ -458,59 +458,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         int discountPercentage = membershipTypeEnum.getDiscountPercentage();
         int priceAfterMembershipDiscount = lessonPrice - (lessonPrice * discountPercentage / 100);
 
-        int lockerFee = 0;
-        if (initialEnrollRequest.getUsesLocker()) {
-            lockerFee = defaultLockerFee; // Use configured locker fee
-        }
-        int finalAmount = priceAfterMembershipDiscount + lockerFee;
-
-        // *** START Real-time locker allocation and inventory increment ***
-        boolean lockerSuccessfullyAllocated = false;
-        if (initialEnrollRequest.getUsesLocker()) {
-            if (user.getGender() == null || user.getGender().trim().isEmpty()) {
-                // This case should ideally be prevented by frontend validation or earlier
-                // checks
-                // but as a safeguard:
-                throw new BusinessRuleException(ErrorCode.LOCKER_GENDER_REQUIRED, "사물함을 신청하려면 사용자의 성별 정보가 필요합니다.");
-            }
-
-            // Convert user gender ("0" for Female, "1" for Male) to "FEMALE" or "MALE"
-            String lockerGender;
-            if ("0".equals(user.getGender())) {
-                lockerGender = "FEMALE";
-            } else if ("1".equals(user.getGender())) {
-                lockerGender = "MALE";
-            } else {
-                // Unknown gender code from user data, this should ideally not happen if data is
-                // clean
-                logger.warn("Unknown gender code '{}' for user {}. Cannot determine locker gender.", user.getGender(),
-                        user.getUuid());
-                throw new BusinessRuleException(ErrorCode.INVALID_USER_GENDER,
-                        "사용자의 성별 코드가 유효하지 않습니다: " + user.getGender());
-            }
-
-            try {
-                logger.info(
-                        "Attempting to increment locker count for user-gender: {}, mapped-locker-gender: {} (User: {})",
-                        user.getGender(), lockerGender, user.getUuid());
-                lockerService.incrementUsedQuantity(lockerGender); // Use the converted gender
-                lockerSuccessfullyAllocated = true;
-                logger.info("Locker count incremented successfully for mapped-locker-gender: {}", lockerGender);
-            } catch (BusinessRuleException e) {
-                logger.warn(
-                        "Failed to allocate locker for user {} (user-gender: {}, mapped-locker-gender: {}) during initial enrollment. Reason: {}",
-                        user.getUuid(), user.getGender(), lockerGender, e.getMessage());
-                // If lockerService.incrementUsedQuantity throws (e.g., LOCKER_NOT_AVAILABLE),
-                // the enrollment should fail if a locker was mandatory or be allowed without a
-                // locker.
-                // For now, we re-throw, making locker allocation a hard requirement if
-                // usesLocker=true.
-                // If it's optional even if requested, handle differently (e.g., set
-                // usesLocker=false and proceed).
-                throw e;
-            }
-        }
-        // *** END Real-time locker allocation and inventory increment ***
+        int finalAmount = priceAfterMembershipDiscount;
 
         Enroll enroll = Enroll.builder()
                 .user(user)
@@ -519,7 +467,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 .payStatus("UNPAID")
                 .expireDt(LocalDateTime.now().plusMinutes(5))
                 .usesLocker(initialEnrollRequest.getUsesLocker())
-                .lockerAllocated(lockerSuccessfullyAllocated) // Set based on successful increment
+                .lockerAllocated(false) // Locker is not allocated until payment
                 .membershipType(membershipTypeEnum)
                 .finalAmount(finalAmount)
                 .discountAppliedPercentage(discountPercentage)
@@ -530,9 +478,6 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         Enroll savedEnroll = enrollRepository.save(enroll);
         logger.info("Enrollment record created with ID: {} for user: {}, lesson: {}, membership: {}, finalAmount: {}",
                 savedEnroll.getEnrollId(), user.getUuid(), lesson.getLessonId(), membershipTypeEnum, finalAmount);
-
-        // 사물함 배정 로직 호출 (필요한 경우)
-        // if (savedEnroll.isUsesLocker()) { ... }
 
         // WebSocket으로 용량 업데이트 전송 (이전 로직 복원 및 사용)
         long finalPaidCount = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
@@ -613,20 +558,28 @@ public class EnrollmentServiceImpl implements EnrollmentService {
     @Transactional
     public void processPayment(User user, Long enrollId, String pgToken) {
         Enroll enroll = enrollRepository.findById(enrollId)
-                .orElseThrow(() -> new ResourceNotFoundException("수강 신청 정보를 찾을 수 없습니다 (ID: " + enrollId + ")",
-                        ErrorCode.ENROLLMENT_NOT_FOUND));
+                .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found with ID: " + enrollId));
 
-        if (user == null || !enroll.getUser().getUuid().equals(user.getUuid())) {
-            throw new BusinessRuleException(ErrorCode.ACCESS_DENIED);
+        if (enroll.isUsesLocker()) {
+            logger.info("Locker confirmed for user {} ({}) for lesson {}", user.getName(), user.getGender(),
+                    enroll.getLesson().getLessonId());
+
+            String genderString = null;
+            if ("1".equals(user.getGender())) {
+                genderString = "MALE";
+            } else if ("0".equals(user.getGender())) {
+                genderString = "FEMALE";
+            }
+
+            if (genderString != null) {
+                lockerService.incrementUsedQuantity(genderString);
+            } else {
+                logger.warn("Could not determine gender for locker assignment. User: {}, Gender Code: {}",
+                        user.getUsername(), user.getGender());
+            }
         }
-        // Webhook을 통해 주된 상태 변경이 이루어지므로, 이 메소드는 동기적 확인 또는 보조 역할.
-        // assignLocker 등의 사물함 상태 변경은 PaymentServiceImpl.confirmPayment에서 담당.
-        // 따라서 이 메소드 내에서 lockerService.assignLocker 호출 로직은 완전히 제거.
-        // 이전 grep_search 결과에서 라인 358 if (!lockerService.assignLocker(user.getGender()))
-        // { ... } 부분에 해당.
-        // 이 블록 전체를 삭제합니다.
 
-        // PG 검증 및 Payment 엔티티 생성/저장 로직은 필요 시 여기에 구현.
+        // ... (기존 결제 처리 로직)
     }
 
     @Override
@@ -799,8 +752,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
     @Transactional
     public void approveEnrollmentCancellationAdmin(Long enrollId, AdminCancelRequestDto cancelRequestDto) {
         Enroll enroll = enrollRepository.findById(enrollId)
-                .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found with ID: " + enrollId,
-                        ErrorCode.ENROLLMENT_NOT_FOUND));
+                .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found with id: " + enrollId));
 
         // 1. 환불 중복 처리 방지: 이미 환불 절차가 시작되었거나 완료된 건인지 payStatus로 확인
         List<String> nonRefundablePayStatuses = Arrays.asList("REFUNDED", "PARTIALLY_REFUNDED");
@@ -897,42 +849,42 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         // === 사물함 반납 처리 로직 추가 ===
         if (enroll.isLockerAllocated()) {
             User user = enroll.getUser();
-            if (user != null && user.getGender() != null && !user.getGender().isEmpty()) {
-                String lockerGender;
-                if ("0".equals(user.getGender())) {
-                    lockerGender = "FEMALE";
-                } else if ("1".equals(user.getGender())) {
-                    lockerGender = "MALE";
-                } else {
-                    lockerGender = null;
-                    logger.warn("환불 처리(enrollId: {})에 따른 사물함 반납 실패: 사용자의 성별 코드가 유효하지 않음 (gender: {})", enrollId,
-                            user.getGender());
+            if (user != null && user.getGender() != null) {
+                logger.info("Returning locker for user {} ({}) due to cancellation.", user.getName(), user.getGender());
+
+                String genderString = null;
+                if ("1".equals(user.getGender())) {
+                    genderString = "MALE";
+                } else if ("0".equals(user.getGender())) {
+                    genderString = "FEMALE";
                 }
 
-                if (lockerGender != null) {
-                    try {
-                        lockerService.decrementUsedQuantity(lockerGender);
-                        enroll.setLockerAllocated(false);
-                        enroll.setUsesLocker(false);
-                        logger.info("환불 처리(enrollId: {})에 따라 {} 사물함이 성공적으로 반납되었습니다.", enrollId, lockerGender);
-                    } catch (Exception e) {
-                        // 사물함 반납에 실패하더라도 환불 절차는 계속 진행되어야 하므로, 에러 로깅만 하고 예외를 다시 던지지는 않음
-                        logger.error("환불 처리(enrollId: {}) 중 사물함 반납에 실패했습니다. (gender: {}): {}", enrollId, lockerGender,
-                                e.getMessage(), e);
-                    }
+                if (genderString != null) {
+                    lockerService.decrementUsedQuantity(genderString);
+                } else {
+                    logger.warn("Could not determine gender for locker return. User: {}, Gender Code: {}",
+                            user.getUsername(), user.getGender());
                 }
-            } else {
-                logger.warn("환불 처리(enrollId: {})에 따른 사물함 반납 실패: 사용자 정보 또는 성별이 없습니다.", enrollId);
             }
         }
         // === 로직 추가 완료 ===
 
+        // 취소 요청 관련 정보 초기화
+        enroll.setCancelRequestedAt(null);
+        enroll.setOriginalPayStatusBeforeCancel(null);
+        enroll.setCancelApprovedAt(null); // 관리자 취소 승인 시간도 초기화
+
+        enroll.setUpdatedBy("ADMIN");
+        enroll.setUpdatedAt(LocalDateTime.now());
+
         enrollRepository.save(enroll);
-        logger.info("PAID/Other enrollment ID: {} cancellation processed by admin.", enrollId);
+
+        logger.info("환불 요청 거부 완료. enrollId: {}, 복원된 상태: status={}, payStatus={}, usesLocker={}, lockerAllocated={}",
+                enrollId, enroll.getStatus(), enroll.getPayStatus(), enroll.isUsesLocker(), enroll.isLockerAllocated());
     }
 
     @Override
-    @Transactional(readOnly = true) // DB 변경 없음
+    @Transactional(readOnly = true)
     public CalculatedRefundDetailsDto getRefundPreview(Long enrollId, Integer manualUsedDaysPreview) {
         Enroll enroll = enrollRepository.findById(enrollId)
                 .orElseThrow(() -> new ResourceNotFoundException("신청 정보를 찾을 수 없습니다.", ErrorCode.ENROLLMENT_NOT_FOUND));
