@@ -455,11 +455,14 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
             MembershipType membershipType, int discountPercentage) {
         // 이 부분은 기존 로직을 재사용하거나 필요에 맞게 수정
         // 예시:
+        LocalDateTime expireDt = lesson.getEndDate().atTime(23, 59, 59);
+
         Enroll newEnroll = Enroll.builder()
                 .user(user)
                 .lesson(lesson)
                 .status("APPLIED")
                 .payStatus("PAID")
+                .expireDt(expireDt)
                 .usesLocker(usesLocker)
                 .lockerAllocated(lockerAllocated)
                 .membershipType(membershipType)
