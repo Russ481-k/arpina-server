@@ -111,7 +111,7 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Override
     @Transactional
-    public void confirmPayment(Long enrollId, User currentUser, boolean wantsLocker, String pgToken) {
+    public void confirmPayment(Long enrollId, User currentUser, boolean usesLocker, String pgToken) {
         Enroll enroll = enrollRepository.findById(enrollId)
                 .orElseThrow(() -> new ResourceNotFoundException("수강 신청 정보를 찾을 수 없습니다 (ID: " + enrollId + ")",
                         ErrorCode.ENROLLMENT_NOT_FOUND));
@@ -132,7 +132,7 @@ public class PaymentServiceImpl implements PaymentService {
         // This value is received from the UI (via wantsLocker parameter) and set here.
         // The KISPG webhook will later check this flag to perform actual locker
         // allocation/deallocation.
-        enroll.setUsesLocker(wantsLocker);
+        enroll.setUsesLocker(usesLocker);
 
         // Note: All locker allocation/deallocation logic (increment/decrement quantity,
         // setting enroll.lockerAllocated, and enroll.lockerPgToken) has been moved to
@@ -143,14 +143,14 @@ public class PaymentServiceImpl implements PaymentService {
         // necessary,
         // but it's not used for direct locker allocation in this method anymore.
         if (pgToken != null && !pgToken.trim().isEmpty()) {
-            logger.info("ConfirmPayment called for enrollId: {} with pgToken: {}, wantsLocker: {}", enrollId, pgToken,
-                    wantsLocker);
+            logger.info("ConfirmPayment called for enrollId: {} with pgToken: {}, usesLocker: {}", enrollId, pgToken,
+                    usesLocker);
         } else {
             // While not strictly an error for this method's reduced scope,
             // a missing pgToken on return from PG might indicate an issue in the KISPG
             // flow.
-            logger.warn("ConfirmPayment called for enrollId: {} with NULL or EMPTY pgToken. wantsLocker: {}", enrollId,
-                    wantsLocker);
+            logger.warn("ConfirmPayment called for enrollId: {} with NULL or EMPTY pgToken. usesLocker: {}", enrollId,
+                    usesLocker);
         }
 
         enrollRepository.save(enroll);
