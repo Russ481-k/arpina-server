@@ -182,4 +182,14 @@ public interface EnrollRepository extends JpaRepository<Enroll, Long>, JpaSpecif
 
        @Query("SELECT e FROM Enroll e WHERE e.payStatus = 'UNPAID' AND e.expireDt < :now")
        List<Enroll> findExpiredUnpaidEnrollments(@Param("now") LocalDateTime now);
+
+       @Query("SELECT e FROM Enroll e " +
+                     "JOIN FETCH e.user u " +
+                     "JOIN e.lesson l " +
+                     "WHERE e.payStatus = 'PAID' " +
+                     "AND e.usesLocker = true " +
+                     "AND (e.cancelStatus IS NULL OR e.cancelStatus = 'NONE') " +
+                     "AND l.startDate <= :endDate AND l.endDate >= :startDate")
+       List<Enroll> findActivePaidLockerUsersInDateRange(@Param("startDate") LocalDate startDate,
+                     @Param("endDate") LocalDate endDate);
 }

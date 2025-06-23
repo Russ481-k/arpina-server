@@ -36,31 +36,52 @@ public class LockerUsageSyncJob {
      * and updates the locker inventory usage stats.
      * Runs at the top of every hour.
      */
-    @Scheduled(cron = "0 0 * * * ?") // Cron expression for every hour
+    @Scheduled(cron = "0 52 * * * ?") // Cron expression for every hour at minute 0
     @Transactional
     public void syncLockerUsage() {
-        logger.info("Starting LockerUsageSyncJob - syncLockerUsage for the current month.");
+        logger.info("========== Starting LockerUsageSyncJob ==========");
 
         YearMonth currentMonth = YearMonth.now();
         LocalDate startDate = currentMonth.atDay(1);
         LocalDate endDate = currentMonth.atEndOfMonth();
+        logger.info("Target period: {} to {}", startDate, endDate);
 
-        logger.info("Calculating locker usage for period: {} to {}", startDate, endDate);
+        List<Enroll> activeEnrollments = enrollRepository.findActivePaidLockerUsersInDateRange(startDate, endDate);
+        logger.info("[STEP 1] Found {} active enrollments from repository.", activeEnrollments.size());
 
-        List<Enroll> activeEnrollments = enrollRepository.findPaidAndLockerAllocatedInDateRange(startDate, endDate);
+        if (!activeEnrollments.isEmpty()) {
+            activeEnrollments.stream().limit(5).forEach(e -> {
+                User u = e.getUser();
+                String gender = (u != null && u.getGender() != null) ? u.getGender() : "NULL";
+                logger.info("  -> Enroll ID: {}, User UUID: {}, User Gender: '{}'", e.getEnrollId(),
+                        u != null ? u.getUuid() : "NULL", gender);
+            });
+        }
 
         Map<String, Long> usageByGender = activeEnrollments.stream()
                 .map(Enroll::getUser)
-                .filter(user -> user != null && user.getGender() != null && !user.getGender().trim().isEmpty())
+                .filter(user -> user != null && user.getGender() != null)
                 .collect(Collectors.groupingBy(
-                        user -> user.getGender().toUpperCase(),
+                        user -> {
+                            if ("1".equals(user.getGender())) {
+                                return "MALE";
+                            } else if ("0".equals(user.getGender())) {
+                                return "FEMALE";
+                            } else {
+                                return "UNKNOWN"; // Should not happen
+                            }
+                        },
                         Collectors.counting()));
 
-        logger.info("Calculated locker usage: MALE={}, FEMALE={}", usageByGender.getOrDefault("MALE", 0L),
+        // Remove UNKNOWN group if it exists
+        usageByGender.remove("UNKNOWN");
+
+        logger.info("[STEP 2] Calculated locker usage by gender: MALE={}, FEMALE={}",
+                usageByGender.getOrDefault("MALE", 0L),
                 usageByGender.getOrDefault("FEMALE", 0L));
 
         lockerService.syncUsedQuantity(usageByGender);
 
-        logger.info("Finished LockerUsageSyncJob.");
+        logger.info("========== Finished LockerUsageSyncJob ==========");
     }
 }
