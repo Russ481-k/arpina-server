@@ -969,7 +969,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 enroll.isUsesLocker(), enroll.isLockerAllocated());
 
         // 환불 거부 시 원래 상태로 복원
-        enroll.setCancelStatus(Enroll.CancelStatusType.DENIED);
+        enroll.setCancelStatus(Enroll.CancelStatusType.NONE);
         enroll.setCancelReason(comment);
 
         // 원래 결제 상태로 복원 (취소 요청 전 상태로)
