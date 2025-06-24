@@ -143,7 +143,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         LocalDate today = LocalDate.now();
         YearMonth currentMonth = YearMonth.from(today);
 
-        boolean isRenewalWindowActive = today.getDayOfMonth() >= 20 && today.getDayOfMonth() <= 25;
+        boolean isRenewalWindowActive = today.getDayOfMonth() >= 20 && today.getDayOfMonth() <= 24;
 
         if (isRenewalWindowActive) {
             List<EnrollDto> renewalPreviews = userEnrollments.stream()
@@ -187,7 +187,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         if (lesson.getStartDate() != null) {
             YearMonth lessonStartMonth = YearMonth.from(lesson.getStartDate());
             LocalDate renewalStart = lessonStartMonth.minusMonths(1).atDay(20);
-            LocalDate renewalEnd = lessonStartMonth.minusMonths(1).atDay(25);
+            LocalDate renewalEnd = lessonStartMonth.minusMonths(1).atDay(24);
 
             renewalWindow = EnrollDto.RenewalWindow.builder()
                     .isOpen(isRenewalOpen)
@@ -387,7 +387,8 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         // *** END Check for previous admin-cancelled enrollment for this lesson ***
 
         // *** 신규 등록 기간 정책 검사 ***
-        LocalDate today = LocalDate.now();
+        LocalDateTime now = LocalDateTime.now();
+        LocalDate today = now.toLocalDate();
         YearMonth currentYearMonth = YearMonth.from(today);
         YearMonth lessonStartYearMonth = YearMonth.from(lesson.getStartDate());
 
@@ -401,11 +402,12 @@ public class EnrollmentServiceImpl implements EnrollmentService {
             }
             registrationPolicyMsg = "현재 달의 강습은 말일까지 신청 가능합니다.";
         } else if (lessonStartYearMonth.equals(currentYearMonth.plusMonths(1))) {
-            // 다음 달의 강습: 현월 26일 ~ 말일까지 신규 회원 등록 가능
-            if (today.getDayOfMonth() >= 26 && !today.isAfter(currentYearMonth.atEndOfMonth())) {
+            // 다음 달의 강습: 현월 25일 10시 ~ 말일까지 신규 회원 등록 가능
+            LocalDateTime registrationStartDateTime = currentYearMonth.atDay(25).atTime(10, 0, 0);
+            if (!now.isBefore(registrationStartDateTime) && !today.isAfter(currentYearMonth.atEndOfMonth())) {
                 registrationAllowed = true;
             }
-            registrationPolicyMsg = "다음 달 강습의 신규회원 등록은 현월 26일부터 말일까지 가능합니다.";
+            registrationPolicyMsg = "다음 달 강습의 신규회원 등록은 현월 25일 10시부터 말일까지 가능합니다.";
         } else {
             // 그 외 경우 (예: 두 달 후 강습 등)는 현재 정책상 신규 등록 불가
             registrationPolicyMsg = "해당 강습은 현재 신규 등록 기간이 아닙니다.";
@@ -1066,7 +1068,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
 
             if (lessonStartMonth.equals(currentMonth.plusMonths(1))) {
                 LocalDate renewalStart = LocalDate.of(today.getYear(), today.getMonth(), 20);
-                LocalDate renewalEnd = LocalDate.of(today.getYear(), today.getMonth(), 25);
+                LocalDate renewalEnd = LocalDate.of(today.getYear(), today.getMonth(), 24);
 
                 boolean isRenewalOpen = !today.isBefore(renewalStart) && !today.isAfter(renewalEnd);
 
@@ -1115,18 +1117,18 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                         "재수강 대상 강좌를 찾을 수 없습니다 (ID: " + renewalRequestDto.getLessonId() + ")",
                         ErrorCode.LESSON_NOT_FOUND));
 
-        // Check registration window for renewal: 20th-25th of current month for next
+        // Check registration window for renewal: 20th-24th of current month for next
         // month's lesson
         LocalDate today = LocalDate.now();
         YearMonth currentMonth = YearMonth.from(today);
         YearMonth lessonStartMonth = YearMonth.from(lesson.getStartDate());
 
         boolean isLessonForNextMonth = lessonStartMonth.equals(currentMonth.plusMonths(1));
-        boolean isRenewalWindowActive = today.getDayOfMonth() >= 20 && today.getDayOfMonth() <= 25;
+        boolean isRenewalWindowActive = today.getDayOfMonth() >= 20 && today.getDayOfMonth() <= 24;
 
         if (!isLessonForNextMonth || !isRenewalWindowActive) {
             throw new BusinessRuleException(ErrorCode.RENEWAL_PERIOD_INVALID,
-                    "재수강 신청 기간이 아닙니다. (다음 달 강습: 현월 20~25일)");
+                    "재수강 신청 기간이 아닙니다. (다음 달 강습: 현월 20~24일)");
         }
 
         long paidEnrollments = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
