@@ -111,6 +111,15 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
         }
 
         Lesson lesson = enroll.getLesson();
+
+        // [추가] 월별 중복 신청 방지 로직
+        long monthlyEnrollments = enrollRepository.countUserEnrollmentsInMonth(currentUser.getUuid(),
+                lesson.getStartDate());
+        if (monthlyEnrollments > 0) {
+            throw new BusinessRuleException(ErrorCode.MONTHLY_ENROLLMENT_LIMIT_EXCEEDED,
+                    "이미 해당 월에 신청한 강습이 있습니다. 한 달에 한 개의 강습만 신청 가능합니다.");
+        }
+
         long paidCount = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
         long unpaidActiveCount = enrollRepository.countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(
                 lesson.getLessonId(), "APPLIED", "UNPAID", LocalDateTime.now());
