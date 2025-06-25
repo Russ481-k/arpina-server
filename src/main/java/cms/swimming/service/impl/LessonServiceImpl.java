@@ -79,6 +79,34 @@ public class LessonServiceImpl implements LessonService {
         Specification<Lesson> spec = (root, query, criteriaBuilder) -> {
             List<Predicate> predicates = new ArrayList<>();
 
+            // =================================================================
+            // 재수강 기간(20-25일)에는 다음 달 강습 목록을 표시하지 않는 로직 추가
+            // =================================================================
+            LocalDate today = LocalDate.now();
+            int currentDay = today.getDayOfMonth();
+            int currentMonthValue = today.getMonthValue();
+            int currentYear = today.getYear();
+
+            if (currentDay >= 20 && currentDay <= 24) {
+                // 다음 달을 계산합니다.
+                LocalDate nextMonthDate = today.plusMonths(1);
+                int nextMonthValue = nextMonthDate.getMonthValue();
+                int yearOfNextMonth = nextMonthDate.getYear();
+
+                // 조회하려는 강습의 년/월이 다음달의 년/월과 일치하는지 확인하는 조건을 추가합니다.
+                Predicate isNextMonthLesson = criteriaBuilder.and(
+                        criteriaBuilder.equal(
+                                criteriaBuilder.function("YEAR", Integer.class, root.get("startDate")),
+                                yearOfNextMonth),
+                        criteriaBuilder.equal(
+                                criteriaBuilder.function("MONTH", Integer.class, root.get("startDate")),
+                                nextMonthValue));
+
+                // 재수강 기간에는 다음 달 강습을 보이지 않게 합니다. (항상 false인 조건을 추가)
+                predicates.add(criteriaBuilder.not(isNextMonthLesson));
+            }
+            // =================================================================
+
             if (months != null && !months.isEmpty()) {
                 predicates.add(criteriaBuilder.function("MONTH", Integer.class, root.get("startDate")).in(months));
             }

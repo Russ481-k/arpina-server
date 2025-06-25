@@ -45,9 +45,6 @@ hs_err_pid*
 # vscode
 .vscode/
 
-# Application Properties
-!src/main/resources/application.yml
-
 # Environment Variables
 .env
 
@@ -80,4 +77,5 @@ logs/
 .DS_Store
 Thumbs.db
 
+# Upload
 uploads/

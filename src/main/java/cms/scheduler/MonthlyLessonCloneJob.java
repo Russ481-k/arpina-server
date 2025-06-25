@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.List;
 
@@ -20,7 +21,7 @@ public class MonthlyLessonCloneJob {
 
         private final LessonRepository lessonRepository;
 
-        @Scheduled(cron = "0 40 15 19 * ?")
+        @Scheduled(cron = "0 0 0 20 * ?")
         @Transactional
         public void cloneMonthlyLessons() {
                 YearMonth currentMonth = YearMonth.now();
@@ -39,35 +40,43 @@ public class MonthlyLessonCloneJob {
                 log.info("Found {} lessons from {} to clone for {}.", lessonsToClone.size(), currentMonth, nextMonth);
 
                 for (Lesson originalLesson : lessonsToClone) {
-                        LocalDateTime nextMonthRegistrationStart = nextMonth
+                        LocalDate nextMonthStartDate = nextMonth.atDay(1);
+                        LocalDate nextMonthEndDate = nextMonth.atEndOfMonth();
+
+                        LocalDateTime registrationStart = currentMonth
                                         .atDay(20)
                                         .atStartOfDay();
 
-                        LocalDateTime nextMonthRegistrationEnd = nextMonth
+                        LocalDateTime registrationEnd = currentMonth
                                         .atEndOfMonth()
                                         .atTime(23, 59, 59);
 
                         Lesson clonedLesson = Lesson.builder()
                                         .title(originalLesson.getTitle())
                                         .displayName(originalLesson.getDisplayName())
-                                        .startDate(originalLesson.getStartDate().plusMonths(1))
-                                        .endDate(originalLesson.getEndDate().plusMonths(1))
+                                        .startDate(nextMonthStartDate)
+                                        .endDate(nextMonthEndDate)
                                         .capacity(originalLesson.getCapacity())
                                         .price(originalLesson.getPrice())
                                         .instructorName(originalLesson.getInstructorName())
                                         .lessonTime(originalLesson.getLessonTime())
                                         .locationName(originalLesson.getLocationName())
-                                        .registrationStartDateTime(nextMonthRegistrationStart)
-                                        .registrationEndDateTime(nextMonthRegistrationEnd)
+                                        .registrationStartDateTime(registrationStart)
+                                        .registrationEndDateTime(registrationEnd)
                                         .createdBy("SYSTEM_SCHEDULER")
                                         .createdIp("127.0.0.1")
                                         .build();
 
+                        log.debug("Cloning lesson: Original ID={}, Title='{}', Instructor='{}', Time='{}', Location='{}' -> Cloned for YM '{}'",
+                                        originalLesson.getLessonId(), originalLesson.getTitle(),
+                                        originalLesson.getInstructorName(),
+                                        originalLesson.getLessonTime(), originalLesson.getLocationName(), nextMonth);
+
                         lessonRepository.save(clonedLesson);
                         log.debug("Cloned lesson ID {} to new lesson for next month with registration period: {} ~ {}",
                                         originalLesson.getLessonId(),
-                                        nextMonthRegistrationStart,
-                                        nextMonthRegistrationEnd);
+                                        registrationStart,
+                                        registrationEnd);
                 }
 
                 log.info("Successfully cloned {} lessons for {} with updated registration periods.",

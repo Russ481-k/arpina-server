@@ -474,16 +474,27 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
     }
 
     private void createAndSavePayment(PaymentApprovalRequestDto approvalRequest, Enroll enroll, boolean lockerUsed) {
-        // 이 부분은 기존 로직을 재사용하거나 필요에 맞게 수정
-        // 예시:
+        int totalAmount = Integer.parseInt(approvalRequest.getAmt());
+        int lessonAmount;
+        int lockerAmountValue;
+
+        if (lockerUsed) {
+            lockerAmountValue = this.lockerFee;
+            lessonAmount = totalAmount - lockerAmountValue;
+        } else {
+            lockerAmountValue = 0;
+            lessonAmount = totalAmount;
+        }
+
         Payment payment = Payment.builder()
                 .enroll(enroll)
+                .status(PaymentStatus.PAID)
+                .paidAt(LocalDateTime.now())
                 .moid(approvalRequest.getMoid())
                 .tid(approvalRequest.getTid())
-                .status(PaymentStatus.PAID)
                 .paidAmt(Integer.parseInt(approvalRequest.getAmt()))
                 .payMethod(approvalRequest.getKispgPaymentResult().getPayMethod())
-                .lockerAmount(lockerUsed ? lockerFee : 0)
+                .lockerAmount(lockerAmountValue)
                 .build();
         paymentRepository.save(payment);
     }

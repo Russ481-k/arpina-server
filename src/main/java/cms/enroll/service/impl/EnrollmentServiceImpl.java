@@ -155,6 +155,11 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                         LocalDate nextMonthStart = currentMonth.plusMonths(1).atDay(1);
                         LocalDate nextMonthEnd = currentMonth.plusMonths(1).atEndOfMonth();
 
+                        logger.debug(
+                                "Searching for next month's lesson with: Title='{}', Instructor='{}', Time='{}', Location='{}'",
+                                currentLesson.getTitle(), currentLesson.getInstructorName(),
+                                currentLesson.getLessonTime(), currentLesson.getLocationName());
+
                         return lessonRepository.findNextMonthLesson(
                                 currentLesson.getTitle(),
                                 currentLesson.getInstructorName(),
@@ -162,6 +167,16 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                                 currentLesson.getLocationName(),
                                 nextMonthStart,
                                 nextMonthEnd).map(Stream::of).orElseGet(Stream::empty);
+                    })
+                    .filter(nextMonthLesson -> {
+                        boolean alreadyEnrolledAndPaid = enrollRepository.findByUserUuid(user.getUuid()).stream()
+                                .anyMatch(e -> "PAID".equals(e.getPayStatus()) &&
+                                        e.getLesson().getLessonId().equals(nextMonthLesson.getLessonId()));
+                        if (alreadyEnrolledAndPaid) {
+                            logger.debug("User {} has already paid for lesson {}, skipping renewal preview.",
+                                    user.getUsername(), nextMonthLesson.getLessonId());
+                        }
+                        return !alreadyEnrolledAndPaid;
                     })
                     .map(nextMonthLesson -> createRenewalPreviewDto(nextMonthLesson, true))
                     .collect(Collectors.toList());
