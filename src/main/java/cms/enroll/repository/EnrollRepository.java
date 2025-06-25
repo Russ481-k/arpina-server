@@ -151,6 +151,13 @@ public interface EnrollRepository extends JpaRepository<Enroll, Long>, JpaSpecif
        long countUserEnrollmentsInMonth(@Param("userUuid") String userUuid,
                      @Param("lessonMonthDate") LocalDate lessonMonthDate);
 
+       @Query("SELECT count(e) > 0 FROM Enroll e WHERE e.user.uuid = :userUuid " +
+                     "AND FUNCTION('YEAR', e.lesson.startDate) = FUNCTION('YEAR', :lessonMonthDate) " +
+                     "AND FUNCTION('MONTH', e.lesson.startDate) = FUNCTION('MONTH', :lessonMonthDate) " +
+                     "AND e.payStatus = 'PAID'")
+       boolean existsPaidEnrollmentInMonth(@Param("userUuid") String userUuid,
+                     @Param("lessonMonthDate") LocalDate lessonMonthDate);
+
        @Query("SELECT COUNT(e) FROM Enroll e " +
                      "WHERE e.user.gender = :gender " +
                      "AND e.payStatus = :payStatus " +

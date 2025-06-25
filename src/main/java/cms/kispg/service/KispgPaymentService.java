@@ -35,7 +35,8 @@ public interface KispgPaymentService {
     /**
      * KISPG 승인 API 호출 및 결제 처리
      */
-    EnrollDto approvePaymentAndCreateEnrollment(PaymentApprovalRequestDto approvalRequest, User currentUser);
+    EnrollDto approvePaymentAndCreateEnrollment(PaymentApprovalRequestDto approvalRequest, User currentUser,
+            String userIp);
 
     KispgCancelResponseDto cancelPayment(String tid, String moid, String payMethod, int cancelAmount, String reason,
             boolean isPartial);
