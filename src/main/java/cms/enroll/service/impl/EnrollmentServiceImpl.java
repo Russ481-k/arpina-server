@@ -77,6 +77,7 @@ import java.util.regex.Pattern; // Added for regex parsing
 import java.util.Arrays; // For Arrays.asList
 import cms.payment.service.PaymentService;
 import cms.admin.enrollment.dto.AdminCancelRequestDto;
+import cms.swimming.dto.CheckEnrollmentEligibilityDto;
 
 @Service("enrollmentServiceImpl")
 @Transactional
@@ -1220,5 +1221,21 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 .orElseThrow(() -> new EntityNotFoundException("Lesson not found with ID: " + lessonId));
         Page<Enroll> enrollPage = enrollRepository.findByLesson(lesson, pageable);
         return enrollPage.map(this::convertToSwimmingEnrollResponseDto);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public CheckEnrollmentEligibilityDto checkEnrollmentEligibility(User user, Long lessonId) {
+        Lesson lesson = lessonRepository.findById(lessonId)
+                .orElseThrow(() -> new ResourceNotFoundException("강습을 찾을 수 없습니다. ID: " + lessonId,
+                        ErrorCode.LESSON_NOT_FOUND));
+
+        boolean hasPaidEnrollment = enrollRepository.existsPaidEnrollmentInMonth(user.getUuid(), lesson.getStartDate());
+
+        if (hasPaidEnrollment) {
+            return new CheckEnrollmentEligibilityDto(false, "이미 해당 월에 결제 완료한 강습이 있습니다.");
+        }
+
+        return new CheckEnrollmentEligibilityDto(true, "수강 신청이 가능합니다.");
     }
 }

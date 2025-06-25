@@ -385,7 +385,8 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
 
     @Override
     @Transactional
-    public EnrollDto approvePaymentAndCreateEnrollment(PaymentApprovalRequestDto approvalRequest, User currentUser) {
+    public EnrollDto approvePaymentAndCreateEnrollment(PaymentApprovalRequestDto approvalRequest, User currentUser,
+            String userIp) {
         log.info("Starting payment approval and enrollment creation for MOID: {}", approvalRequest.getMoid());
 
         // 1. KISPG에 결제 승인 요청
@@ -441,7 +442,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
                 selectedMembership, discountPercentage);
 
         // 6. Payment 객체 생성
-        createAndSavePayment(approvalRequest, savedEnroll, usesLocker && lockerAllocated);
+        createAndSavePayment(approvalRequest, savedEnroll, usesLocker && lockerAllocated, currentUser, userIp);
 
         log.info("Successfully created/updated enrollment and payment record for MOID: {}", approvalRequest.getMoid());
 
@@ -454,7 +455,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
         }
         try {
             String[] parts = tempMoid.split("_");
-            return Long.parseLong(parts[1]);
+            return Long.parseLong(parts[0]);
         } catch (Exception e) {
             throw new IllegalArgumentException("임시 MOID에서 강습 ID를 파싱할 수 없습니다: " + tempMoid, e);
         }
@@ -482,7 +483,8 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
         return enrollRepository.save(newEnroll);
     }
 
-    private void createAndSavePayment(PaymentApprovalRequestDto approvalRequest, Enroll enroll, boolean lockerUsed) {
+    private void createAndSavePayment(PaymentApprovalRequestDto approvalRequest, Enroll enroll, boolean lockerUsed,
+            User user, String userIp) {
         int totalAmount = Integer.parseInt(approvalRequest.getAmt());
         int lessonAmount;
         int lockerAmountValue;
@@ -504,6 +506,8 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
                 .paidAmt(Integer.parseInt(approvalRequest.getAmt()))
                 .payMethod(approvalRequest.getKispgPaymentResult().getPayMethod())
                 .lockerAmount(lockerAmountValue)
+                .createdBy(user.getUuid())
+                .createdIp(userIp)
                 .build();
         paymentRepository.save(payment);
     }

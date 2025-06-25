@@ -68,22 +68,22 @@ public class Payment {
     private String pgResultMsg;
 
     // Audit fields
-    @Column(name = "CREATED_BY", length = 36)
+    @Column(name = "created_by", length = 36)
     private String createdBy;
 
-    @Column(name = "CREATED_IP", length = 45)
+    @Column(name = "created_ip", length = 45)
     private String createdIp;
 
-    @Column(name = "CREATED_AT", nullable = false, updatable = false)
+    @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    @Column(name = "UPDATED_BY", length = 36)
+    @Column(name = "updated_by", length = 36)
     private String updatedBy;
 
-    @Column(name = "UPDATED_IP", length = 45)
+    @Column(name = "updated_ip", length = 45)
     private String updatedIp;
 
-    @Column(name = "UPDATED_AT", nullable = false)
+    @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
     @PrePersist

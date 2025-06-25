@@ -11,6 +11,7 @@ import cms.swimming.dto.EnrollResponseDto;
 import java.math.BigDecimal;
 import cms.admin.enrollment.dto.CalculatedRefundDetailsDto;
 import cms.admin.enrollment.dto.AdminCancelRequestDto;
+import cms.swimming.dto.CheckEnrollmentEligibilityDto;
 
 public interface EnrollmentService {
 
@@ -137,5 +138,7 @@ public interface EnrollmentService {
     CalculatedRefundDetailsDto getRefundPreview(Long enrollId, Integer manualUsedDaysPreview);
 
     BigDecimal calculateDisplayRefundAmount(Long enrollId);
+
+    CheckEnrollmentEligibilityDto checkEnrollmentEligibility(User user, Long lessonId);
 
 }
