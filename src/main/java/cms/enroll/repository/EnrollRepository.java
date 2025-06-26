@@ -199,4 +199,9 @@ public interface EnrollRepository extends JpaRepository<Enroll, Long>, JpaSpecif
                      "AND l.startDate <= :endDate AND l.endDate >= :startDate")
        List<Enroll> findActivePaidLockerUsersInDateRange(@Param("startDate") LocalDate startDate,
                      @Param("endDate") LocalDate endDate);
+
+       boolean existsByUserUuidAndCancelStatusIn(String userUuid, List<Enroll.CancelStatusType> cancelStatuses);
+
+       boolean existsByUserUuidAndCancelStatusAndPayStatusNotIn(String userUuid, Enroll.CancelStatusType cancelStatus,
+                     List<String> payStatuses);
 }

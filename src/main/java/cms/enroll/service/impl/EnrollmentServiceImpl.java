@@ -1230,6 +1230,20 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 .orElseThrow(() -> new ResourceNotFoundException("강습을 찾을 수 없습니다. ID: " + lessonId,
                         ErrorCode.LESSON_NOT_FOUND));
 
+        // 사용자가 취소 요청하여 처리 대기중인 건이 있는지 확인
+        List<Enroll.CancelStatusType> requestedStatus = Arrays.asList(Enroll.CancelStatusType.REQ);
+        if (enrollRepository.existsByUserUuidAndCancelStatusIn(user.getUuid(), requestedStatus)) {
+            return new CheckEnrollmentEligibilityDto(false, "현재 취소 요청 처리중인 강습이 있어 신규 신청이 불가능합니다.");
+        }
+
+        // 관리자가 취소했으나 아직 환불 처리가 완료되지 않은 건이 있는지 확인
+        List<String> refundedPayStatuses = Arrays.asList("REFUNDED", "PARTIALLY_REFUNDED");
+        if (enrollRepository.existsByUserUuidAndCancelStatusAndPayStatusNotIn(user.getUuid(),
+                Enroll.CancelStatusType.ADMIN_CANCELED, refundedPayStatuses)) {
+            return new CheckEnrollmentEligibilityDto(false, "관리자에 의해 취소된 강습의 환불이 완료되지 않아 신규 신청이 불가능합니다.");
+        }
+
+        // 해당 월에 이미 결제 완료한 강습이 있는지 확인
         boolean hasPaidEnrollment = enrollRepository.existsPaidEnrollmentInMonth(user.getUuid(), lesson.getStartDate());
 
         if (hasPaidEnrollment) {
