@@ -469,8 +469,6 @@
 			<groupId>com.niceid</groupId>
 			<artifactId>niceid</artifactId>
 			<version>1.2</version>
-			<scope>system</scope>
-			<systemPath>${project.basedir}/libs/NiceID_v1.2.jar</systemPath>
 		</dependency>
 
 		<!-- *** 성능 최적화 및 동시성 제어 의존성 *** -->
