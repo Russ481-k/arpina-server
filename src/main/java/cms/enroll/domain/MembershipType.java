@@ -1,7 +1,6 @@
 package cms.enroll.domain;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonValue;
 
 import java.util.Arrays;
 
@@ -21,7 +20,6 @@ public enum MembershipType {
         this.discountPercentage = discountPercentage;
     }
 
-    @JsonValue
     public String getValue() {
         return value;
     }
@@ -36,12 +34,11 @@ public enum MembershipType {
 
     @JsonCreator
     public static MembershipType fromValue(String value) {
-        if (value == null) {
-            // Or throw new IllegalArgumentException("MembershipType value cannot be null/empty");
-            return GENERAL; 
+        if (value == null || value.trim().isEmpty()) {
+            return GENERAL;
         }
         return Arrays.stream(MembershipType.values())
-                .filter(type -> type.getValue().equalsIgnoreCase(value))
+                .filter(type -> type.name().equalsIgnoreCase(value) || type.getValue().equalsIgnoreCase(value))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Unknown MembershipType value: " + value));
     }
@@ -56,4 +53,4 @@ public enum MembershipType {
                 .findFirst()
                 .orElse(GENERAL);
     }
-} 
+}

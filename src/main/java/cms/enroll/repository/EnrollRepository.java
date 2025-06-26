@@ -105,7 +105,7 @@ public interface EnrollRepository extends JpaRepository<Enroll, Long>, JpaSpecif
        List<Enroll> findByLesson_EndDateBeforeAndLockerAllocatedIsTrue(@Param("date") LocalDate date);
 
        // For checking if a lesson can be deleted
-       @Query("SELECT COUNT(e) FROM Enroll e WHERE e.lesson.lessonId = :lessonId AND e.status <> 'CANCELED' AND e.payStatus NOT IN ('REFUNDED', 'PARTIALLY_REFUNDED', 'CANCELED_UNPAID')")
+       @Query("SELECT COUNT(e) FROM Enroll e WHERE e.lesson.lessonId = :lessonId AND e.status <> 'CANCELED' AND e.payStatus NOT IN ('REFUNDED', 'PARTIAL_REFUNDED', 'CANCELED_UNPAID')")
        long countActiveEnrollmentsForLessonDeletion(@Param("lessonId") Long lessonId);
 
        Optional<Enroll> findByUserAndLessonAndPayStatusNotIn(User user, Lesson lesson,
@@ -178,7 +178,7 @@ public interface EnrollRepository extends JpaRepository<Enroll, Long>, JpaSpecif
 
        Optional<Enroll> findFirstByUserAndLesson(User user, Lesson lesson);
 
-       @Query("SELECT count(e) > 0 FROM Enroll e WHERE e.user.uuid = :userUuid AND e.lesson.lessonId = :lessonId AND e.payStatus NOT IN ('REFUNDED', 'PARTIALLY_REFUNDED', 'CANCELED_UNPAID')")
+       @Query("SELECT count(e) > 0 FROM Enroll e WHERE e.user.uuid = :userUuid AND e.lesson.lessonId = :lessonId AND e.payStatus NOT IN ('REFUNDED', 'PARTIAL_REFUNDED', 'CANCELED_UNPAID')")
        boolean existsActiveEnrollment(@Param("userUuid") String userUuid, @Param("lessonId") Long lessonId);
 
        long countByLesson(Lesson lesson);
@@ -199,4 +199,23 @@ public interface EnrollRepository extends JpaRepository<Enroll, Long>, JpaSpecif
                      "AND l.startDate <= :endDate AND l.endDate >= :startDate")
        List<Enroll> findActivePaidLockerUsersInDateRange(@Param("startDate") LocalDate startDate,
                      @Param("endDate") LocalDate endDate);
+
+       boolean existsByUserUuidAndCancelStatusIn(String userUuid, List<Enroll.CancelStatusType> cancelStatuses);
+
+       boolean existsByUserUuidAndCancelStatusAndPayStatusNotIn(String userUuid, Enroll.CancelStatusType cancelStatus,
+                     List<String> payStatuses);
+
+       @Query("SELECT CASE WHEN COUNT(e) > 0 THEN true ELSE false END FROM Enroll e " +
+                     "WHERE e.user.uuid = :userUuid " +
+                     "AND e.lesson.startDate <= :endDate AND e.lesson.endDate >= :startDate " +
+                     "AND e.payStatus NOT IN ('REFUNDED', 'PARTIAL_REFUNDED', 'CANCELED_UNPAID')")
+       boolean hasActivePaidEnrollmentInDateRange(@Param("userUuid") String userUuid,
+                     @Param("startDate") LocalDate startDate,
+                     @Param("endDate") LocalDate endDate);
+
+       @Query("SELECT CASE WHEN COUNT(e) > 0 THEN true ELSE false END " +
+                     "FROM Enroll e " +
+                     "WHERE e.lesson.lessonId = :lessonId " +
+                     "AND e.payStatus NOT IN ('REFUNDED', 'PARTIAL_REFUNDED', 'CANCELED_UNPAID')")
+       boolean hasRefundableEnrollmentForLesson(@Param("lessonId") Long lessonId);
 }

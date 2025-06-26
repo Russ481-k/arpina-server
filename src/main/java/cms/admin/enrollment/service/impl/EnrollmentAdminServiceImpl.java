@@ -10,6 +10,7 @@ import cms.enroll.repository.EnrollRepository;
 import cms.enroll.repository.specification.EnrollSpecification;
 import cms.enroll.service.EnrollmentService; // Main service for approve/deny logic
 import cms.payment.domain.Payment;
+import cms.payment.domain.PaymentStatus;
 import cms.payment.repository.PaymentRepository;
 import cms.common.exception.ResourceNotFoundException;
 import cms.common.exception.ErrorCode;
@@ -271,7 +272,8 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
         enroll.setStatus("CANCELED");
 
         // 결제된 건(부분 환불 포함)은 '환불 대기' 상태로 변경하여 환불 관리 탭으로 보냄
-        if ("PAID".equalsIgnoreCase(originalPayStatus) || "PARTIALLY_REFUNDED".equalsIgnoreCase(originalPayStatus)) {
+        if (PaymentStatus.PAID.name().equalsIgnoreCase(originalPayStatus)
+                || PaymentStatus.PARTIAL_REFUNDED.name().equalsIgnoreCase(originalPayStatus)) {
             enroll.setPayStatus("REFUND_PENDING_ADMIN_CANCEL");
             logger.info("결제 완료 건 (ID: {}) -> 환불 대기 상태로 변경합니다.", enrollId);
 

@@ -20,7 +20,7 @@ public class PaymentAdminDto {
     private String tid; // KISPG Transaction ID
     private Integer paidAmt; // 실제 결제된 금액
     private Integer refundedAmt; // 누적 환불액
-    private String status; // PAID, FAILED, CANCELED, PARTIALLY_REFUNDED
+    private String status; // PAID, FAILED, CANCELED, PARTIAL_REFUNDED
     private String payMethod;
     private String pgResultCode;
     private LocalDateTime paidAt;

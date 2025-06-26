@@ -109,7 +109,7 @@ public class UserServiceImpl implements UserService {
             userPage = userRepository.findAll(spec, pageable);
         }
 
-        List<String> validPayStatuses = Arrays.asList("PAID", "REFUNDED", "PARTIALLY_REFUNDED");
+        List<String> validPayStatuses = Arrays.asList("PAID", "REFUNDED", "PARTIAL_REFUNDED");
         long startIndex = pageable.getOffset();
 
         List<UserEnrollmentHistoryDto> dtoList = new ArrayList<>();
