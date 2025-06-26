@@ -16,8 +16,8 @@ public class EnrollAdminResponseDto {
     private String userLoginId; // 사용자 로그인 ID (username)
     private String userName;
     private String userPhone;
-    private String status; // Enroll status (APPLIED, CANCELED)
-    private String payStatus; // Payment status (UNPAID, PAID, PARTIALLY_REFUNDED, PAYMENT_TIMEOUT)
+    private String status; // Enrollment status (APPLIED, CANCELED, EXPIRED)
+    private String payStatus; // Payment status (UNPAID, PAID, PARTIAL_REFUNDED, PAYMENT_TIMEOUT)
     private boolean usesLocker;
     private boolean lockerAllocated;
     private String userGender;
@@ -30,6 +30,7 @@ public class EnrollAdminResponseDto {
     private String membershipType; // Added to display membership/discount type
     private String cancelStatus; // NONE, REQ, APPROVED, DENIED
     private String cancelReason;
+    private Integer finalAmount;
     // private Integer remain_days_at_cancel; // 의미 재검토 필요, 일단 제외
 
     @Data

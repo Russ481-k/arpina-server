@@ -387,7 +387,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         // *** START Check for previous admin-cancelled enrollment for this lesson ***
         List<String> adminCancelledPayStatuses = Arrays.asList(
                 "REFUNDED",
-                "PARTIALLY_REFUNDED",
+                "PARTIAL_REFUNDED",
                 "REFUND_PENDING_ADMIN_CANCEL");
         boolean hasAdminCancelledEnrollment = enrollRepository
                 .existsByUserUuidAndLessonLessonIdAndCancelStatusAndPayStatusIn(
@@ -763,7 +763,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found with id: " + enrollId));
 
         // 1. 환불 중복 처리 방지: 이미 환불 절차가 시작되었거나 완료된 건인지 payStatus로 확인
-        List<String> nonRefundablePayStatuses = Arrays.asList("REFUNDED", "PARTIALLY_REFUNDED");
+        List<String> nonRefundablePayStatuses = Arrays.asList("REFUNDED", "PARTIAL_REFUNDED");
         if (nonRefundablePayStatuses.contains(enroll.getPayStatus())) {
             throw new BusinessRuleException(ErrorCode.PAYMENT_ALREADY_PROCESSED,
                     "이미 환불이 완료된 건입니다. 현재 상태: " + enroll.getPayStatus());
@@ -845,7 +845,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         if (updatedPayment.getStatus() == PaymentStatus.CANCELED) {
             enroll.setPayStatus("REFUNDED");
         } else if (updatedPayment.getStatus() == PaymentStatus.PARTIAL_REFUNDED) {
-            enroll.setPayStatus("PARTIALLY_REFUNDED");
+            enroll.setPayStatus("PARTIAL_REFUNDED");
         }
 
         // [수정] 환불(전액/부분) 성공 시, 수강 상태를 'CANCELED'로 명확히 설정
@@ -1206,7 +1206,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         Page<Enroll> enrollPage;
         if ("PAID".equalsIgnoreCase(status) || "UNPAID".equalsIgnoreCase(status) || "EXPIRED".equalsIgnoreCase(status)
                 || "REFUNDED".equalsIgnoreCase(status) || "PAYMENT_TIMEOUT".equalsIgnoreCase(status)
-                || "PARTIALLY_REFUNDED".equalsIgnoreCase(status)) {
+                || "PARTIAL_REFUNDED".equalsIgnoreCase(status)) {
             enrollPage = enrollRepository.findByPayStatus(status.toUpperCase(), pageable);
         } else {
             enrollPage = enrollRepository.findByStatus(status.toUpperCase(), pageable);
@@ -1237,7 +1237,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         }
 
         // 관리자가 취소했으나 아직 환불 처리가 완료되지 않은 건이 있는지 확인
-        List<String> refundedPayStatuses = Arrays.asList("REFUNDED", "PARTIALLY_REFUNDED");
+        List<String> refundedPayStatuses = Arrays.asList("REFUNDED", "PARTIAL_REFUNDED");
         if (enrollRepository.existsByUserUuidAndCancelStatusAndPayStatusNotIn(user.getUuid(),
                 Enroll.CancelStatusType.ADMIN_CANCELED, refundedPayStatuses)) {
             return new CheckEnrollmentEligibilityDto(false, "관리자에 의해 취소된 강습의 환불이 완료되지 않아 신규 신청이 불가능합니다.");

@@ -98,7 +98,7 @@ public class PaymentAdminServiceImpl implements PaymentAdminService {
             payment.setStatus(PaymentStatus.PARTIAL_REFUNDED); // Partial refund
             Enroll enroll = payment.getEnroll();
             if (enroll != null) {
-                enroll.setPayStatus("PARTIALLY_REFUNDED"); // Assuming Enroll has payStatus as String.
+                enroll.setPayStatus("PARTIAL_REFUNDED"); // Assuming Enroll has payStatus as String.
                 enrollRepository.save(enroll);
             }
         }
