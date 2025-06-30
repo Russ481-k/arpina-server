@@ -31,6 +31,7 @@ public class EnrollAdminResponseDto {
     private String cancelStatus; // NONE, REQ, APPROVED, DENIED
     private String cancelReason;
     private Integer finalAmount;
+    private boolean renewalFlag; // 재수강 여부
     // private Integer remain_days_at_cancel; // 의미 재검토 필요, 일단 제외
 
     @Data
