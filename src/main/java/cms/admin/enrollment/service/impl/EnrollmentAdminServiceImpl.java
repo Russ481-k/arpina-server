@@ -101,6 +101,8 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
                 .membershipType(enroll.getMembershipType() != null ? enroll.getMembershipType().getValue() : null)
                 .cancelStatus(enroll.getCancelStatus() != null ? enroll.getCancelStatus().name() : null)
                 .cancelReason(enroll.getCancelReason())
+                .renewalFlag(enroll.isRenewalFlag())
+                .finalAmount(enroll.getFinalAmount())
                 .build();
     }
 
