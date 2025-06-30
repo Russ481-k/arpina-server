@@ -12,6 +12,7 @@ public class UserEnrollmentHistoryDto {
     private String username;
     private String name;
     private String phone;
+    private String carNo;
     private String status;
     private EnrollmentDetailDto lastEnrollment;
     private List<EnrollmentDetailDto> enrollmentHistory;
