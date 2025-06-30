@@ -19,9 +19,6 @@ jobs:
         distribution: 'temurin'
         cache: maven
 
-    - name: Build with Maven
-      run: mvn clean package -DskipTests
-
     - name: Deploy to Server via SSH
       uses: appleboy/ssh-action@master
       with:
