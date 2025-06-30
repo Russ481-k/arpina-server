@@ -27,7 +27,7 @@ WORKDIR /usr/src/app
 # Copy the JAR file from the build stage
 # The wildcard (*) is used to match the built JAR file without knowing its exact name
 COPY --from=build /usr/src/app/target/*.jar app.jar
-COPY --from=build /usr/src/app/.env .env
+COPY --from=build /usr/src/app/.env .
 
 # Expose the port the application runs on (default for Spring Boot is 8080)
 EXPOSE 8080
