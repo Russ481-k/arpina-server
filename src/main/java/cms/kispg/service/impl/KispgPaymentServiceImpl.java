@@ -455,7 +455,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
         }
         try {
             String[] parts = tempMoid.split("_");
-            return Long.parseLong(parts[0]);
+            return Long.parseLong(parts[1]);
         } catch (Exception e) {
             log.error("임시 MOID에서 강습 ID를 파싱할 수 없습니다: {}", tempMoid, e);
             throw new NumberFormatException("임시 MOID에서 강습 ID를 파싱할 수 없습니다: " + tempMoid);
