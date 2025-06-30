@@ -478,6 +478,8 @@ public class EnrollmentServiceImpl implements EnrollmentService {
 
         int finalAmount = priceAfterMembershipDiscount;
 
+        boolean isRenewal = isRenewal(user, lesson);
+
         Enroll enroll = Enroll.builder()
                 .user(user)
                 .lesson(lesson)
@@ -487,6 +489,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 .usesLocker(initialEnrollRequest.getUsesLocker())
                 .lockerAllocated(false) // Locker is not allocated until payment
                 .membershipType(membershipTypeEnum)
+                .renewalFlag(isRenewal)
                 .finalAmount(finalAmount)
                 .discountAppliedPercentage(discountPercentage)
                 .createdBy(user.getUuid())
@@ -519,6 +522,25 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         }
 
         return convertToSwimmingEnrollResponseDto(savedEnroll);
+    }
+
+    private boolean isRenewal(User user, Lesson currentLesson) {
+        YearMonth currentLessonMonth = YearMonth.from(currentLesson.getStartDate());
+        YearMonth previousMonth = currentLessonMonth.minusMonths(1);
+        LocalDate previousMonthStart = previousMonth.atDay(1);
+        LocalDate previousMonthEnd = previousMonth.atEndOfMonth();
+
+        List<Enroll> previousMonthEnrollments = enrollRepository.findPaidByUserForPreviousMonthLesson(
+                user.getUuid(),
+                PaymentStatus.PAID.name(),
+                currentLesson.getTitle(),
+                currentLesson.getInstructorName(),
+                currentLesson.getLessonTime(),
+                currentLesson.getLocationName(),
+                previousMonthStart,
+                previousMonthEnd);
+
+        return !previousMonthEnrollments.isEmpty();
     }
 
     @Override
