@@ -11,11 +11,11 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "bbs_article", indexes = {
-    @Index(name = "IDX_BBS_ARTICLE_BBS_ID", columnList = "bbs_id"),
-    @Index(name = "IDX_BBS_ARTICLE_PARENT_NTT_ID", columnList = "parent_ntt_id"),
-    @Index(name = "IDX_BBS_ARTICLE_NOTICE_STATE", columnList = "notice_state"),
-    @Index(name = "IDX_BBS_ARTICLE_PUBLISH_STATE", columnList = "publish_state"),
-    @Index(name = "IDX_BBS_ARTICLE_CONTENT", columnList = "content")
+        @Index(name = "IDX_BBS_ARTICLE_BBS_ID", columnList = "bbs_id"),
+        @Index(name = "IDX_BBS_ARTICLE_PARENT_NTT_ID", columnList = "parent_ntt_id"),
+        @Index(name = "IDX_BBS_ARTICLE_NOTICE_STATE", columnList = "notice_state"),
+        @Index(name = "IDX_BBS_ARTICLE_PUBLISH_STATE", columnList = "publish_state"),
+        @Index(name = "IDX_BBS_ARTICLE_CONTENT", columnList = "content")
 })
 @Getter
 @Builder
@@ -71,6 +71,12 @@ public class BbsArticleDomain {
     @Column(nullable = false)
     private int hits;
 
+    @Column(nullable = false)
+    private LocalDateTime postedAt;
+
+    @Column(length = 50)
+    private String displayWriter;
+
     @Column(nullable = false, columnDefinition = "TINYINT(1) DEFAULT 0")
     private boolean hasImageInContent = false;
 
@@ -99,9 +105,9 @@ public class BbsArticleDomain {
     private cms.menu.domain.Menu menu;
 
     public void update(String writer, String title, String content, String noticeState,
-                      LocalDateTime noticeStartDt, LocalDateTime noticeEndDt, String publishState,
-                      LocalDateTime publishStartDt, LocalDateTime publishEndDt, String externalLink,
-                      boolean hasImage) {
+            LocalDateTime noticeStartDt, LocalDateTime noticeEndDt, String publishState,
+            LocalDateTime publishStartDt, LocalDateTime publishEndDt, String externalLink,
+            boolean hasImage, LocalDateTime postedAt, String displayWriter) {
         if (publishStartDt != null && publishEndDt != null && publishEndDt.isBefore(publishStartDt)) {
             throw new IllegalArgumentException("게시 종료일은 게시 시작일보다 이후여야 합니다.");
         }
@@ -125,6 +131,12 @@ public class BbsArticleDomain {
         this.publishEndDt = publishEndDt;
         this.externalLink = externalLink;
         this.hasImageInContent = hasImage;
+        this.postedAt = postedAt;
+        this.displayWriter = displayWriter;
+    }
+
+    public void updateHits(int hits) {
+        this.hits = hits;
     }
 
     public void increaseHits() {
@@ -134,4 +146,4 @@ public class BbsArticleDomain {
     public void setContent(String content) {
         this.content = content;
     }
-} 
+}
