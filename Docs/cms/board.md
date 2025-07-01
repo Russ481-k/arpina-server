@@ -451,6 +451,7 @@ curl -H "Content-Type: application/json" \
    - 게시글 API는 `/article`로 분리
 
 4. **데이터베이스**
+
    - 기본 테이블 구조 구현
    - 첨부파일 테이블 구현
    - 검색 인덱스 구현
