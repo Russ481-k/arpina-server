@@ -1,0 +1,35 @@
+name: Deploy Backend to Remote Server
+
+on:
+  push:
+    branches: [ "dev" ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v3
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: maven
+
+    - name: Deploy to Server via SSH
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.SSH_HOST }}
+        username: ${{ secrets.SSH_USER }}
+        key: ${{ secrets.SSH_KEY }}
+        port: 22
+        script: |
+          cd ${{ secrets.DEPLOY_PATH }}
+          cd ./server && git pull origin dev && cd ..
+          echo "${{ secrets.DOCKER_PROD_ENV }}" > ./server/.env
+          export DOCKER_BUILDKIT=1
+          docker compose build --no-cache server
+          docker compose up -d --force-recreate --remove-orphans server 
