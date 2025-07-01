@@ -722,31 +722,38 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                     ErrorCode.LESSON_NOT_FOUND);
         }
 
-        BigDecimal totalPaidAmount = BigDecimal.valueOf(payment.getPaidAmt() != null ? payment.getPaidAmt() : 0);
-        BigDecimal paidLessonAmount = BigDecimal
-                .valueOf(payment.getLessonAmount() != null ? payment.getLessonAmount() : 0);
-        BigDecimal paidLockerAmount = BigDecimal
-                .valueOf(payment.getLockerAmount() != null ? payment.getLockerAmount() : 0);
+        // 결제 정보에서 총 결제금액 가져오기
+        BigDecimal totalPaidAmount = BigDecimal.valueOf(payment.getPaidAmt());
+
+        // 사물함 사용 여부에 따라 강습료와 사물함료 동적 계산
+        BigDecimal paidLessonAmount;
+        BigDecimal paidLockerAmount;
+
+        if (enroll.isUsesLocker()) {
+            paidLockerAmount = BigDecimal.valueOf(defaultLockerFee);
+            paidLessonAmount = totalPaidAmount.subtract(paidLockerAmount);
+        } else {
+            paidLockerAmount = BigDecimal.ZERO;
+            paidLessonAmount = totalPaidAmount;
+        }
+
         BigDecimal originalLessonPrice = BigDecimal.valueOf(lesson.getPrice());
 
+        // 시스템 계산 사용일수
         int systemCalculatedUsedDays = 0;
         if (lesson.getStartDate() != null && lesson.getStartDate().isBefore(calculationDate.plusDays(1))) {
             systemCalculatedUsedDays = (int) ChronoUnit.DAYS.between(lesson.getStartDate(), calculationDate) + 1;
         }
 
+        // 실제 사용일수 (수동 입력값이 있으면 우선 사용)
         int effectiveUsedDays = manualUsedDaysOverride != null ? manualUsedDaysOverride : systemCalculatedUsedDays;
         if (effectiveUsedDays < 0) {
             effectiveUsedDays = 0;
         }
 
-        long totalLessonDays = ChronoUnit.DAYS.between(lesson.getStartDate(), lesson.getEndDate()) + 1;
-        if (totalLessonDays <= 0) {
-            totalLessonDays = 30; // Prevent division by zero
-        }
-
+        // 강습 사용일수에 따른 차감액 계산 (1일당 3,500원)
         BigDecimal lessonUsageDeduction = BigDecimal.ZERO;
         if (effectiveUsedDays > 0) {
-            // 1일당 3500원씩 차감하는 방식으로 변경
             lessonUsageDeduction = LESSON_DAILY_RATE.multiply(BigDecimal.valueOf(effectiveUsedDays));
 
             // 차감액이 실제 지불한 강습료를 초과하지 않도록 제한
@@ -755,9 +762,9 @@ public class EnrollmentServiceImpl implements EnrollmentService {
             }
         }
 
-        // 사물함을 하루라도 사용했으면 사물함 비용은 환불금액에서 제외
+        // 사물함 차감액 계산 (사물함을 사용했다면 전액 차감)
         BigDecimal lockerDeduction = BigDecimal.ZERO;
-        if (effectiveUsedDays > 0 && paidLockerAmount.compareTo(BigDecimal.ZERO) > 0) {
+        if (enroll.isUsesLocker()) {
             lockerDeduction = paidLockerAmount;
         }
 
