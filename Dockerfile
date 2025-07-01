@@ -5,33 +5,19 @@ FROM maven:3.9.6-eclipse-temurin-17 AS build
 # Set the working directory
 WORKDIR /usr/src/app
 
-# Configure Maven settings for better network handling
-RUN mkdir -p /root/.m2 && \
-    echo '<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0" \
-    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" \
-    xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 \
-    http://maven.apache.org/xsd/settings-1.0.0.xsd"> \
-    <servers> \
-    <server> \
-    <id>central</id> \
-    <configuration> \
-    <timeout>60000</timeout> \
-    </configuration> \
-    </server> \
-    </servers> \
-    </settings>' > /root/.m2/settings.xml
-
-# Copy dependency files
+# Copy dependency files first (for better layer caching)
 COPY pom.xml .
 COPY libs ./libs
 
-# Install custom libraries and download dependencies with cache mount
-# This will persist the Maven cache across builds
+# Install custom libraries first (this layer will be cached)
 RUN --mount=type=cache,target=/root/.m2 \
-    mvn install:install-file -Dfile=libs/NiceID_v1.2.jar -DgroupId=com.niceid -DartifactId=niceid -Dversion=1.2 -Dpackaging=jar && \
+    mvn install:install-file -Dfile=libs/NiceID_v1.2.jar -DgroupId=com.niceid -DartifactId=niceid -Dversion=1.2 -Dpackaging=jar
+
+# Download dependencies only (this layer will be cached if pom.xml doesn't change)
+RUN --mount=type=cache,target=/root/.m2 \
     mvn dependency:go-offline -Dmaven.wagon.http.retryHandler.count=3 -Dmaven.wagon.httpconnectionManager.ttlSeconds=120
 
-# Copy source code and build with cache mount
+# Copy source code and build (only this layer will change with code changes)
 COPY src ./src
 COPY .env ./
 
