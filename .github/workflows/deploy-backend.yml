@@ -30,5 +30,6 @@ jobs:
           cd ${{ secrets.DEPLOY_PATH }}
           cd ./server && git pull origin dev && cd ..
           echo "${{ secrets.DOCKER_PROD_ENV }}" > ./server/.env
+          export DOCKER_BUILDKIT=1
           docker compose build --no-cache server
           docker compose up -d --force-recreate --remove-orphans server 
