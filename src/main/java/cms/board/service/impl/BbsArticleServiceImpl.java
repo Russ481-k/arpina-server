@@ -38,7 +38,7 @@ import java.util.Set;
 import java.util.HashSet;
 import org.springframework.beans.factory.annotation.Value;
 import java.util.Arrays;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.time.LocalDateTime;
 
 @Service
 @RequiredArgsConstructor
@@ -108,6 +108,8 @@ public class BbsArticleServiceImpl implements BbsArticleService {
 
         boolean hasImage = checkContentForImages(articleDto.getContent());
 
+        LocalDateTime postedAt = articleDto.getPostedAt() != null ? articleDto.getPostedAt() : LocalDateTime.now();
+
         BbsArticleDomain article = BbsArticleDomain.builder()
                 .bbsMaster(bbsMaster)
                 .menu(menu)
@@ -122,7 +124,9 @@ public class BbsArticleServiceImpl implements BbsArticleService {
                 .publishStartDt(articleDto.getPublishStartDt())
                 .publishEndDt(articleDto.getPublishEndDt())
                 .externalLink(articleDto.getExternalLink())
-                .hits(0)
+                .hits(articleDto.getHits())
+                .postedAt(postedAt)
+                .displayWriter(articleDto.getDisplayWriter())
                 .build();
 
         BbsArticleDomain savedArticle = bbsArticleRepository.save(article);
@@ -344,7 +348,13 @@ public class BbsArticleServiceImpl implements BbsArticleService {
                 articleDto.getPublishStartDt(),
                 articleDto.getPublishEndDt(),
                 articleDto.getExternalLink(),
-                checkContentForImages(finalContentJson));
+                checkContentForImages(finalContentJson),
+                articleDto.getPostedAt() != null ? articleDto.getPostedAt() : article.getPostedAt(),
+                articleDto.getDisplayWriter());
+
+        if (articleDto.getHits() != null) {
+            article.updateHits(articleDto.getHits());
+        }
 
         return convertToDto(bbsArticleRepository.save(article));
     }
@@ -442,7 +452,9 @@ public class BbsArticleServiceImpl implements BbsArticleService {
                 .publishStartDt(boardDto.getPublishStartDt())
                 .publishEndDt(boardDto.getPublishEndDt())
                 .externalLink(boardDto.getExternalLink())
-                .hits(0)
+                .hits(boardDto.getHits())
+                .postedAt(boardDto.getPostedAt() != null ? boardDto.getPostedAt() : LocalDateTime.now())
+                .displayWriter(boardDto.getDisplayWriter())
                 .build();
 
         BbsArticleDomain savedArticle = bbsArticleRepository.save(article);
@@ -468,7 +480,9 @@ public class BbsArticleServiceImpl implements BbsArticleService {
                 boardDto.getPublishStartDt(),
                 boardDto.getPublishEndDt(),
                 boardDto.getExternalLink(),
-                hasImage);
+                hasImage,
+                boardDto.getPostedAt() != null ? boardDto.getPostedAt() : article.getPostedAt(),
+                boardDto.getDisplayWriter());
 
         return convertToDto(article);
     }
@@ -500,6 +514,8 @@ public class BbsArticleServiceImpl implements BbsArticleService {
         if (article == null) {
             return null;
         }
+
+        LocalDateTime postedAt = article.getPostedAt();
 
         List<AttachmentInfoDto> attachmentInfos = Collections.emptyList();
         if (article.getNttId() != null) {
@@ -554,6 +570,8 @@ public class BbsArticleServiceImpl implements BbsArticleService {
                 .publishEndDt(article.getPublishEndDt())
                 .externalLink(article.getExternalLink())
                 .hits(article.getHits())
+                .postedAt(postedAt)
+                .displayWriter(article.getDisplayWriter())
                 .createdAt(article.getCreatedAt())
                 .updatedAt(article.getUpdatedAt())
                 .attachments(attachmentInfos)

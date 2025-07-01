@@ -107,6 +107,7 @@
   "parentNttId": null,
   "threadDepth": 0,
   "writer": "홍길동",
+  "displayWriter": "관리자",
   "title": "2024년 휴강 안내",
   "content": "<p>내용…</p>",
   "hasImageInContent": true,
@@ -117,10 +118,11 @@
   "publishStartDt": "2024-05-01T00:00:00+09:00",
   "publishEndDt": null,
   "externalLink": null,
-  "hits": 0,
+  "hits": 100,
   "createdBy": "admin",
   "createdIp": "127.0.0.1",
   "createdAt": "2024-03-21T10:00:00+09:00",
+  "postedAt": "2024-03-20T09:00:00+09:00",
   "updatedBy": "admin",
   "updatedIp": "127.0.0.1",
   "updatedAt": "2024-03-21T10:00:00+09:00"
@@ -185,22 +187,25 @@
 
 ##### 4.5.2 BbsArticleDto (게시글)
 
-| 필드명              | 타입     | 필수 | 설명                     | 제약조건                              |
-| ------------------- | -------- | ---- | ------------------------ | ------------------------------------- |
-| `bbsId`             | Long     | Y    | 게시판 ID                | 존재하는 게시판 ID                    |
-| `menuId`            | Long     | Y    | 메뉴 ID                  | 존재하는 메뉴 ID                      |
-| `parentNttId`       | Long     | N    | 부모 글 ID               | 답변형 게시판에서만 사용              |
-| `writer`            | String   | Y    | 작성자                   | 2~50자                                |
-| `title`             | String   | Y    | 제목                     | 2~255자                               |
-| `content`           | String   | Y    | 내용                     |                                       |
-| `noticeState`       | String   | N    | 공지 상태                | N(일반), Y(공지), P(영구공지)         |
-| `noticeStartDt`     | DateTime | N    | 공지 시작일              | noticeState가 Y일 때 필수             |
-| `noticeEndDt`       | DateTime | N    | 공지 종료일              | noticeState가 Y일 때 필수             |
-| `publishState`      | String   | N    | 게시 상태                | N(미게시), Y(게시), P(영구게시)       |
-| `publishStartDt`    | DateTime | N    | 게시 시작일              | publishState가 Y일 때 필수            |
-| `publishEndDt`      | DateTime | N    | 게시 종료일              | publishState가 Y일 때 필수            |
-| `externalLink`      | String   | N    | 외부 링크                | URL 형식                              |
-| `hasImageInContent` | boolean  | N    | 내용 내 이미지 포함 여부 | 시스템 자동 설정 (true면 이미지 포함) |
+| 필드명              | 타입     | 필수 | 설명                     | 제약조건                                      |
+| ------------------- | -------- | ---- | ------------------------ | --------------------------------------------- |
+| `bbsId`             | Long     | Y    | 게시판 ID                | 존재하는 게시판 ID                            |
+| `menuId`            | Long     | Y    | 메뉴 ID                  | 존재하는 메뉴 ID                              |
+| `parentNttId`       | Long     | N    | 부모 글 ID               | 답변형 게시판에서만 사용                      |
+| `writer`            | String   | Y    | 작성자                   | 2~50자                                        |
+| `title`             | String   | Y    | 제목                     | 2~255자                                       |
+| `content`           | String   | Y    | 내용                     |                                               |
+| `noticeState`       | String   | N    | 공지 상태                | N(일반), Y(공지), P(영구공지)                 |
+| `noticeStartDt`     | DateTime | N    | 공지 시작일              | noticeState가 Y일 때 필수                     |
+| `noticeEndDt`       | DateTime | N    | 공지 종료일              | noticeState가 Y일 때 필수                     |
+| `publishState`      | String   | N    | 게시 상태                | N(미게시), Y(게시), P(영구게시)               |
+| `publishStartDt`    | DateTime | N    | 게시 시작일              | publishState가 Y일 때 필수                    |
+| `publishEndDt`      | DateTime | N    | 게시 종료일              | publishState가 Y일 때 필수                    |
+| `externalLink`      | String   | N    | 외부 링크                | URL 형식                                      |
+| `hasImageInContent` | boolean  | N    | 내용 내 이미지 포함 여부 | 시스템 자동 설정 (true면 이미지 포함)         |
+| `hits`              | Integer  | N    | 조회수                   | **[관리자용]** 임의 수정 가능                 |
+| `displayWriter`     | String   | N    | 표시용 작성자            | **[관리자용]** 설정 시, `writer` 대신 노출    |
+| `postedAt`          | DateTime | N    | 표시용 게시일            | **[관리자용]** 설정 시, `createdAt` 대신 노출 |
 
 ##### 4.5.3 BbsAttachmentDto (첨부파일)
 
