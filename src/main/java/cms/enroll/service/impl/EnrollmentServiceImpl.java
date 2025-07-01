@@ -746,9 +746,13 @@ public class EnrollmentServiceImpl implements EnrollmentService {
 
         BigDecimal lessonUsageDeduction = BigDecimal.ZERO;
         if (effectiveUsedDays > 0) {
-            lessonUsageDeduction = paidLessonAmount
-                    .multiply(BigDecimal.valueOf(effectiveUsedDays))
-                    .divide(BigDecimal.valueOf(totalLessonDays), 0, RoundingMode.DOWN);
+            // 1일당 3500원씩 차감하는 방식으로 변경
+            lessonUsageDeduction = LESSON_DAILY_RATE.multiply(BigDecimal.valueOf(effectiveUsedDays));
+
+            // 차감액이 실제 지불한 강습료를 초과하지 않도록 제한
+            if (lessonUsageDeduction.compareTo(paidLessonAmount) > 0) {
+                lessonUsageDeduction = paidLessonAmount;
+            }
         }
 
         // 사물함을 하루라도 사용했으면 사물함 비용은 환불금액에서 제외

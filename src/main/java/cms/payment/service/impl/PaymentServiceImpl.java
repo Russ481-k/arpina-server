@@ -275,15 +275,28 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     private Payment buildPayment(Enroll enroll, KispgNotificationRequest notification, PaymentStatus status) {
+        int totalAmount = Integer.parseInt(notification.getAmt());
+        int lessonAmountValue;
+        int lockerAmountValue;
+
+        // 사물함 사용 여부에 따라 금액 분리
+        if (enroll.isUsesLocker()) {
+            lockerAmountValue = lockerFeeConfig;
+            lessonAmountValue = totalAmount - lockerAmountValue;
+        } else {
+            lockerAmountValue = 0;
+            lessonAmountValue = totalAmount;
+        }
+
         return Payment.builder()
                 .enroll(enroll)
                 .status(status)
                 .paidAt(status == PaymentStatus.PAID ? LocalDateTime.now() : null)
                 .moid(notification.getMoid())
                 .tid(notification.getTid())
-                .paidAmt(Integer.parseInt(notification.getAmt()))
-                .lessonAmount(Integer.parseInt(notification.getAmt())) // 단순화를 위해 전체 금액을 강습료로 설정. 필요시 로직 수정.
-                .lockerAmount(0) // 위와 동일
+                .paidAmt(totalAmount)
+                .lessonAmount(lessonAmountValue)
+                .lockerAmount(lockerAmountValue)
                 .payMethod(notification.getPayMethod())
                 .pgResultCode(notification.getResultCode())
                 .pgResultMsg(notification.getResultMsg())
