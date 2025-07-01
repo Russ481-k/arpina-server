@@ -151,6 +151,7 @@ public class UserServiceImpl implements UserService {
                     .username(user.getUsername())
                     .name(user.getName())
                     .phone(user.getPhone())
+                    .carNo(user.getCarNo())
                     .status(user.getStatus())
                     .lastEnrollment(lastEnrollment)
                     .enrollmentHistory(historyDtos)
