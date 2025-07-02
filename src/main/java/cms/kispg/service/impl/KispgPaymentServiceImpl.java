@@ -90,6 +90,32 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
         log.info("KISPG Service Initialized. API URL: [{}], MID: [{}]", kispgUrl, kispgMid);
     }
 
+    /**
+     * KISPG API 엔드포인트 URL을 생성합니다.
+     * 환경변수 KISPG_URL에는 기본 URL(예: https://api.kispg.co.kr)만 설정되어야 합니다.
+     * 
+     * @param endpoint payment, cancel, order 등
+     */
+    private String getKispgApiUrl(String endpoint) {
+        if (kispgUrl == null) {
+            throw new IllegalStateException("KISPG URL이 설정되지 않았습니다.");
+        }
+
+        String baseUrl = kispgUrl;
+
+        // 혹시 기존 설정에 /v2/xxx가 포함되어 있다면 제거 (하위 호환성)
+        if (baseUrl.contains("/v2/")) {
+            baseUrl = baseUrl.substring(0, baseUrl.indexOf("/v2/"));
+        }
+
+        // 마지막 슬래시 제거
+        if (baseUrl.endsWith("/")) {
+            baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
+        }
+
+        return baseUrl + "/v2/" + endpoint;
+    }
+
     @Override
     @Transactional(readOnly = true)
     public KispgInitParamsDto generateInitParams(Long enrollId, User currentUser, String userIp) {
@@ -546,7 +572,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
 
         HttpEntity<Map<String, String>> requestEntity = new HttpEntity<>(body, headers);
 
-        String url = kispgUrl + "/v2/payment";
+        String url = getKispgApiUrl("payment");
         log.info("📤 KISPG 승인 API 요청:");
         log.info("  - URL: {}", url);
         log.info("  - Method: POST");
@@ -692,7 +718,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
     }
 
     private KispgCancelResponseDto callKispgCancelApi(KispgCancelRequestDto requestDto) {
-        String url = kispgUrl + "/v2/cancel";
+        String url = getKispgApiUrl("cancel");
         log.info("KISPG 취소 API 호출. URL: {}, 요청 데이터: {}", url, requestDto);
 
         try {
@@ -785,7 +811,8 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
             log.info("[KISPG 거래조회 요청] PG 요청 전문: {}", request.toString());
 
             RestTemplate restTemplate = new RestTemplate();
-            ResponseEntity<Map> response = restTemplate.postForEntity(kispgUrl + "/v2/order", request, Map.class);
+            String orderUrl = getKispgApiUrl("order");
+            ResponseEntity<Map> response = restTemplate.postForEntity(orderUrl, request, Map.class);
             log.info("[KISPG 거래조회 요청] PG 응답 전문: {}", response.toString());
             Map<String, Object> responseBody = response.getBody();
 
