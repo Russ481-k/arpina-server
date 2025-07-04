@@ -1,60 +1,51 @@
 spring:
   profiles:
-    active: dev
+    active: ${SPRING_PROFILES_ACTIVE:local}
   legacy:
     processing: true
   servlet:
     multipart:
       enabled: true
-      max-file-size: 100MB
-      max-request-size: 100MB
+      max-file-size: ${FILE_MAX_SIZE:100MB}
+      max-request-size: ${FILE_MAX_REQUEST_SIZE:100MB}
   file:
     upload-base-path: ${FILE_UPLOAD_DIR:./uploads}
     storage:
-      type: ${FILE_STORAGE_TYPE:local} # local | s3
+      type: ${FILE_STORAGE_TYPE:local}
       local:
-        base-path: ${FILE_STORAGE_LOCAL_BASE_PATH:./uploads}
+        base-path: ${FILE_UPLOAD_DIR:./uploads}
       s3:
         bucket: ${FILE_STORAGE_S3_BUCKET:cms-files}
         region: ${FILE_STORAGE_S3_REGION:ap-northeast-2}
         cdn-url: ${FILE_STORAGE_S3_CDN_URL:}
-    policy:
-      max-size: ${FILE_POLICY_MAX_SIZE:52428800} # 50MB
-      allowed-types: ${FILE_POLICY_ALLOWED_TYPES:image/*,application/pdf,application/msword,application/vnd.ms-excel}
-    thumbnail:
-      enabled: ${FILE_THUMBNAIL_ENABLED:true}
-      width: ${FILE_THUMBNAIL_WIDTH:256}
-      height: ${FILE_THUMBNAIL_HEIGHT:256}
-      format: ${FILE_THUMBNAIL_FORMAT:webp}
   jackson:
     time-zone: Asia/Seoul
   datasource:
     driver-class-name: ${SPRING_DATASOURCE_DRIVER_CLASS_NAME:org.mariadb.jdbc.Driver}
-    url: ${SPRING_DATASOURCE_URL:jdbc:mariadb://172.30.1.11:3306/arpina_new?useSSL=false&serverTimezone=Asia/Seoul&allowPublicKeyRetrieval=true&useProxy=false}
-    username: ${SPRING_DATASOURCE_USERNAME:handy}
-    password: ${SPRING_DATASOURCE_PASSWORD:gosel@1224}
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
     hikari:
-      maximum-pool-size: 70
-      minimum-idle: 10
-      connection-timeout: 30000
-      idle-timeout: 600000
-      max-lifetime: 1800000
-      leak-detection-threshold: 60000
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:70}
+      minimum-idle: ${DB_POOL_MIN_IDLE:10}
+      connection-timeout: ${DB_CONNECTION_TIMEOUT:30000}
+      idle-timeout: ${DB_IDLE_TIMEOUT:600000}
+      max-lifetime: ${DB_MAX_LIFETIME:1800000}
+      leak-detection-threshold: ${DB_LEAK_DETECTION:60000}
       cache-prep-stmts: true
       prep-stmt-cache-size: 250
       prep-stmt-cache-sql-limit: 2048
       use-server-prep-stmts: true
-
   config:
     use-legacy-processing: true
     import: optional:file:.env
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: ${JPA_DDL_AUTO:validate}
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MariaDB103Dialect
-        format_sql: true
+        format_sql: ${JPA_FORMAT_SQL:false}
         jdbc:
           time_zone: Asia/Seoul
           batch_size: 50
@@ -73,7 +64,7 @@ spring:
         query:
           timeout: 30000
     database-platform: org.hibernate.dialect.MariaDB103Dialect
-    show-sql: true
+    show-sql: ${JPA_SHOW_SQL:false}
     database: mysql
   mail:
     host: ${MAIL_HOST:smtp.gmail.com}
@@ -105,12 +96,13 @@ spring:
       force: true
       enabled: true
   session:
-    timeout: 1800 # 30 minutes
+    timeout: ${SESSION_TIMEOUT:1800}
     cookie:
-      max-age: 1800
+      max-age: ${SESSION_COOKIE_MAX_AGE:1800}
+
 server:
   servlet:
-    context-path: /
+    context-path: ${SERVER_SERVLET_CONTEXT_PATH:/}
     session:
       timeout: ${SERVER_SERVLET_SESSION_TIMEOUT:3600}
     encoding:
@@ -121,7 +113,13 @@ server:
 
 logging:
   level:
-    root: ${LOG_LEVEL:DEBUG}
+    root: ${LOG_LEVEL:INFO}
+    cms.enroll.service: ${LOG_LEVEL_CMS_ENROLL:INFO}
+    cms.websocket: ${LOG_LEVEL_CMS_WEBSOCKET:INFO}
+    org.springframework.transaction: ${LOG_LEVEL_TRANSACTION:INFO}
+    org.springframework.retry: ${LOG_LEVEL_RETRY:INFO}
+    cms.kispg: ${LOG_LEVEL_KISPG:INFO}
+    cms.payment: ${LOG_LEVEL_PAYMENT:INFO}
   file:
     name: ${LOG_FILE_NAME:backend}
     path: ${LOG_FILE_PATH:./log}
@@ -144,52 +142,13 @@ springdoc:
     disabled: true
 
 Globals:
-  LocalIp: ${GLOBALS_LOCAL_IP:127.0.0.1}
-  DbType: ${GLOBALS_DB_TYPE:mariadb}
+  LocalIp: ${GLOBALS_LOCAL_IP}
   pageUnit: ${GLOBALS_PAGE_UNIT:10}
   pageSize: ${GLOBALS_PAGE_SIZE:10}
   posblAtchFileSize: ${GLOBALS_POSBL_ATCH_FILE_SIZE:5242880}
-  fileStorePath: ${GLOBALS_FILE_STORE_PATH:./uploads}
-  addedOptions: ${GLOBALS_ADDED_OPTIONS:false}
-  MainPage: ${GLOBALS_MAIN_PAGE:/cmm/main/mainPage.do}
+  fileStorePath: ${FILE_UPLOAD_DIR:./uploads}
   Allow:
-    # Origin: ${GLOBALS_ALLOW_ORIGIN:http://localhost:3000}
-  crypto:
-    algoritm: ${GLOBALS_CRYPTO_ALGORITM:egovframe}
-  fileUpload:
-    Extensions:
-      Images: ${GLOBALS_FILE_UPLOAD_EXTENSIONS_IMAGES:.gif.jpg.jpeg.png}
-      Default: ${GLOBALS_FILE_UPLOAD_EXTENSIONS:.gif.jpg.jpeg.png.xls.xlsx}
-  hsql:
-    DriverClassName: ${GLOBALS_HSQL_DRIVER:net.sf.log4jdbc.DriverSpy}
-    Url: ${GLOBALS_HSQL_URL:jdbc:log4jdbc:hsqldb:hsql://127.0.0.1/sampledb}
-    UserName: ${GLOBALS_HSQL_USERNAME:sa}
-    Password: ${GLOBALS_HSQL_PASSWORD:}
-  mysql:
-    DriverClassName: ${SPRING_DATASOURCE_DRIVER_CLASS_NAME:org.mariadb.jdbc.Driver}
-    Url: ${SPRING_DATASOURCE_URL}
-    UserName: ${SPRING_DATASOURCE_USERNAME}
-    Password: ${SPRING_DATASOURCE_PASSWORD}
-  oracle:
-    DriverClassName: ${GLOBALS_ORACLE_DRIVER:oracle.jdbc.driver.OracleDriver}
-    Url: ${GLOBALS_ORACLE_URL:jdbc:oracle:thin:@127.0.0.1:1521:egovfrm}
-    UserName: ${GLOBALS_ORACLE_USERNAME:}
-    Password: ${GLOBALS_ORACLE_PASSWORD:}
-  altibase:
-    DriverClassName: ${GLOBALS_ALTIBASE_DRIVER:Altibase.jdbc.driver.AltibaseDriver}
-    Url: ${GLOBALS_ALTIBASE_URL:jdbc:Altibase://127.0.0.1:1721/egovfrm?encoding=UTF-8}
-    UserName: ${GLOBALS_ALTIBASE_USERNAME:}
-    Password: ${GLOBALS_ALTIBASE_PASSWORD:}
-  tibero:
-    DriverClassName: ${GLOBALS_TIBERO_DRIVER:com.tmax.tibero.jdbc.TbDriver}
-    Url: ${GLOBALS_TIBERO_URL:jdbc:tibero:thin:@127.0.0.1:1821:egovfrm}
-    UserName: ${GLOBALS_TIBERO_USERNAME:}
-    Password: ${GLOBALS_TIBERO_PASSWORD:}
-  cubrid:
-    DriverClassName: ${GLOBALS_CUBRID_DRIVER:cubrid.jdbc.driver.CUBRIDDriver}
-    Url: ${GLOBALS_CUBRID_URL:jdbc:cubrid:127.0.0.1:33000:cms_new:::?charset=utf-8}
-    UserName: ${GLOBALS_CUBRID_USERNAME:}
-    Password: ${GLOBALS_CUBRID_PASSWORD:}
+    Origin: ${GLOBALS_ALLOW_ORIGIN}
 
 Sns:
   naver:
@@ -201,39 +160,37 @@ Sns:
     callbackUrl: ${SNS_KAKAO_CALLBACK_URL:http://localhost:3000/login/kakao/callback}
 
 jwt:
-  secret: ${JWT_SECRET:your-256-bit-secret-key-here-must-be-at-least-256-bits-long}
-  expiration: ${JWT_EXPIRATION:3600000}
-  refresh-expiration: ${JWT_REFRESH_EXPIRATION:86400000}
-  header: ${JWT_HEADER:Authorization}
-  prefix: ${JWT_PREFIX:Bearer}
+  secret: ${JWT_SECRET}
   access-token:
-    validity-in-milliseconds: ${JWT_EXPIRATION:3600000}
+    validity-in-milliseconds: ${JWT_ACCESS_TOKEN_VALIDITY:86400000}
   refresh-token:
-    validity-in-milliseconds: ${JWT_REFRESH_EXPIRATION:86400000}
+    validity-in-milliseconds: ${JWT_REFRESH_TOKEN_VALIDITY:2592000000}
+
 # Application specific configurations
 app:
   api:
-    base-url: ${GLOBALS_IP:http://localhost:${server.port:8080}}
+    base-url: ${GLOBALS_IP}
   locker:
     fee: ${APP_LOCKER_FEE:5000}
   enrollment:
-    lock-timeout: 30000
-    retry-attempts: 3
-    retry-delay: 1000
+    lock-timeout: ${ENROLLMENT_LOCK_TIMEOUT:30000}
+    retry-attempts: ${ENROLLMENT_RETRY_ATTEMPTS:3}
+    retry-delay: ${ENROLLMENT_RETRY_DELAY:1000}
     websocket:
-      enabled: true
-      heartbeat-interval: 30000
-  performance:
-    enable-metrics: true
-    slow-query-threshold: 1000
+      enabled: ${WEBSOCKET_ENABLED:true}
+      heartbeat-interval: ${WEBSOCKET_HEARTBEAT:30000}
+
+  environment:
+    name: ${ENVIRONMENT_NAME:local}
+    cors-enabled: ${CORS_ENABLED:true}
 
 nice:
   checkplus:
-    site-code: ${NICE_CHECKPLUS_SITE_CODE} # Mandatory: Define in your .env file
-    site-password: ${NICE_CHECKPLUS_SITE_PASSWORD} # Mandatory: Define in your .env file
-    base-callback-url: ${app.api.base-url}
-    frontend-redirect-success-path: ${NICE_CHECKPLUS_FRONTEND_REDIRECT_PATH} # Default for dev, override in .env if needed
-    frontend-redirect-fail-path: ${NICE_CHECKPLUS_FRONTEND_REDIRECT_PATH} # Default for dev, override in .env if needed
+    site-code: ${NICE_CHECKPLUS_SITE_CODE}
+    site-password: ${NICE_CHECKPLUS_SITE_PASSWORD}
+    base-callback-url: ${GLOBALS_IP}
+    frontend-redirect-success-path: ${NICE_CHECKPLUS_FRONTEND_REDIRECT_PATH}
+    frontend-redirect-fail-path: ${NICE_CHECKPLUS_FRONTEND_REDIRECT_PATH}
 
 # KISPG Configurations
 kispg:
@@ -241,22 +198,23 @@ kispg:
   mid: ${KISPG_MID}
   merchantKey: ${KISPG_MERCHANT_KEY}
 
-# *** 성능 모니터링 설정 ***
+# 성능 모니터링 설정
 management:
   endpoints:
     web:
       exposure:
-        include: health,metrics,info,env,configprops
+        include: health,metrics,info
       base-path: /actuator
   endpoint:
     health:
-      show-details: always
-      show-components: always
+      show-details: when_authorized
+      show-components: when_authorized
     metrics:
       enabled: true
   metrics:
     export:
       prometheus:
-        enabled: true
+        enabled: false
+
 cors:
-  allowed-origins: ${GLOBALS_ALLOW_ORIGIN:https://arpina-cms-bnxm.vercel.app}
+  allowed-origins: ${GLOBALS_ALLOW_ORIGIN}
