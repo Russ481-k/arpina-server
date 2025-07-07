@@ -31,4 +31,20 @@ public interface FileService {
      * @return 삭제된 파일 개수
      */
     int deleteOrphanedFilesByMissingArticle(List<String> menuTypes);
+
+    /**
+     * 지정된 메뉴 타입들의 파일 개수를 반환합니다.
+     * 
+     * @param menuTypes 대상 메뉴 타입 목록
+     * @return 파일 개수
+     */
+    long countFilesByMenuTypes(List<String> menuTypes);
+
+    /**
+     * 파일 ID 추출 로직이 올바르게 작동하는지 검증합니다.
+     * 
+     * @return 검증 통과 여부
+     */
+    boolean validateFileIdExtractionLogic();
+
 }

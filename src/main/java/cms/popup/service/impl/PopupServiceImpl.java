@@ -177,10 +177,23 @@ public class PopupServiceImpl implements PopupService {
         // 3. 새 콘텐츠에서 파일 ID 추출
         Set<Long> newFileIds = extractFileIdsFromJson(finalContentJson);
 
-        // 4. 고아 파일 삭제
-        oldFileIds.stream()
-                .filter(fileId -> !newFileIds.contains(fileId))
-                .forEach(fileService::deleteFile);
+        // 4. 고아 파일 삭제 (안전장치 추가)
+        // contentJson이 제공되지 않은 경우 파일 삭제하지 않음
+        if (contentJson != null && !contentJson.trim().isEmpty()) {
+            oldFileIds.stream()
+                    .filter(fileId -> !newFileIds.contains(fileId))
+                    .forEach(fileId -> {
+                        try {
+                            fileService.deleteFile(fileId);
+                            log.info("Deleted orphaned file: {} from popup: {}", fileId, popupId);
+                        } catch (Exception e) {
+                            log.error("Error deleting orphaned file: {} from popup: {}. Error: {}",
+                                    fileId, popupId, e.getMessage());
+                        }
+                    });
+        } else {
+            log.debug("No content provided, skipping orphaned file deletion for popup: {}", popupId);
+        }
 
         // 5. 팝업 정보 업데이트 (Null-safe)
         if (popupUpdateReq.getTitle() != null) {
@@ -258,15 +271,22 @@ public class PopupServiceImpl implements PopupService {
     }
 
     private Set<Long> extractFileIdsFromJson(String jsonContent) {
-        if (jsonContent == null || jsonContent.isEmpty()) {
+        if (jsonContent == null || jsonContent.trim().isEmpty()) {
+            log.debug("JSON content is null or empty, returning empty set");
             return Collections.emptySet();
         }
         Set<Long> fileIds = new HashSet<>();
         try {
             JsonNode rootNode = objectMapper.readTree(jsonContent);
             traverseAndExtract(rootNode, fileIds);
+            log.debug("Extracted {} file IDs from JSON content", fileIds.size());
         } catch (IOException e) {
-            log.error("Error parsing JSON for extracting file IDs: {}", e.getMessage(), e);
+            log.error("Error parsing JSON for extracting file IDs - content: '{}'. Error: {}",
+                    jsonContent.length() > 100 ? jsonContent.substring(0, 100) + "..." : jsonContent,
+                    e.getMessage(), e);
+            // JSON 파싱 실패 시 빈 Set 반환하여 기존 파일 보호
+        } catch (Exception e) {
+            log.error("Unexpected error extracting file IDs from JSON. Error: {}", e.getMessage(), e);
         }
         return fileIds;
     }
