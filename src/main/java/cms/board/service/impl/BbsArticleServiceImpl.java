@@ -57,6 +57,20 @@ public class BbsArticleServiceImpl implements BbsArticleService {
     @Value("${app.api.base-url}")
     private String appApiBaseUrl;
 
+    // ✅ JSON 유효성 검사 헬퍼 메서드 추가
+    private boolean isValidJson(String json) {
+        if (json == null || json.trim().isEmpty()) {
+            return true; // 빈 문자열 또는 null은 유효한 JSON으로 간주 (오류를 발생시키지 않음)
+        }
+        try {
+            objectMapper.readTree(json);
+            return true;
+        } catch (IOException e) {
+            log.warn("Invalid JSON content detected: {}", e.getMessage());
+            return false;
+        }
+    }
+
     @Override
     @Transactional
     public BbsArticleDto createArticle(BbsArticleDto articleDto, String editorContentJson,
@@ -132,6 +146,14 @@ public class BbsArticleServiceImpl implements BbsArticleService {
         BbsArticleDomain savedArticle = bbsArticleRepository.save(article);
 
         String finalContentJson = articleDto.getContent();
+        // ✅ JSON 유효성 검사 추가
+        if (!isValidJson(finalContentJson)) {
+            log.warn(
+                    "[createArticle] Initial article content is not a valid JSON. Setting to empty string. Content: {}",
+                    finalContentJson);
+            finalContentJson = "";
+        }
+
         if (mediaFiles != null && !mediaFiles.isEmpty() && mediaLocalIdsArray.length > 0) {
             List<CmsFile> uploadedMediaFiles = fileService.uploadFiles(EDITOR_EMBEDDED_MEDIA, savedArticle.getNttId(),
                     mediaFiles);
@@ -284,6 +306,14 @@ public class BbsArticleServiceImpl implements BbsArticleService {
         }
 
         String finalContentJson = articleDto.getContent();
+        // ✅ JSON 유효성 검사 추가
+        if (!isValidJson(finalContentJson)) {
+            log.warn(
+                    "[updateArticle] Initial article content is not a valid JSON. Setting to empty string. Content: {}",
+                    finalContentJson);
+            finalContentJson = "";
+        }
+
         Map<String, Long> newUploadedLocalIdToFileIdMap = new HashMap<>();
 
         if (mediaFiles != null && !mediaFiles.isEmpty() && mediaLocalIdsArray.length > 0) {
@@ -310,7 +340,8 @@ public class BbsArticleServiceImpl implements BbsArticleService {
         List<CmsFile> existingDbMediaFiles = fileService.getList(EDITOR_EMBEDDED_MEDIA, nttId, null);
 
         // 안전장치: editorContentJson이 제공되지 않은 경우 기존 미디어 파일 삭제하지 않음
-        if (editorContentJson != null && !editorContentJson.trim().isEmpty()) {
+        // editorContentJson 대신 finalContentJson을 사용하도록 변경
+        if (finalContentJson != null && !finalContentJson.trim().isEmpty()) {
             for (CmsFile dbFile : existingDbMediaFiles) {
                 if (!referencedFileIdsInContent.contains(dbFile.getFileId())) {
                     try {
@@ -323,7 +354,9 @@ public class BbsArticleServiceImpl implements BbsArticleService {
                 }
             }
         } else {
-            log.debug("No editor content provided, skipping orphaned media file deletion for article: {}", nttId);
+            log.debug(
+                    "No editor content provided (or invalid JSON), skipping orphaned media file deletion for article: {}",
+                    nttId);
         }
 
         if (attachments != null) {
