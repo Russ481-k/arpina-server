@@ -60,6 +60,12 @@ public class SecurityConfig {
 	@Value("${cors.allowed-origins}")
 	private String corsAllowedOrigins;
 
+	@Value("${app.environment.cors-enabled:true}")
+	private boolean corsEnabled;
+
+	@Value("${app.environment.name:local}")
+	private String environmentName;
+
 	@Bean
 	public static RequestMatcher permitAllRequestMatcherBean() {
 		List<RequestMatcher> matchers = new ArrayList<>();
@@ -110,9 +116,14 @@ public class SecurityConfig {
 
 	@Bean
 	public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+		// CORS 설정을 환경변수에 따라 조건부로 적용
+		if (corsEnabled) {
+			http.cors().configurationSource(corsConfigurationSource());
+		} else {
+			http.cors().disable();
+		}
+
 		http
-				.cors().configurationSource(corsConfigurationSource())
-				.and()
 				.csrf().disable()
 				.sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
 				.and()
@@ -173,7 +184,7 @@ public class SecurityConfig {
 	protected CorsConfigurationSource corsConfigurationSource() {
 		CorsConfiguration configuration = new CorsConfiguration();
 
-		// 개발환경용 Origin 설정
+		// 환경별 Origin 설정
 		String[] origins = corsAllowedOrigins.split(",");
 		configuration.setAllowedOriginPatterns(Arrays.asList(origins));
 		configuration.setAllowedMethods(Arrays.asList("HEAD", "POST", "GET", "DELETE", "PUT", "PATCH", "OPTIONS"));

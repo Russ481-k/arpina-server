@@ -46,7 +46,7 @@ hs_err_pid*
 .vscode/
 
 # Environment Variables
-.env
+.env*
 
 # IDE
 .idea/

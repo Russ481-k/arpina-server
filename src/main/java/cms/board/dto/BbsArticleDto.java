@@ -44,7 +44,7 @@ public class BbsArticleDto {
     @NotBlank(message = "내용은 필수 입력값입니다.")
     private String content;
 
-    @Schema(description = "공지 상태", example = "N", allowableValues = {"N", "Y", "P"})
+    @Schema(description = "공지 상태", example = "N", allowableValues = { "N", "Y", "P" })
     private String noticeState;
 
     @Schema(description = "공지 시작일")
@@ -53,7 +53,7 @@ public class BbsArticleDto {
     @Schema(description = "공지 종료일")
     private LocalDateTime noticeEndDt;
 
-    @Schema(description = "게시 상태", example = "Y", allowableValues = {"N", "Y", "P"})
+    @Schema(description = "게시 상태", example = "Y", allowableValues = { "N", "Y", "P" })
     private String publishState;
 
     @Schema(description = "게시 시작일")
@@ -68,6 +68,13 @@ public class BbsArticleDto {
 
     @Schema(description = "조회수")
     private Integer hits;
+
+    @Schema(description = "노출 작성자")
+    @Size(max = 50, message = "노출 작성자는 50자 이하여야 합니다.")
+    private String displayWriter;
+
+    @Schema(description = "노출 게시일")
+    private LocalDateTime postedAt;
 
     @Schema(description = "내용 중 이미지 포함 여부")
     private boolean hasImageInContent;
@@ -93,4 +100,10 @@ public class BbsArticleDto {
 
     @Schema(description = "순번")
     private Integer no;
-} 
+
+    @Schema(description = "첨부파일 ID 목록")
+    private List<Long> attachmentIds;
+
+    @Schema(description = "이미지 ID 목록")
+    private List<Long> imageIds;
+}
