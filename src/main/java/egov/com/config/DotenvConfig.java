@@ -1,39 +1,27 @@
 package egov.com.config;
 
-import io.github.cdimascio.dotenv.Dotenv;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.core.env.ConfigurableEnvironment;
-import org.springframework.core.env.MapPropertySource;
-import org.springframework.core.env.MutablePropertySources;
+import org.springframework.stereotype.Component;
 
-import java.util.HashMap;
-import java.util.Map;
+import javax.annotation.PostConstruct;
 
-@Configuration
+@Component
 public class DotenvConfig {
-    
-    private final ConfigurableEnvironment environment;
 
-    public DotenvConfig(ConfigurableEnvironment environment) {
-        this.environment = environment;
-        loadDotenv();
-    }
-
-    private void loadDotenv() {
+    @PostConstruct
+    public void loadDotenv() {
+        // EgovConfigAppDataSource에서 이미 .env 로드를 처리하므로
+        // 여기서는 JWT_SECRET이 제대로 설정되었는지만 확인
         try {
-            Dotenv dotenv = Dotenv.configure()
-                    .directory(".")
-                    .ignoreIfMalformed()
-                    .ignoreIfMissing()
-                    .load();
+            String jwtSecret = System.getProperty("JWT_SECRET");
+            System.out.println("=== DotenvConfig: JWT_SECRET 확인 ===");
+            System.out.println("JWT_SECRET 상태: " + (jwtSecret != null ? "[EXISTS]" : "[NOT_FOUND]"));
 
-            Map<String, Object> envMap = new HashMap<>();
-            dotenv.entries().forEach(entry -> envMap.put(entry.getKey(), entry.getValue()));
-
-            MutablePropertySources propertySources = environment.getPropertySources();
-            propertySources.addFirst(new MapPropertySource("dotenvProperties", envMap));
+            if (jwtSecret == null) {
+                System.err.println("❌ JWT_SECRET이 설정되지 않았습니다!");
+            }
         } catch (Exception e) {
-            System.err.println("Error loading .env file: " + e.getMessage());
+            System.err.println("❌ JWT_SECRET 확인 실패: " + e.getMessage());
+            e.printStackTrace();
         }
     }
-} 
+}
