@@ -49,6 +49,7 @@ public class GroupReservationServiceImpl implements GroupReservationService {
                 .contactPersonName(request.getContactPersonName())
                 .contactPersonDpt(request.getContactPersonDpt())
                 .contactPersonPhone(request.getContactPersonPhone())
+                .contactPersonTel(request.getContactPersonTel())
                 .contactPersonEmail(request.getContactPersonEmail())
                 .privacyAgreed(request.getPrivacyAgreed())
                 .marketingAgreed(request.getMarketingAgreed())
@@ -96,7 +97,8 @@ public class GroupReservationServiceImpl implements GroupReservationService {
                             criteriaBuilder.like(root.get("eventName"), pattern),
                             criteriaBuilder.like(root.get("customerGroupName"), pattern),
                             criteriaBuilder.like(root.get("contactPersonName"), pattern),
-                            criteriaBuilder.like(root.get("contactPersonPhone"), pattern)));
+                            criteriaBuilder.like(root.get("contactPersonPhone"), pattern),
+                            criteriaBuilder.like(root.get("contactPersonTel"), pattern)));
                 } else {
                     switch (type) {
                         case "eventName":
@@ -110,6 +112,9 @@ public class GroupReservationServiceImpl implements GroupReservationService {
                             break;
                         case "contactPersonPhone":
                             predicates.add(criteriaBuilder.like(root.get("contactPersonPhone"), pattern));
+                            break;
+                        case "contactPersonTel":
+                            predicates.add(criteriaBuilder.like(root.get("contactPersonTel"), pattern));
                             break;
                     }
                 }

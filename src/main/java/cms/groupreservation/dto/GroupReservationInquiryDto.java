@@ -26,6 +26,7 @@ public class GroupReservationInquiryDto {
     private String contactPersonName;
     private String contactPersonDpt;
     private String contactPersonPhone;
+    private String contactPersonTel;
     private String contactPersonEmail;
     private Boolean privacyAgreed;
     private Boolean marketingAgreed;
@@ -53,6 +54,7 @@ public class GroupReservationInquiryDto {
         this.contactPersonName = entity.getContactPersonName();
         this.contactPersonDpt = entity.getContactPersonDpt();
         this.contactPersonPhone = entity.getContactPersonPhone();
+        this.contactPersonTel = entity.getContactPersonTel();
         this.contactPersonEmail = entity.getContactPersonEmail();
         this.privacyAgreed = entity.getPrivacyAgreed();
         this.marketingAgreed = entity.getMarketingAgreed();

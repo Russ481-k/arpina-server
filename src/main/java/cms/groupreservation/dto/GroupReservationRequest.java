@@ -7,6 +7,7 @@ import javax.validation.Valid;
 import javax.validation.constraints.Email;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
+import javax.validation.constraints.Pattern;
 import javax.validation.constraints.Size;
 import java.time.LocalDate;
 import java.util.List;
@@ -33,8 +34,12 @@ public class GroupReservationRequest {
 
     private String contactPersonDpt;
 
-    @NotBlank(message = "담당자 연락처는 필수입니다.")
+    @NotBlank(message = "담당자 휴대전화는 필수입니다.")
+    @Pattern(regexp = "^\\d{2,3}-\\d{3,4}-\\d{4}$", message = "휴대전화 형식이 올바르지 않습니다. (예: 010-1234-5678)")
     private String contactPersonPhone;
+
+    @NotBlank(message = "담당자 연락처는 필수입니다.")
+    private String contactPersonTel;
 
     @NotBlank(message = "담당자 이메일은 필수입니다.")
     @Email(message = "유효한 이메일 주소를 입력해주세요.")
