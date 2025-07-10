@@ -58,6 +58,9 @@ public class GroupReservationInquiry {
     @Column(length = 20, nullable = false)
     private String contactPersonPhone;
 
+    @Column(length = 20, nullable = false)
+    private String contactPersonTel;
+
     @Column(length = 100, nullable = false)
     private String contactPersonEmail;
 
