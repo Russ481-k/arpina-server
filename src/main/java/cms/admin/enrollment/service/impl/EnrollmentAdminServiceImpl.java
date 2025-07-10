@@ -91,6 +91,7 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
                 .payStatus(enroll.getPayStatus())
                 .usesLocker(enroll.isUsesLocker())
                 .lockerAllocated(enroll.isLockerAllocated())
+                .lockerNo(enroll.getLockerNo())
                 .userGender(enroll.getUser() != null ? enroll.getUser().getGender() : null)
                 .createdAt(enroll.getCreatedAt())
                 .expireDt(enroll.getExpireDt())
@@ -321,6 +322,19 @@ public class EnrollmentAdminServiceImpl implements EnrollmentAdminService {
             enroll.setDiscountApprovedAt(LocalDateTime.now());
         }
         enroll.setDiscountAdminComment(request.getAdminComment());
+
+        Enroll savedEnroll = enrollRepository.save(enroll);
+
+        return convertToEnrollAdminResponseDto(savedEnroll);
+    }
+
+    @Override
+    @Transactional
+    public EnrollAdminResponseDto updateLockerNo(Long enrollId, String lockerNo) {
+        Enroll enroll = enrollRepository.findById(enrollId)
+                .orElseThrow(() -> new ResourceNotFoundException("신청 정보를 찾을 수 없습니다.", ErrorCode.ENROLLMENT_NOT_FOUND));
+
+        enroll.setLockerNo(lockerNo);
 
         Enroll savedEnroll = enrollRepository.save(enroll);
 

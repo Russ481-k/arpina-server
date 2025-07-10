@@ -36,6 +36,8 @@ public interface EnrollmentAdminService {
 
         EnrollAdminResponseDto updateEnrollmentDiscountStatus(Long enrollId, DiscountStatusUpdateRequestDto request);
 
+        EnrollAdminResponseDto updateLockerNo(Long enrollId, String lockerNo);
+
         CalculatedRefundDetailsDto getRefundPreview(Long enrollId, Integer manualUsedDays);
 
         EnrollAdminResponseDto createTemporaryEnrollment(TemporaryEnrollmentRequestDto requestDto);

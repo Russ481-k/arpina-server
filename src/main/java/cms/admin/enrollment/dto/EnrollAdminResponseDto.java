@@ -20,6 +20,7 @@ public class EnrollAdminResponseDto {
     private String payStatus; // Payment status (UNPAID, PAID, PARTIAL_REFUNDED, PAYMENT_TIMEOUT)
     private boolean usesLocker;
     private boolean lockerAllocated;
+    private String lockerNo;
     private String userGender;
     private LocalDateTime createdAt;
     private LocalDateTime expireDt;
