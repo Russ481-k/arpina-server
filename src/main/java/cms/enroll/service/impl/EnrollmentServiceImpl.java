@@ -144,7 +144,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         LocalDate today = LocalDate.now();
         YearMonth currentMonth = YearMonth.from(today);
 
-        boolean isRenewalWindowActive = today.getDayOfMonth() >= 20 && today.getDayOfMonth() <= 24;
+        boolean isRenewalWindowActive = today.getDayOfMonth() >= 11 && today.getDayOfMonth() <= 24;
 
         if (isRenewalWindowActive) {
             List<EnrollDto> renewalPreviews = userEnrollments.stream()
@@ -202,7 +202,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         EnrollDto.RenewalWindow renewalWindow = null;
         if (lesson.getStartDate() != null) {
             YearMonth lessonStartMonth = YearMonth.from(lesson.getStartDate());
-            LocalDate renewalStart = lessonStartMonth.minusMonths(1).atDay(20);
+            LocalDate renewalStart = lessonStartMonth.minusMonths(1).atDay(11);
             LocalDate renewalEnd = lessonStartMonth.minusMonths(1).atDay(24);
 
             renewalWindow = EnrollDto.RenewalWindow.builder()
@@ -359,7 +359,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
      * 실제 신청 로직 (내부 메소드)
      * // FOR TEMP-ENROLLMENT-BYPASS BRANCH: (기존 주석 제거 또는 업데이트)
      * 
-     * 수정된 로직 (2024-05-27):
+     * 수정된 로직 (1124-05-27):
      * - 신규 신청 시 payStatus를 "UNPAID" 로 설정합니다.
      * - status를 "APPLIED" 로 설정합니다.
      * - expireDt는 현재 결제 모듈 연동 전이므로, UNPAID 신청이 만료되지 않고 "신청 인원"으로 계속 집계되도록 매우 긴
@@ -1116,7 +1116,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
             YearMonth lessonStartMonth = YearMonth.from(lessonStartDate);
 
             if (lessonStartMonth.equals(currentMonth.plusMonths(1))) {
-                LocalDate renewalStart = LocalDate.of(today.getYear(), today.getMonth(), 20);
+                LocalDate renewalStart = LocalDate.of(today.getYear(), today.getMonth(), 11);
                 LocalDate renewalEnd = LocalDate.of(today.getYear(), today.getMonth(), 24);
 
                 boolean isRenewalOpen = !today.isBefore(renewalStart) && !today.isAfter(renewalEnd);
@@ -1166,18 +1166,18 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                         "재수강 대상 강좌를 찾을 수 없습니다 (ID: " + renewalRequestDto.getLessonId() + ")",
                         ErrorCode.LESSON_NOT_FOUND));
 
-        // Check registration window for renewal: 20th-24th of current month for next
+        // Check registration window for renewal: 11th-24th of current month for next
         // month's lesson
         LocalDate today = LocalDate.now();
         YearMonth currentMonth = YearMonth.from(today);
         YearMonth lessonStartMonth = YearMonth.from(lesson.getStartDate());
 
         boolean isLessonForNextMonth = lessonStartMonth.equals(currentMonth.plusMonths(1));
-        boolean isRenewalWindowActive = today.getDayOfMonth() >= 20 && today.getDayOfMonth() <= 24;
+        boolean isRenewalWindowActive = today.getDayOfMonth() >= 11 && today.getDayOfMonth() <= 24;
 
         if (!isLessonForNextMonth || !isRenewalWindowActive) {
             throw new BusinessRuleException(ErrorCode.RENEWAL_PERIOD_INVALID,
-                    "재수강 신청 기간이 아닙니다. (다음 달 강습: 현월 20~24일)");
+                    "재수강 신청 기간이 아닙니다. (다음 달 강습: 현월 11~24일)");
         }
 
         long paidEnrollments = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
