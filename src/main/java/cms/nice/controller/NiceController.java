@@ -1,7 +1,6 @@
 package cms.nice.controller;
 
 import cms.nice.dto.NiceInitiateResponseDto;
-import cms.nice.dto.NicePublicUserDataDto;
 import cms.nice.service.NiceService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
