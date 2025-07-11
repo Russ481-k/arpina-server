@@ -21,7 +21,7 @@ public class MonthlyLessonCloneJob {
 
         private final LessonRepository lessonRepository;
 
-        @Scheduled(cron = "0 50 15 11 * ?")
+        @Scheduled(cron = "0 0 0 20 * ?")
         @Transactional
         public void cloneMonthlyLessons() {
                 YearMonth currentMonth = YearMonth.now();
