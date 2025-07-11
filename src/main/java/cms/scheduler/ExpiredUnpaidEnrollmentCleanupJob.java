@@ -3,7 +3,6 @@ package cms.scheduler;
 import cms.enroll.domain.Enroll;
 import cms.enroll.repository.EnrollRepository;
 import cms.locker.service.LockerService;
-import cms.user.domain.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
