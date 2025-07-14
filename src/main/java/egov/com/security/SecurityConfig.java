@@ -103,6 +103,7 @@ public class SecurityConfig {
 				"/api/v1/cms/bbs/article/board/**",
 				"/api/v1/cms/bbs",
 				"/api/v1/cms/bbs/**",
+				"/api/v1/cms/bbs/voice/read/**/comments", // 댓글 조회 허용
 				"/api/v1/cms/schedule/**",
 				"/api/v1/cms/enterprises",
 				"/api/v1/cms/enterprises/{id}");
@@ -130,6 +131,9 @@ public class SecurityConfig {
 				.authorizeHttpRequests(authz -> authz
 						.requestMatchers(this.permitAllRequestMatcher).permitAll()
 						.antMatchers(HttpMethod.GET, "/api/v1/cms/bbs/**").permitAll()
+						.antMatchers(HttpMethod.POST, "/cms/bbs/voice/read/**/comments").authenticated()
+						.antMatchers(HttpMethod.PUT, "/cms/bbs/voice/read/**/comments/**").authenticated()
+						.antMatchers(HttpMethod.DELETE, "/cms/bbs/voice/read/**/comments/**").authenticated()
 						.antMatchers(HttpMethod.POST, "/api/v1/cms/bbs/article").authenticated()
 						.antMatchers(HttpMethod.PUT, "/api/v1/cms/bbs/article/**").authenticated()
 						.antMatchers(HttpMethod.DELETE, "/api/v1/cms/bbs/article/**").authenticated()
