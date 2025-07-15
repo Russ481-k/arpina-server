@@ -5,7 +5,7 @@ import lombok.*;
 
 @Getter
 @Setter
-public class VoiceCommentDto {
+public class BbsCommentDto {
     private Long commentId;
     private Long nttId;
     private String content;

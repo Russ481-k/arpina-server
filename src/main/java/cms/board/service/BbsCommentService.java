@@ -7,27 +7,27 @@ import javax.persistence.EntityNotFoundException;
 import java.util.List;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
-import cms.board.domain.VoiceCommentDomain;
+import cms.board.domain.BbsCommentDomain;
 import cms.board.domain.BbsArticleDomain;
-import cms.board.dto.VoiceCommentDto;
-import cms.board.dto.VoiceCommentRequest;
-import cms.board.repository.VoiceCommentRepository;
+import cms.board.dto.BbsCommentDto;
+import cms.board.dto.BbsCommentRequest;
+import cms.board.repository.BbsCommentRepository;
 import cms.board.repository.BbsArticleRepository;
 
 @Service
 @RequiredArgsConstructor
 @Transactional
-public class VoiceCommentService {
+public class BbsCommentService {
 
-    private final VoiceCommentRepository commentRepository;
+    private final BbsCommentRepository BbsCommentRepository;
     private final BbsArticleRepository articleRepository;
 
     @PreAuthorize("hasRole('ROLE_ADMIN')")
-    public VoiceCommentDto createComment(Long nttId, VoiceCommentRequest request, String adminId, String ipAddress) {
+    public BbsCommentDto createComment(Long nttId, BbsCommentRequest request, String adminId, String ipAddress) {
         BbsArticleDomain article = articleRepository.findById(nttId)
                 .orElseThrow(() -> new EntityNotFoundException("게시글을 찾을 수 없습니다."));
 
-        VoiceCommentDomain comment = new VoiceCommentDomain();
+        BbsCommentDomain comment = new BbsCommentDomain();
         comment.setArticle(article);
         comment.setContent(request.getContent());
         comment.setWriter(adminId);
@@ -35,19 +35,19 @@ public class VoiceCommentService {
         comment.setCreatedBy(adminId);
         comment.setCreatedIp(ipAddress);
 
-        return convertToDto(commentRepository.save(comment));
+        return convertToDto(BbsCommentRepository.save(comment));
     }
 
-    public List<VoiceCommentDto> getComments(Long nttId) {
-        return commentRepository.findByArticleNttIdAndIsDeletedOrderByCreatedAtAsc(nttId, "N")
+    public List<BbsCommentDto> getComments(Long nttId) {
+        return BbsCommentRepository.findByArticleNttIdAndIsDeletedOrderByCreatedAtAsc(nttId, "N")
                 .stream()
                 .map(this::convertToDto)
                 .collect(Collectors.toList());
     }
 
     @PreAuthorize("hasRole('ROLE_ADMIN')")
-    public void updateComment(Long commentId, VoiceCommentRequest request, String adminId, String ipAddress) {
-        VoiceCommentDomain comment = commentRepository.findById(commentId)
+    public void updateComment(Long commentId, BbsCommentRequest request, String adminId, String ipAddress) {
+        BbsCommentDomain comment = BbsCommentRepository.findById(commentId)
                 .orElseThrow(() -> new EntityNotFoundException("댓글을 찾을 수 없습니다."));
 
         comment.setContent(request.getContent());
@@ -58,14 +58,14 @@ public class VoiceCommentService {
 
     @PreAuthorize("hasRole('ROLE_ADMIN')")
     public void deleteComment(Long commentId) {
-        VoiceCommentDomain comment = commentRepository.findById(commentId)
+        BbsCommentDomain comment = BbsCommentRepository.findById(commentId)
                 .orElseThrow(() -> new EntityNotFoundException("댓글을 찾을 수 없습니다."));
 
         comment.setIsDeleted("Y");
     }
 
-    private VoiceCommentDto convertToDto(VoiceCommentDomain domain) {
-        VoiceCommentDto dto = new VoiceCommentDto();
+    private BbsCommentDto convertToDto(BbsCommentDomain domain) {
+        BbsCommentDto dto = new BbsCommentDto();
         dto.setCommentId(domain.getCommentId());
         dto.setNttId(domain.getArticle().getNttId());
         dto.setContent(domain.getContent());

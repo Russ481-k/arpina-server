@@ -8,13 +8,13 @@ import javax.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "voice_comment")
+@Table(name = "bbs_comment")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class VoiceCommentDomain {
+public class BbsCommentDomain {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "COMMENT_ID")

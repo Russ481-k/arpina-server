@@ -18,7 +18,9 @@ import cms.menu.repository.MenuRepository;
 import cms.menu.domain.Menu;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -29,16 +31,16 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.IOException;
-import java.util.Collections;
-import java.util.List;
-import java.util.stream.Collectors;
-import java.util.Map;
-import java.util.HashMap;
-import java.util.Set;
-import java.util.HashSet;
-import org.springframework.beans.factory.annotation.Value;
-import java.util.Arrays;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -402,7 +404,7 @@ public class BbsArticleServiceImpl implements BbsArticleService {
         } else {
             articlesPage = bbsArticleRepository.findPublishedByBbsIdAndMenuId(bbsId, menuId, pageable);
         }
-        return articlesPage.map(this::convertToDto);
+        return toDtoPageWithArticleNumber(articlesPage, pageable);
     }
 
     @Override
@@ -415,7 +417,7 @@ public class BbsArticleServiceImpl implements BbsArticleService {
         } else {
             articlesPage = bbsArticleRepository.searchPublishedByKeywordAndMenuId(bbsId, menuId, keyword, pageable);
         }
-        return articlesPage.map(this::convertToDto);
+        return toDtoPageWithArticleNumber(articlesPage, pageable);
     }
 
     @Override
@@ -510,6 +512,26 @@ public class BbsArticleServiceImpl implements BbsArticleService {
                 .map(this::convertToDto);
     }
 
+    private Page<BbsArticleDto> toDtoPageWithArticleNumber(Page<BbsArticleDomain> articlesPage, Pageable pageable) {
+        long totalElements = articlesPage.getTotalElements();
+        int pageNumber = pageable.getPageNumber();
+        int pageSize = pageable.getPageSize();
+
+        List<BbsArticleDto> dtos = new ArrayList<>();
+        List<BbsArticleDomain> articles = articlesPage.getContent();
+        
+        for (int i = 0; i < articles.size(); i++) {
+            BbsArticleDomain article = articles.get(i);
+            BbsArticleDto dto = convertToDto(article);
+            
+            long articleNo = totalElements - ((long)pageNumber * pageSize + i);
+            dto.setNo((int) articleNo);
+            dtos.add(dto);
+        }
+
+        return new PageImpl<>(dtos, pageable, totalElements);
+    }
+    
     private BbsArticleDto convertToDto(BbsArticleDomain article) {
         if (article == null) {
             return null;
@@ -747,13 +769,11 @@ public class BbsArticleServiceImpl implements BbsArticleService {
 
         // If it's just a number string, assume it's a fileId directly (less likely for
         // src)
-        // try {
-        // return Long.parseLong(src);
-        // } catch (NumberFormatException e) {
-        // // Not a simple number
-        // }
-
-        log.debug("FileId could not be parsed from src: {}", src);
-        return null;
+        try {
+            return Long.parseLong(src);
+        } catch (NumberFormatException e) {
+            // Not a simple numeric string, so we can't parse it as a file ID directly
+            return null;
+        }
     }
 }
