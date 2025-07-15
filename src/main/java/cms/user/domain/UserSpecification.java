@@ -5,9 +5,6 @@ import javax.persistence.criteria.Predicate;
 import java.util.ArrayList;
 import java.util.List;
 
-import cms.user.domain.User;
-import cms.user.domain.UserRoleType;
-
 public class UserSpecification {
 
     public static Specification<User> search(String username, String name, String phone, String searchKeyword) {

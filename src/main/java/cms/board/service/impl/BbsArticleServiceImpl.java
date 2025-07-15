@@ -59,6 +59,20 @@ public class BbsArticleServiceImpl implements BbsArticleService {
     @Value("${app.api.base-url}")
     private String appApiBaseUrl;
 
+    // ✅ JSON 유효성 검사 헬퍼 메서드 추가
+    private boolean isValidJson(String json) {
+        if (json == null || json.trim().isEmpty()) {
+            return true; // 빈 문자열 또는 null은 유효한 JSON으로 간주 (오류를 발생시키지 않음)
+        }
+        try {
+            objectMapper.readTree(json);
+            return true;
+        } catch (IOException e) {
+            log.warn("Invalid JSON content detected: {}", e.getMessage());
+            return false;
+        }
+    }
+
     @Override
     @Transactional
     public BbsArticleDto createArticle(BbsArticleDto articleDto, String editorContentJson,
@@ -134,6 +148,14 @@ public class BbsArticleServiceImpl implements BbsArticleService {
         BbsArticleDomain savedArticle = bbsArticleRepository.save(article);
 
         String finalContentJson = articleDto.getContent();
+        // ✅ JSON 유효성 검사 추가
+        if (!isValidJson(finalContentJson)) {
+            log.warn(
+                    "[createArticle] Initial article content is not a valid JSON. Setting to empty string. Content: {}",
+                    finalContentJson);
+            finalContentJson = "";
+        }
+
         if (mediaFiles != null && !mediaFiles.isEmpty() && mediaLocalIdsArray.length > 0) {
             List<CmsFile> uploadedMediaFiles = fileService.uploadFiles(EDITOR_EMBEDDED_MEDIA, savedArticle.getNttId(),
                     mediaFiles);
@@ -286,6 +308,14 @@ public class BbsArticleServiceImpl implements BbsArticleService {
         }
 
         String finalContentJson = articleDto.getContent();
+        // ✅ JSON 유효성 검사 추가
+        if (!isValidJson(finalContentJson)) {
+            log.warn(
+                    "[updateArticle] Initial article content is not a valid JSON. Setting to empty string. Content: {}",
+                    finalContentJson);
+            finalContentJson = "";
+        }
+
         Map<String, Long> newUploadedLocalIdToFileIdMap = new HashMap<>();
 
         if (mediaFiles != null && !mediaFiles.isEmpty() && mediaLocalIdsArray.length > 0) {
@@ -311,16 +341,24 @@ public class BbsArticleServiceImpl implements BbsArticleService {
         Set<Long> referencedFileIdsInContent = extractFileIdsFromJson(finalContentJson);
         List<CmsFile> existingDbMediaFiles = fileService.getList(EDITOR_EMBEDDED_MEDIA, nttId, null);
 
-        for (CmsFile dbFile : existingDbMediaFiles) {
-            if (!referencedFileIdsInContent.contains(dbFile.getFileId())) {
-                try {
-                    fileService.deleteFile(dbFile.getFileId());
-                    log.info("Deleted unused embedded media file: {} from article: {}", dbFile.getFileId(), nttId);
-                } catch (Exception e) {
-                    log.error("Error deleting unused embedded media file: {} for article: {}. Error: {}",
-                            dbFile.getFileId(), nttId, e.getMessage());
+        // 안전장치: editorContentJson이 제공되지 않은 경우 기존 미디어 파일 삭제하지 않음
+        // editorContentJson 대신 finalContentJson을 사용하도록 변경
+        if (finalContentJson != null && !finalContentJson.trim().isEmpty()) {
+            for (CmsFile dbFile : existingDbMediaFiles) {
+                if (!referencedFileIdsInContent.contains(dbFile.getFileId())) {
+                    try {
+                        fileService.deleteFile(dbFile.getFileId());
+                        log.info("Deleted unused embedded media file: {} from article: {}", dbFile.getFileId(), nttId);
+                    } catch (Exception e) {
+                        log.error("Error deleting unused embedded media file: {} for article: {}. Error: {}",
+                                dbFile.getFileId(), nttId, e.getMessage());
+                    }
                 }
             }
+        } else {
+            log.debug(
+                    "No editor content provided (or invalid JSON), skipping orphaned media file deletion for article: {}",
+                    nttId);
         }
 
         if (attachments != null) {
@@ -519,19 +557,19 @@ public class BbsArticleServiceImpl implements BbsArticleService {
 
         List<BbsArticleDto> dtos = new ArrayList<>();
         List<BbsArticleDomain> articles = articlesPage.getContent();
-        
+
         for (int i = 0; i < articles.size(); i++) {
             BbsArticleDomain article = articles.get(i);
             BbsArticleDto dto = convertToDto(article);
-            
-            long articleNo = totalElements - ((long)pageNumber * pageSize + i);
+
+            long articleNo = totalElements - ((long) pageNumber * pageSize + i);
             dto.setNo((int) articleNo);
             dtos.add(dto);
         }
 
         return new PageImpl<>(dtos, pageable, totalElements);
     }
-    
+
     private BbsArticleDto convertToDto(BbsArticleDomain article) {
         if (article == null) {
             return null;
@@ -659,6 +697,7 @@ public class BbsArticleServiceImpl implements BbsArticleService {
                         Long fileId = localIdToFileIdMap.get(srcValue);
                         String newSrc = appApiBaseUrl + "/api/v1/cms/file/public/view/" + fileId;
                         objectNode.put("src", newSrc);
+                        objectNode.put("fileId", fileId); // ✅ fileId 필드 추가로 추출 로직 통일
                         log.debug("[traverseAndReplace] Replaced src '{}' with '{}' (File ID: {})", srcValue, newSrc,
                                 fileId);
                     } else {
@@ -679,7 +718,8 @@ public class BbsArticleServiceImpl implements BbsArticleService {
 
     private Set<Long> extractFileIdsFromJson(String jsonContent) {
         Set<Long> fileIds = new HashSet<>();
-        if (jsonContent == null || jsonContent.isEmpty()) {
+        if (jsonContent == null || jsonContent.trim().isEmpty()) {
+            log.debug("[extractFileIdsFromJson] JSON content is null or empty, returning empty set");
             return fileIds;
         }
         try {
@@ -691,12 +731,18 @@ public class BbsArticleServiceImpl implements BbsArticleService {
             } else if (rootNode.has("children")) {
                 traverseAndExtractFileIdsRecursive(rootNode.get("children"), fileIds);
             }
-            log.debug("[extractFileIdsFromJson] Extracted file IDs: {}", fileIds);
+            log.debug("[extractFileIdsFromJson] Extracted {} file IDs: {}", fileIds.size(), fileIds);
             return fileIds;
         } catch (IOException e) {
-            log.error("Error parsing JSON for extractFileIdsFromJson: {}", e.getMessage());
-            return fileIds;
+            log.error("[extractFileIdsFromJson] Error parsing JSON - content: '{}'. Error: {}",
+                    jsonContent.length() > 100 ? jsonContent.substring(0, 100) + "..." : jsonContent,
+                    e.getMessage(), e);
+            // JSON 파싱 실패 시 빈 Set 반환하여 기존 파일 보호
+        } catch (Exception e) {
+            log.error("[extractFileIdsFromJson] Unexpected error extracting file IDs from JSON. Error: {}",
+                    e.getMessage(), e);
         }
+        return fileIds;
     }
 
     private void traverseAndExtractFileIdsRecursive(JsonNode node, Set<Long> fileIds) {
@@ -709,12 +755,28 @@ public class BbsArticleServiceImpl implements BbsArticleService {
             if (objectNode.has("type") &&
                     ("image".equals(objectNode.get("type").asText())
                             || "video".equals(objectNode.get("type").asText()))) {
-                if (objectNode.has("src")) {
+
+                // 우선 fileId 필드에서 추출 시도 (새로운 방식)
+                boolean fileIdExtracted = false;
+                if (objectNode.has("fileId")) {
+                    try {
+                        Long fileId = objectNode.get("fileId").asLong();
+                        fileIds.add(fileId);
+                        log.debug("[traverseAndExtractFileIdsRecursive] Extracted fileId from field: {}", fileId);
+                        fileIdExtracted = true; // fileId 필드에서 성공적으로 추출
+                    } catch (Exception e) {
+                        log.warn("[traverseAndExtractFileIdsRecursive] Error parsing fileId field: {}", e.getMessage());
+                    }
+                }
+
+                // fileId 필드가 없거나 추출 실패 시 src에서 파싱 (기존 방식)
+                if (!fileIdExtracted && objectNode.has("src")) {
                     String srcValue = objectNode.get("src").asText();
                     if (srcValue != null && !srcValue.startsWith("blob:")) {
                         Long fileId = parseFileIdFromSrc(srcValue);
                         if (fileId != null) {
                             fileIds.add(fileId);
+                            log.debug("[traverseAndExtractFileIdsRecursive] Extracted fileId from src: {}", fileId);
                         } else {
                             log.warn("[traverseAndExtractFileIdsRecursive] Could not parse fileId from src: {}",
                                     srcValue);
@@ -735,6 +797,12 @@ public class BbsArticleServiceImpl implements BbsArticleService {
         if (src == null)
             return null;
 
+        // 🚨 SECURITY: Skip blob URLs only
+        if (src.startsWith("blob:")) {
+            log.debug("Skipping blob URL: {}", src);
+            return null;
+        }
+
         // Handle "fileId:123" pattern (for backward compatibility if ever used)
         String fileIdPrefix = "fileId:";
         if (src.startsWith(fileIdPrefix)) {
@@ -747,7 +815,7 @@ public class BbsArticleServiceImpl implements BbsArticleService {
         }
 
         // Handle full URL pattern like "http://.../api/v1/cms/file/public/view/123"
-        // A more robust way might involve java.net.URI if URLs can be complex
+        // Support both internal and external domains (help.handylab.co.kr)
         String viewPathSegment = "/api/v1/cms/file/public/view/";
         int lastSegmentIndex = src.lastIndexOf(viewPathSegment);
 
@@ -758,7 +826,9 @@ public class BbsArticleServiceImpl implements BbsArticleService {
             String numericId = potentialIdWithPath.split("[^0-9]")[0];
             if (!numericId.isEmpty()) {
                 try {
-                    return Long.parseLong(numericId);
+                    Long fileId = Long.parseLong(numericId);
+                    log.debug("Successfully parsed fileId {} from src: {}", fileId, src);
+                    return fileId;
                 } catch (NumberFormatException e) {
                     log.warn("Could not parse numeric fileId from URL segment: {}. Original src: {}", numericId, src,
                             e);

@@ -93,6 +93,9 @@ public class Enroll {
     @ColumnDefault("0")
     private boolean lockerAllocated;
 
+    @Column(name = "locker_no", length = 255)
+    private String lockerNo;
+
     @Column(name = "locker_pg_token", length = 100)
     private String lockerPgToken;
 

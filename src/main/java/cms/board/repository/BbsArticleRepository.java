@@ -62,4 +62,7 @@ public interface BbsArticleRepository extends JpaRepository<BbsArticleDomain, Lo
         @Query("SELECT count(a) FROM BbsArticleDomain a WHERE a.bbsMaster.bbsId = :bbsId AND a.menu.id = :menuId AND (a.title LIKE %:keyword% OR a.content LIKE %:keyword% OR a.writer LIKE %:keyword% OR FUNCTION('TO_CHAR', a.createdAt, 'YYYY-MM-DD') LIKE %:keyword%) AND a.publishState IN ('Y', 'P') AND a.noticeState <> :noticeState")
         long countByBbsIdAndMenuIdAndKeywordAndNoticeStateNot(@Param("bbsId") Long bbsId, @Param("menuId") Long menuId,
                         @Param("keyword") String keyword, @Param("noticeState") String noticeState);
+
+        @Query("SELECT a.nttId, a.content FROM BbsArticleDomain a WHERE a.content LIKE '%/api/v1/cms/file/public/view/%' ORDER BY a.createdAt DESC")
+        List<Object[]> findSampleArticlesWithImages(Pageable pageable);
 }

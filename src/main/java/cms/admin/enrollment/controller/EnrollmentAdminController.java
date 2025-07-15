@@ -27,6 +27,7 @@ import cms.admin.enrollment.dto.DiscountStatusUpdateRequestDto;
 import cms.admin.enrollment.dto.CalculatedRefundDetailsDto;
 import cms.admin.enrollment.dto.ManualUsedDaysRequestDto;
 import cms.admin.enrollment.model.dto.TemporaryEnrollmentRequestDto;
+import cms.admin.enrollment.dto.UpdateLockerNoRequestDto;
 
 import org.springframework.http.HttpStatus;
 
@@ -125,6 +126,16 @@ public class EnrollmentAdminController {
         EnrollAdminResponseDto updatedEnrollment = enrollmentAdminService.updateEnrollmentDiscountStatus(enrollId,
                 request);
         return ResponseEntity.ok(ApiResponseSchema.success(updatedEnrollment, "신청 건 할인 상태 변경 성공"));
+    }
+
+    @Operation(summary = "수강 신청 사물함 번호 수정", description = "특정 수강 신청 정보에 연결된 사물함 번호를 수정하거나 할당 해제합니다.")
+    @PutMapping("/{enrollId}/locker-no")
+    public ResponseEntity<ApiResponseSchema<EnrollAdminResponseDto>> updateLockerNo(
+            @Parameter(description = "수정할 대상 수강 신청의 고유 ID") @PathVariable Long enrollId,
+            @RequestBody UpdateLockerNoRequestDto request) {
+        EnrollAdminResponseDto updatedEnrollment = enrollmentAdminService.updateLockerNo(enrollId,
+                request.getLockerNo());
+        return ResponseEntity.ok(ApiResponseSchema.success(updatedEnrollment, "사물함 번호가 성공적으로 업데이트되었습니다."));
     }
 
     @Operation(summary = "취소 요청 승인 (환불액 직접 지정 가능)", description = "사용자의 취소 요청을 승인하고 환불 절차를 시작합니다. 관리자는 실사용일수, 최종 환불액, 전액 환불 여부를 직접 지정하여 시스템 계산을 무시할 수 있습니다.")
