@@ -40,15 +40,15 @@
 
 ### 다. 쿼리 파라미터 (Query Parameters)
 
-| Parameter   | Type   | 필수   | 설명                                          | 형식         |
-| :---------- | :----- | :----- | :-------------------------------------------- | :----------- |
-| `startDate` | String | **예** | 조회할 기간의 시작일. 해당 날짜를 포함합니다. | `YYYY-MM-DD` |
-| `endDate`   | String | **예** | 조회할 기간의 종료일. 해당 날짜를 포함합니다. | `YYYY-MM-DD` |
+| Parameter   | Type     | 필수   | 설명                                                          | 형식                  |
+| :---------- | :------- | :----- | :------------------------------------------------------------ | :-------------------- |
+| `startDate` | `String` | **예** | 조회할 기간의 시작 일시. 해당 시점을 포함합니다.              | `YYYY-MM-DDTHH:mm:ss` |
+| `endDate`   | `String` | **예** | 조회할 기간의 종료 일시. 해당 시점까지의 데이터를 포함합니다. | `YYYY-MM-DDTHH:mm:ss` |
 
 **요청 예시 URL:**
 
 ```
-https://help.handylab.co.kr/api/v1/external/payment-data?startDate=2023-10-01&endDate=2023-10-31
+https://help.handylab.co.kr/api/v1/external/payment-data?startDate=2023-10-01T00:00:00&endDate=2023-10-31T23:59:59
 ```
 
 ---
@@ -162,8 +162,9 @@ public class ApiClient {
     private static final String API_KEY = "여기에_발급받은_API_KEY를_입력하세요";
 
     public static void main(String[] args) {
-        String startDate = "2023-10-01";
-        String endDate = "2023-10-31";
+        // 조회할 기간 설정 (시간 포함)
+        String startDate = "2023-10-01T00:00:00";
+        String endDate = "2023-10-31T23:59:59";
 
         try {
             String responseBody = getPaymentData(startDate, endDate);
@@ -248,8 +249,9 @@ async function getPaymentData(startDate, endDate) {
 
 // API 호출 실행
 (async () => {
-  const startDate = "2023-10-01";
-  const endDate = "2023-10-31";
+  // 조회할 기간 설정 (시간 포함)
+  const startDate = "2023-10-01T00:00:00";
+  const endDate = "2023-10-31T23:59:59";
 
   try {
     const data = await getPaymentData(startDate, endDate);
@@ -304,8 +306,9 @@ def get_payment_data(start_date, end_date):
     return None
 
 if __name__ == "__main__":
-    start_date = "2023-10-01"
-    end_date = "2023-10-31"
+    # 조회할 기간 설정 (시간 포함)
+    start_date = "2023-10-01T00:00:00"
+    end_date = "2023-10-31T23:59:59"
 
     payment_data = get_payment_data(start_date, end_date)
 

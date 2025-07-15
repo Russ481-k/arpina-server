@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Tag(name = "External API", description = "외부 업체 연동 API")
 @RestController
@@ -26,8 +26,8 @@ public class ExternalApiController {
     @GetMapping("/payment-data")
     @Operation(summary = "결제 데이터 조회", description = "지정된 기간 내의 결제, 신청, 사용자 데이터를 조회합니다.")
     public ResponseEntity<PaymentDataResponse> getPaymentData(
-            @Parameter(description = "조회 시작일 (YYYY-MM-DD)", required = true) @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
-            @Parameter(description = "조회 종료일 (YYYY-MM-DD)", required = true) @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+            @Parameter(description = "조회 시작일시 (YYYY-MM-DD'T'HH:mm:ss)", required = true) @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
+            @Parameter(description = "조회 종료일시 (YYYY-MM-DD'T'HH:mm:ss)", required = true) @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate) {
 
         PaymentDataResponse response = externalApiService.getPaymentDataByPeriod(startDate, endDate);
         return ResponseEntity.ok(response);

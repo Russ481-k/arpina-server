@@ -1,8 +1,8 @@
 package cms.external.service;
 
 import cms.external.dto.PaymentDataResponse;
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 public interface ExternalApiService {
-    PaymentDataResponse getPaymentDataByPeriod(LocalDate startDate, LocalDate endDate);
+    PaymentDataResponse getPaymentDataByPeriod(LocalDateTime startDate, LocalDateTime endDate);
 }

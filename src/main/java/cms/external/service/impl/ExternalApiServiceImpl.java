@@ -11,7 +11,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -23,7 +23,7 @@ public class ExternalApiServiceImpl implements ExternalApiService {
     private final PaymentRepository paymentRepository;
 
     @Override
-    public PaymentDataResponse getPaymentDataByPeriod(LocalDate startDate, LocalDate endDate) {
+    public PaymentDataResponse getPaymentDataByPeriod(LocalDateTime startDate, LocalDateTime endDate) {
         Specification<Payment> spec = PaymentSpecification.paidAtBetween(startDate, endDate);
         List<Payment> payments = paymentRepository.findAll(spec);
 

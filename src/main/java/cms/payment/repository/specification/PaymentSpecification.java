@@ -17,7 +17,7 @@ import cms.lesson.domain.Lesson;
 
 public class PaymentSpecification {
 
-    public static Specification<Payment> paidAtBetween(LocalDate startDate, LocalDate endDate) {
+    public static Specification<Payment> paidAtBetween(LocalDateTime startDateTime, LocalDateTime endDateTime) {
         return (root, query, criteriaBuilder) -> {
             // N+1 문제 해결을 위한 Fetch Join
             if (query.getResultType() != Long.class && query.getResultType() != long.class) {
@@ -25,8 +25,6 @@ public class PaymentSpecification {
                 root.fetch("enroll", JoinType.LEFT).fetch("lesson", JoinType.LEFT);
             }
 
-            LocalDateTime startDateTime = startDate.atStartOfDay();
-            LocalDateTime endDateTime = endDate.atTime(LocalTime.MAX);
             return criteriaBuilder.between(root.get("paidAt"), startDateTime, endDateTime);
         };
     }
