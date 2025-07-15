@@ -17,6 +17,20 @@ import cms.lesson.domain.Lesson;
 
 public class PaymentSpecification {
 
+    public static Specification<Payment> paidAtBetween(LocalDate startDate, LocalDate endDate) {
+        return (root, query, criteriaBuilder) -> {
+            // N+1 문제 해결을 위한 Fetch Join
+            if (query.getResultType() != Long.class && query.getResultType() != long.class) {
+                root.fetch("enroll", JoinType.LEFT).fetch("user", JoinType.LEFT);
+                root.fetch("enroll", JoinType.LEFT).fetch("lesson", JoinType.LEFT);
+            }
+
+            LocalDateTime startDateTime = startDate.atStartOfDay();
+            LocalDateTime endDateTime = endDate.atTime(LocalTime.MAX);
+            return criteriaBuilder.between(root.get("paidAt"), startDateTime, endDateTime);
+        };
+    }
+
     public static Specification<Payment> filterByAdminCriteria(Long lessonId, Long enrollId, String userId, String tid,
             LocalDate startDate, LocalDate endDate, PaymentStatus status) {
         return (root, query, criteriaBuilder) -> {
@@ -45,14 +59,10 @@ public class PaymentSpecification {
                 predicates.add(criteriaBuilder.equal(root.get("status"), status));
             }
 
-            if (startDate != null) {
-                predicates.add(criteriaBuilder.greaterThanOrEqualTo(root.get("paidAt"),
-                        LocalDateTime.of(startDate, LocalTime.MIN)));
-            }
-
-            if (endDate != null) {
-                predicates.add(criteriaBuilder.lessThanOrEqualTo(root.get("paidAt"),
-                        LocalDateTime.of(endDate, LocalTime.MAX)));
+            if (startDate != null && endDate != null) {
+                LocalDateTime startDateTime = startDate.atStartOfDay();
+                LocalDateTime endDateTime = endDate.atTime(LocalTime.MAX);
+                predicates.add(criteriaBuilder.between(root.get("paidAt"), startDateTime, endDateTime));
             }
 
             if (query.getResultType().equals(Payment.class) && query.getOrderList().isEmpty()) {

@@ -128,6 +128,15 @@ logging:
       max-file-size: ${LOG_MAX_FILE_SIZE:10MB}
       max-history: ${LOG_MAX_HISTORY:30}
 
+external-api:
+  security:
+    api-key: ${EXTERNAL_API_KEY}
+    whitelist-ips: ${EXTERNAL_API_WHITELIST_IPS}
+
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+
 springdoc:
   version: v4.2.0
   swagger-ui:
