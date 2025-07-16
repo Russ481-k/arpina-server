@@ -30,6 +30,7 @@ public class BbsArticleController {
     public ResponseEntity<ApiResponseSchema<Page<BbsArticleDto>>> getArticles(
             @RequestParam Long bbsId,
             @RequestParam Long menuId,
+            @RequestParam(required = false) Long categoryId,
             @RequestParam(required = false) String keyword,
             Pageable pageable,
             Authentication authentication) {
@@ -41,6 +42,8 @@ public class BbsArticleController {
         Page<BbsArticleDto> articles;
         if (keyword != null && !keyword.trim().isEmpty()) {
             articles = bbsArticleService.searchArticles(bbsId, menuId, keyword, pageable, isAdmin);
+        } else if (categoryId != null) {
+            articles = bbsArticleService.getArticles(bbsId, menuId, categoryId, pageable, isAdmin);
         } else {
             articles = bbsArticleService.getArticles(bbsId, menuId, pageable, isAdmin);
         }

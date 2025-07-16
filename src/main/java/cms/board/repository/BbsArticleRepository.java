@@ -55,6 +55,14 @@ public interface BbsArticleRepository extends JpaRepository<BbsArticleDomain, Lo
         @Query("SELECT a FROM BbsArticleDomain a WHERE a.menu.id = :menuId AND a.publishState IN ('Y', 'P') ORDER BY a.noticeState DESC, a.postedAt DESC")
         Page<BbsArticleDomain> findByMenuId(@Param("menuId") Long menuId, Pageable pageable);
 
+        @Query("SELECT a FROM BbsArticleDomain a JOIN a.categories ac WHERE a.bbsMaster.bbsId = :bbsId AND a.menu.id = :menuId AND ac.category.categoryId = :categoryId AND a.publishState IN ('Y', 'P') ORDER BY a.noticeState DESC, a.postedAt DESC")
+        Page<BbsArticleDomain> findPublishedByBbsIdAndMenuIdAndCategoryId(@Param("bbsId") Long bbsId,
+                        @Param("menuId") Long menuId, @Param("categoryId") Long categoryId, Pageable pageable);
+
+        @Query("SELECT a FROM BbsArticleDomain a JOIN a.categories ac WHERE a.bbsMaster.bbsId = :bbsId AND a.menu.id = :menuId AND ac.category.categoryId = :categoryId ORDER BY a.noticeState DESC, a.postedAt DESC")
+        Page<BbsArticleDomain> findAllByBbsIdAndMenuIdAndCategoryId(@Param("bbsId") Long bbsId,
+                        @Param("menuId") Long menuId, @Param("categoryId") Long categoryId, Pageable pageable);
+
         @Query("SELECT count(a) FROM BbsArticleDomain a WHERE a.bbsMaster.bbsId = :bbsId AND a.menu.id = :menuId AND a.noticeState <> :noticeState AND a.publishState IN ('Y', 'P')")
         long countByBbsIdAndMenuIdAndNoticeStateNot(@Param("bbsId") Long bbsId, @Param("menuId") Long menuId,
                         @Param("noticeState") String noticeState);
