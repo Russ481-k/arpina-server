@@ -8,6 +8,8 @@ import javax.persistence.*;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "bbs_article", indexes = {
@@ -103,6 +105,10 @@ public class BbsArticleDomain {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "menu_id", nullable = false)
     private cms.menu.domain.Menu menu;
+
+    @OneToMany(mappedBy = "article", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @Builder.Default
+    private List<BbsArticleCategoryDomain> categories = new ArrayList<>();
 
     public void update(String writer, String title, String content, String noticeState,
             LocalDateTime noticeStartDt, LocalDateTime noticeEndDt, String publishState,

@@ -1,9 +1,14 @@
 package cms.board.service.impl;
 
+import cms.board.domain.BbsArticleCategoryDomain;
 import cms.board.domain.BbsArticleDomain;
+import cms.board.domain.BbsCategoryDomain;
 import cms.board.domain.BbsMasterDomain;
 import cms.board.dto.BbsArticleDto;
+import cms.board.dto.BbsCategoryDto;
+import cms.board.repository.BbsArticleCategoryRepository;
 import cms.board.repository.BbsArticleRepository;
+import cms.board.repository.BbsCategoryRepository;
 import cms.board.repository.BbsMasterRepository;
 import cms.board.service.BbsArticleService;
 import cms.common.exception.BbsArticleNotFoundException;
@@ -14,8 +19,8 @@ import cms.common.exception.FilePolicyViolationException;
 import cms.file.service.FileService;
 import cms.file.entity.CmsFile;
 import cms.file.dto.AttachmentInfoDto;
-import cms.menu.repository.MenuRepository;
 import cms.menu.domain.Menu;
+import cms.menu.repository.MenuRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -52,6 +57,8 @@ public class BbsArticleServiceImpl implements BbsArticleService {
 
     private final BbsArticleRepository bbsArticleRepository;
     private final BbsMasterRepository bbsMasterRepository;
+    private final BbsCategoryRepository bbsCategoryRepository;
+    private final BbsArticleCategoryRepository bbsArticleCategoryRepository;
     private final MenuRepository menuRepository;
     private final FileService fileService;
     private final ObjectMapper objectMapper;
@@ -145,7 +152,22 @@ public class BbsArticleServiceImpl implements BbsArticleService {
                 .displayWriter(articleDto.getDisplayWriter())
                 .build();
 
+        // 주의: 먼저 게시글을 저장하여 ID를 생성해야 함
         BbsArticleDomain savedArticle = bbsArticleRepository.save(article);
+
+        // 카테고리 처리
+        if (articleDto.getCategoryIds() != null && !articleDto.getCategoryIds().isEmpty()) {
+            List<BbsCategoryDomain> categories = bbsCategoryRepository.findAllById(articleDto.getCategoryIds());
+            List<BbsArticleCategoryDomain> articleCategories = categories.stream()
+                    .map(category -> BbsArticleCategoryDomain.builder()
+                            .article(savedArticle)
+                            .category(category)
+                            .id(new BbsArticleCategoryDomain.BbsArticleCategoryId(savedArticle.getNttId(),
+                                    category.getCategoryId()))
+                            .build())
+                    .collect(Collectors.toList());
+            bbsArticleCategoryRepository.saveAll(articleCategories);
+        }
 
         String finalContentJson = articleDto.getContent();
         // ✅ JSON 유효성 검사 추가
@@ -377,6 +399,21 @@ public class BbsArticleServiceImpl implements BbsArticleService {
             }
         }
 
+        // 카테고리 업데이트: 기존 연결을 모두 삭제하고 새로 추가
+        bbsArticleCategoryRepository.deleteByArticleNttId(nttId);
+        if (articleDto.getCategoryIds() != null && !articleDto.getCategoryIds().isEmpty()) {
+            List<BbsCategoryDomain> categories = bbsCategoryRepository.findAllById(articleDto.getCategoryIds());
+            List<BbsArticleCategoryDomain> articleCategories = categories.stream()
+                    .map(category -> BbsArticleCategoryDomain.builder()
+                            .article(article)
+                            .category(category)
+                            .id(new BbsArticleCategoryDomain.BbsArticleCategoryId(article.getNttId(),
+                                    category.getCategoryId()))
+                            .build())
+                    .collect(Collectors.toList());
+            bbsArticleCategoryRepository.saveAll(articleCategories);
+        }
+
         article.update(
                 articleDto.getWriter(),
                 articleDto.getTitle(),
@@ -405,6 +442,11 @@ public class BbsArticleServiceImpl implements BbsArticleService {
         BbsArticleDomain article = bbsArticleRepository.findById(nttId)
                 .orElseThrow(() -> new BbsArticleNotFoundException(nttId));
 
+        // 카테고리 연결 정보 삭제 (JPA의 orphanRemoval=true 또는 DB의 ON DELETE CASCADE로 자동 처리될 수 있지만
+        // 명시적으로 삭제)
+        bbsArticleCategoryRepository.deleteByArticleNttId(nttId);
+
+        // 첨부파일 삭제
         List<CmsFile> attachedFiles = fileService.getList(ARTICLE_ATTACHMENT_MENU_TYPE, nttId, null);
         for (CmsFile file : attachedFiles) {
             try {
@@ -441,6 +483,21 @@ public class BbsArticleServiceImpl implements BbsArticleService {
             articlesPage = bbsArticleRepository.findAllByBbsIdAndMenuId(bbsId, menuId, pageable);
         } else {
             articlesPage = bbsArticleRepository.findPublishedByBbsIdAndMenuId(bbsId, menuId, pageable);
+        }
+        return toDtoPageWithArticleNumber(articlesPage, pageable);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<BbsArticleDto> getArticles(Long bbsId, Long menuId, Long categoryId, Pageable pageable,
+            boolean isAdmin) {
+        Page<BbsArticleDomain> articlesPage;
+        if (isAdmin) {
+            articlesPage = bbsArticleRepository.findAllByBbsIdAndMenuIdAndCategoryId(bbsId, menuId, categoryId,
+                    pageable);
+        } else {
+            articlesPage = bbsArticleRepository.findPublishedByBbsIdAndMenuIdAndCategoryId(bbsId, menuId, categoryId,
+                    pageable);
         }
         return toDtoPageWithArticleNumber(articlesPage, pageable);
     }
@@ -602,6 +659,15 @@ public class BbsArticleServiceImpl implements BbsArticleService {
             }
         }
 
+        List<BbsCategoryDto> categoryDtos = article.getCategories().stream()
+                .map(BbsArticleCategoryDomain::getCategory)
+                .map(category -> BbsCategoryDto.builder()
+                        .categoryId(category.getCategoryId())
+                        .code(category.getCode())
+                        .name(category.getName())
+                        .build())
+                .collect(Collectors.toList());
+
         String skinTypeName = null;
         if (article.getBbsMaster() != null && article.getBbsMaster().getSkinType() != null) {
             skinTypeName = article.getBbsMaster().getSkinType().name();
@@ -637,6 +703,7 @@ public class BbsArticleServiceImpl implements BbsArticleService {
                 .attachments(attachmentInfos)
                 .skinType(skinTypeName)
                 .menuId(menuDomainId)
+                .categories(categoryDtos)
                 .build();
     }
 

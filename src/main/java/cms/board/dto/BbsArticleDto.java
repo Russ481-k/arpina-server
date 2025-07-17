@@ -106,4 +106,10 @@ public class BbsArticleDto {
 
     @Schema(description = "이미지 ID 목록")
     private List<Long> imageIds;
+
+    @Schema(description = "카테고리 ID 목록 (입력용)")
+    private List<Long> categoryIds;
+
+    @Schema(description = "카테고리 정보 목록 (출력용)")
+    private List<BbsCategoryDto> categories;
 }
