@@ -67,7 +67,9 @@ public class FileServiceImpl implements FileService {
                     Files.createDirectories(targetDirectory);
                     Path targetLocation = targetDirectory.resolve(uuidFileName);
 
-                    Files.copy(file.getInputStream(), targetLocation, StandardCopyOption.REPLACE_EXISTING);
+                    try (java.io.InputStream inputStream = file.getInputStream()) {
+                        Files.copy(inputStream, targetLocation, StandardCopyOption.REPLACE_EXISTING);
+                    }
 
                     CmsFile fileEntity = new CmsFile();
                     fileEntity.setMenu(menu); // "BBS", "CONTENT" 등

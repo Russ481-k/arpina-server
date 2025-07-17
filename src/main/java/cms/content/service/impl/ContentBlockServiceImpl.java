@@ -23,9 +23,17 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import cms.common.exception.ResourceNotFoundException;
+
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 import javax.persistence.EntityNotFoundException;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
+import cms.content.domain.ContentBlockFile;
+import cms.content.repository.ContentBlockFileRepository;
 
 @Service
 @RequiredArgsConstructor
@@ -36,6 +44,8 @@ public class ContentBlockServiceImpl implements ContentBlockService {
     private final MenuRepository menuRepository;
     private final FileRepository fileRepository;
     private final ContentBlockHistoryRepository historyRepository;
+    private final ContentBlockFileRepository contentBlockFileRepository;
+    private final ObjectMapper objectMapper;
     private static final int MAX_HISTORY_COUNT = 10;
 
     @Override
@@ -61,8 +71,6 @@ public class ContentBlockServiceImpl implements ContentBlockService {
     public ContentBlockResponse createContentBlock(Long menuId, ContentBlockCreateRequest request) {
         Menu menu = menuRepository.findById(menuId)
                 .orElseThrow(() -> new ResourceNotFoundException("Menu", menuId));
-
-        CmsFile file = findFileById(request.getFileId());
         String currentUsername = getCurrentUsername();
         String clientIp = IpUtil.getClientIp();
 
@@ -70,18 +78,22 @@ public class ContentBlockServiceImpl implements ContentBlockService {
                 .menu(menu)
                 .type(request.getType())
                 .content(request.getContent())
-                .file(file)
                 .sortOrder(request.getSortOrder())
                 .createdBy(currentUsername)
                 .createdIp(clientIp)
                 .build();
 
-        return new ContentBlockResponse(contentBlockRepository.save(contentBlock));
+        ContentBlock savedContentBlock = contentBlockRepository.save(contentBlock);
+
+        if (request.getFileIds() != null && !request.getFileIds().isEmpty()) {
+            associateFilesToContentBlock(savedContentBlock, request.getFileIds());
+        }
+
+        return new ContentBlockResponse(findContentBlockById(savedContentBlock.getId()));
     }
 
     @Override
     public ContentBlockResponse createContentBlockForMainPage(ContentBlockCreateRequest request) {
-        CmsFile file = findFileById(request.getFileId());
         String currentUsername = getCurrentUsername();
         String clientIp = IpUtil.getClientIp();
 
@@ -89,25 +101,37 @@ public class ContentBlockServiceImpl implements ContentBlockService {
                 .menu(null) // 메인 페이지 콘텐츠는 메뉴가 없음
                 .type(request.getType())
                 .content(request.getContent())
-                .file(file)
                 .sortOrder(request.getSortOrder())
                 .createdBy(currentUsername)
                 .createdIp(clientIp)
                 .build();
 
-        return new ContentBlockResponse(contentBlockRepository.save(contentBlock));
+        ContentBlock savedContentBlock = contentBlockRepository.save(contentBlock);
+
+        if (request.getFileIds() != null && !request.getFileIds().isEmpty()) {
+            associateFilesToContentBlock(savedContentBlock, request.getFileIds());
+        }
+
+        return new ContentBlockResponse(findContentBlockById(savedContentBlock.getId()));
     }
 
     @Override
     public ContentBlockResponse updateContentBlock(Long contentId, ContentBlockUpdateRequest request) {
         ContentBlock contentBlock = findContentBlockById(contentId);
-        createHistory(contentBlock); // 현재 상태를 히스토리에 저장
+        createHistory(contentBlock);
 
-        CmsFile file = findFileById(request.getFileId());
         String currentUsername = getCurrentUsername();
         String clientIp = IpUtil.getClientIp();
 
-        contentBlock.update(request.getType(), request.getContent(), file, currentUsername, clientIp);
+        contentBlock.update(request.getType(), request.getContent(), currentUsername, clientIp);
+
+        // orphanRemoval=true 옵션에 따라 아래 로직이 기존 관계를 자동으로 삭제하고 새로 설정함
+        if (request.getFileIds() != null && !request.getFileIds().isEmpty()) {
+            associateFilesToContentBlock(contentBlock, request.getFileIds());
+        } else {
+            contentBlock.getFiles().clear(); // 모든 파일 관계를 제거
+        }
+
         contentBlock.increaseVersion();
 
         return new ContentBlockResponse(contentBlockRepository.save(contentBlock));
@@ -145,31 +169,39 @@ public class ContentBlockServiceImpl implements ContentBlockService {
     public ContentBlockResponse restoreFromHistory(Long historyId) {
         ContentBlockHistory history = findHistoryById(historyId);
         ContentBlock contentBlock = history.getContentBlock();
-        createHistory(contentBlock); // 복원 전 현재 상태를 히스토리에 저장
+        createHistory(contentBlock);
 
-        CmsFile file = findFileById(history.getFileId());
         String currentUsername = getCurrentUsername();
         String clientIp = IpUtil.getClientIp();
 
-        contentBlock.restore(history, file, currentUsername, clientIp);
+        contentBlock.restore(history, currentUsername, clientIp);
+
+        List<Long> fileIds = parseFileIdsFromJson(history.getFileIdsJson());
+        if (fileIds != null && !fileIds.isEmpty()) {
+            associateFilesToContentBlock(contentBlock, fileIds);
+        } else {
+            contentBlock.getFiles().clear();
+        }
+
         contentBlock.increaseVersion();
 
         return new ContentBlockResponse(contentBlockRepository.save(contentBlock));
     }
 
     private void createHistory(ContentBlock contentBlock) {
+        String fileIdsJson = serializeFileIdsToJson(contentBlock.getFiles());
+
         ContentBlockHistory history = ContentBlockHistory.builder()
                 .contentBlock(contentBlock)
                 .version(contentBlock.getVersion())
                 .type(contentBlock.getType())
                 .content(contentBlock.getContent())
-                .fileId(contentBlock.getFile() != null ? contentBlock.getFile().getFileId() : null)
+                .fileIdsJson(fileIdsJson)
                 .createdBy(getCurrentUsername())
                 .createdIp(IpUtil.getClientIp())
                 .build();
         historyRepository.save(history);
 
-        // 히스토리 개수 관리
         long historyCount = historyRepository.countByContentBlock_Id(contentBlock.getId());
         if (historyCount > MAX_HISTORY_COUNT) {
             historyRepository.findFirstByContentBlock_IdOrderByVersionAsc(contentBlock.getId())
@@ -177,10 +209,61 @@ public class ContentBlockServiceImpl implements ContentBlockService {
         }
     }
 
+    private void associateFilesToContentBlock(ContentBlock contentBlock, List<Long> fileIds) {
+        String currentUsername = getCurrentUsername();
+        String clientIp = IpUtil.getClientIp();
+
+        List<ContentBlockFile> newFiles = new ArrayList<>();
+        for (int i = 0; i < fileIds.size(); i++) {
+            Long fileId = fileIds.get(i);
+            CmsFile file = findFileById(fileId);
+            newFiles.add(ContentBlockFile.builder()
+                    .contentBlock(contentBlock)
+                    .file(file)
+                    .sortOrder(i)
+                    .createdBy(currentUsername)
+                    .createdIp(clientIp)
+                    .build());
+        }
+
+        // Jpa a CascadeType.ALL 및 orphanRemoval=true 옵션을 활용하기 위해
+        // 리포지토리를 직접 호출하는 대신, 부모 엔티티의 컬렉션을 수정합니다.
+        contentBlock.getFiles().clear();
+        contentBlock.getFiles().addAll(newFiles);
+    }
+
+    private String serializeFileIdsToJson(List<ContentBlockFile> files) {
+        if (files == null || files.isEmpty()) {
+            return "[]";
+        }
+        List<Long> fileIds = files.stream()
+                .map(cbf -> cbf.getFile().getFileId())
+                .collect(Collectors.toList());
+        try {
+            return objectMapper.writeValueAsString(fileIds);
+        } catch (JsonProcessingException e) {
+            // 로깅 및 예외 처리
+            return "[]";
+        }
+    }
+
+    private List<Long> parseFileIdsFromJson(String json) {
+        if (json == null || json.isEmpty()) {
+            return Collections.emptyList();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<Long>>() {
+            });
+        } catch (JsonProcessingException e) {
+            // 로깅 및 예외 처리
+            return Collections.emptyList();
+        }
+    }
+
     // --- Helper Methods ---
 
     private ContentBlock findContentBlockById(Long contentId) {
-        return contentBlockRepository.findById(contentId)
+        return contentBlockRepository.findByIdWithFiles(contentId)
                 .orElseThrow(() -> new ContentBlockNotFoundException(contentId));
     }
 

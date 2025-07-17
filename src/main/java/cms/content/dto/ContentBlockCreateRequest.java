@@ -6,6 +6,7 @@ import lombok.Setter;
 
 import javax.validation.constraints.NotEmpty;
 import javax.validation.constraints.NotNull;
+import java.util.List;
 
 @Getter
 @Setter
@@ -17,7 +18,7 @@ public class ContentBlockCreateRequest {
 
     private String content;
 
-    private Long fileId;
+    private List<Long> fileIds;
 
     @NotNull
     private Integer sortOrder;

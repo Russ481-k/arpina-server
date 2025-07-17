@@ -1,35 +1,54 @@
 package cms.content.dto;
 
 import cms.content.domain.ContentBlockHistory;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.AllArgsConstructor;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.Collections;
+import java.util.List;
 
 @Getter
+@NoArgsConstructor
+@AllArgsConstructor
 public class ContentBlockHistoryResponse {
-    private final Long id;
-    private final int version;
-    private final String type;
-    private final String content;
-    private final Long fileId;
-    private final LocalDateTime createdDate;
-    private final String createdBy;
-    private final String createdIp;
-    private final LocalDateTime updatedDate;
-    private final String updatedBy;
-    private final String updatedIp;
+
+    private Long id;
+    private int version;
+    private String type;
+    private String content;
+    private List<Long> fileIds;
+    private LocalDateTime createdDate;
+    private String createdBy;
 
     public ContentBlockHistoryResponse(ContentBlockHistory history) {
         this.id = history.getId();
         this.version = history.getVersion();
         this.type = history.getType();
         this.content = history.getContent();
-        this.fileId = history.getFileId();
         this.createdDate = history.getCreatedDate();
         this.createdBy = history.getCreatedBy();
-        this.createdIp = history.getCreatedIp();
-        this.updatedDate = history.getUpdatedDate();
-        this.updatedBy = history.getUpdatedBy();
-        this.updatedIp = history.getUpdatedIp();
+        this.fileIds = parseFileIdsFromJson(history.getFileIdsJson());
+    }
+
+    private List<Long> parseFileIdsFromJson(String json) {
+        if (json == null || json.isEmpty()) {
+            return Collections.emptyList();
+        }
+        try {
+            // ObjectMapper를 정적 유틸리티나 주입을 통해 재사용하는 것이 좋습니다.
+            // 여기서는 간단하게 new로 생성합니다.
+            ObjectMapper objectMapper = new ObjectMapper();
+            return objectMapper.readValue(json, new TypeReference<List<Long>>() {
+            });
+        } catch (JsonProcessingException e) {
+            // 실제 프로덕션 코드에서는 로깅을 추가해야 합니다.
+            e.printStackTrace();
+            return Collections.emptyList();
+        }
     }
 }

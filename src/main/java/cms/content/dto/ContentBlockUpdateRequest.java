@@ -5,6 +5,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import javax.validation.constraints.NotEmpty;
+import java.util.List;
 
 @Getter
 @Setter
@@ -16,5 +17,5 @@ public class ContentBlockUpdateRequest {
 
     private String content;
 
-    private Long fileId;
+    private List<Long> fileIds;
 }

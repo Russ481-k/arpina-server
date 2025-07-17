@@ -26,7 +26,7 @@ public class ContentBlock {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "menu_id")
     private Menu menu;
 
@@ -36,9 +36,9 @@ public class ContentBlock {
     @Lob
     private String content;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "file_id")
-    private CmsFile file;
+    @OneToMany(mappedBy = "contentBlock", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("sortOrder ASC")
+    private List<ContentBlockFile> files = new ArrayList<>();
 
     @Column(name = "sort_order", nullable = false)
     private int sortOrder;
@@ -71,12 +71,10 @@ public class ContentBlock {
     private String updatedIp;
 
     @Builder
-    public ContentBlock(Menu menu, String type, String content, CmsFile file, int sortOrder, String createdBy,
-            String createdIp) {
+    public ContentBlock(Menu menu, String type, String content, int sortOrder, String createdBy, String createdIp) {
         this.menu = menu;
         this.type = type;
         this.content = content;
-        this.file = file;
         this.sortOrder = sortOrder;
         this.createdBy = createdBy;
         this.createdIp = createdIp;
@@ -84,10 +82,9 @@ public class ContentBlock {
         this.updatedIp = createdIp;
     }
 
-    public void update(String type, String content, CmsFile file, String updatedBy, String updatedIp) {
+    public void update(String type, String content, String updatedBy, String updatedIp) {
         this.type = type;
         this.content = content;
-        this.file = file;
         this.updatedBy = updatedBy;
         this.updatedIp = updatedIp;
     }
@@ -100,11 +97,17 @@ public class ContentBlock {
         this.version++;
     }
 
-    public void restore(ContentBlockHistory historyEntry, CmsFile file, String updatedBy, String updatedIp) {
+    public void restore(ContentBlockHistory historyEntry, String updatedBy, String updatedIp) {
         this.type = historyEntry.getType();
         this.content = historyEntry.getContent();
-        this.file = file;
         this.updatedBy = updatedBy;
         this.updatedIp = updatedIp;
+    }
+
+    public void setFiles(List<ContentBlockFile> files) {
+        this.files.clear();
+        if (files != null) {
+            this.files.addAll(files);
+        }
     }
 }
