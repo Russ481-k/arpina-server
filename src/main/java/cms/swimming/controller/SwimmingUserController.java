@@ -6,7 +6,6 @@ import cms.swimming.dto.CheckEnrollmentEligibilityDto;
 import cms.swimming.dto.EnrollRequestDto;
 import cms.swimming.dto.EnrollResponseDto;
 import cms.swimming.dto.LessonDto;
-// import cms.swimming.dto.LockerDto; // Remains commented as its primary use 'getAvailableLockers' list was removed
 import cms.enroll.service.EnrollmentService;
 import cms.swimming.service.LessonService;
 import cms.user.domain.User;
@@ -24,7 +23,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
-
+import cms.common.util.IpUtil;
 import javax.servlet.http.HttpServletRequest;
 import javax.validation.Valid;
 import java.time.LocalDate;
@@ -72,7 +71,7 @@ public class SwimmingUserController {
             Authentication authentication,
             HttpServletRequest request) {
         User currentUser = getAuthenticatedUser(authentication);
-        String clientIp = request.getRemoteAddr();
+        String clientIp = IpUtil.getClientIp();
 
         EnrollResponseDto enrollResponse = enrollmentService.createInitialEnrollment(currentUser, enrollRequest,
                 clientIp);

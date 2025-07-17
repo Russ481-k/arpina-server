@@ -4,6 +4,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
+import cms.common.util.IpUtil;
+
 import javax.servlet.http.HttpServletRequest;
 import javax.validation.Valid;
 import java.util.List;
@@ -26,7 +28,7 @@ public class BbsCommentController {
             @AuthenticationPrincipal UserDetails userDetails,
             HttpServletRequest httpRequest) {
         String adminId = userDetails.getUsername();
-        String ipAddress = httpRequest.getRemoteAddr();
+        String ipAddress = IpUtil.getClientIp();
         return ResponseEntity.ok(bbsCommentService.createComment(nttId, request, adminId, ipAddress));
     }
 
@@ -43,7 +45,7 @@ public class BbsCommentController {
             @AuthenticationPrincipal UserDetails userDetails,
             HttpServletRequest httpRequest) {
         String adminId = userDetails.getUsername();
-        String ipAddress = httpRequest.getRemoteAddr();
+        String ipAddress = IpUtil.getClientIp();
         bbsCommentService.updateComment(commentId, request, adminId, ipAddress);
         return ResponseEntity.ok().build();
     }

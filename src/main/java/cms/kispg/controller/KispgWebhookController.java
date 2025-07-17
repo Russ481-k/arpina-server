@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import io.swagger.v3.oas.annotations.Operation;
+import cms.common.util.IpUtil;
 
 import javax.servlet.http.HttpServletRequest;
 
@@ -23,19 +24,18 @@ public class KispgWebhookController {
     private final KispgWebhookService kispgWebhookService;
 
     @PostMapping(value = "/payment-notification", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
-    @Operation(summary = "KISPG 결제 결과 통지 (Webhook)",
-               description = "KISPG로부터 결제 결과(성공, 실패, 취소 등)를 비동기적으로 수신합니다.")
+    @Operation(summary = "KISPG 결제 결과 통지 (Webhook)", description = "KISPG로부터 결제 결과(성공, 실패, 취소 등)를 비동기적으로 수신합니다.")
     public ResponseEntity<String> handlePaymentNotification(
             KispgNotificationRequest notificationRequest,
             HttpServletRequest request) {
-        
-        String clientIp = getClientIp(request);
+
+        String clientIp = IpUtil.getClientIp();
         logger.info("=== KISPG Webhook 수신 시작 (IP: {}) ===", clientIp);
-        
+
         try {
             // 1. 모든 파라미터 로깅 (KISPG에서 어떤 이름으로 오는지 확인)
             logAllRequestParameters(request);
-            
+
             // 2. KispgNotificationRequest DTO 로깅
             logger.info("📋 KISPG Webhook DTO 데이터:");
             logger.info("  - MID: {}", notificationRequest.getMid());
@@ -53,22 +53,14 @@ public class KispgWebhookController {
 
             // 3. KispgWebhookService 호출
             String responseToKispg = kispgWebhookService.processPaymentNotification(notificationRequest, clientIp);
-            
+
             logger.info("✅ KISPG Webhook 처리 완료 - 응답: {}", responseToKispg);
             return ResponseEntity.ok(responseToKispg);
-            
+
         } catch (Exception e) {
             logger.error("❌ KISPG Webhook 처리 중 심각한 오류 발생:", e);
             return ResponseEntity.internalServerError().body("INTERNAL_SERVER_ERROR");
         }
-    }
-
-    private String getClientIp(HttpServletRequest request) {
-        String xForwardedForHeader = request.getHeader("X-Forwarded-For");
-        if (xForwardedForHeader == null || xForwardedForHeader.isEmpty()) {
-            return request.getRemoteAddr();
-        }
-        return xForwardedForHeader.split(",")[0].trim();
     }
 
     private void logAllRequestParameters(HttpServletRequest request) {
@@ -77,4 +69,4 @@ public class KispgWebhookController {
             logger.info("  - {} = {}", key, String.join(", ", values));
         });
     }
-} 
+}

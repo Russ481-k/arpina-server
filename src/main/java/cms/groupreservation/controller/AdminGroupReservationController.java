@@ -11,8 +11,6 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import javax.servlet.http.HttpServletRequest;
-
 @RestController
 @RequestMapping("/cms/group-reservations")
 @RequiredArgsConstructor
@@ -41,10 +39,8 @@ public class AdminGroupReservationController {
     @PatchMapping("/{id}")
     public ResponseEntity<ApiResponseSchema<GroupReservationInquiryDto>> updateInquiry(
             @PathVariable Long id,
-            @RequestBody GroupReservationUpdateRequestDto requestDto,
-            HttpServletRequest servletRequest) {
-        GroupReservationInquiryDto updatedInquiry = groupReservationService.updateInquiry(id, requestDto,
-                servletRequest);
+            @RequestBody GroupReservationUpdateRequestDto requestDto) {
+        GroupReservationInquiryDto updatedInquiry = groupReservationService.updateInquiry(id, requestDto);
         return ResponseEntity.ok(ApiResponseSchema.success(updatedInquiry));
     }
 }

@@ -16,9 +16,9 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import cms.common.util.IpUtil;
 
 import javax.persistence.criteria.Predicate;
-import javax.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -32,8 +32,8 @@ public class GroupReservationServiceImpl implements GroupReservationService {
 
     @Override
     @Transactional
-    public Long createInquiry(GroupReservationRequest request, HttpServletRequest servletRequest) {
-        String clientIp = servletRequest.getRemoteAddr();
+    public Long createInquiry(GroupReservationRequest request) {
+        String clientIp = IpUtil.getClientIp();
 
         GroupReservationInquiry inquiry = GroupReservationInquiry.builder()
                 .status("PENDING")
@@ -133,13 +133,12 @@ public class GroupReservationServiceImpl implements GroupReservationService {
 
     @Override
     @Transactional
-    public GroupReservationInquiryDto updateInquiry(Long id, GroupReservationUpdateRequestDto requestDto,
-            HttpServletRequest servletRequest) {
+    public GroupReservationInquiryDto updateInquiry(Long id, GroupReservationUpdateRequestDto requestDto) {
         GroupReservationInquiry inquiry = inquiryRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("GroupReservationInquiry", id));
 
         String adminUsername = SecurityContextHolder.getContext().getAuthentication().getName();
-        String clientIp = servletRequest.getRemoteAddr();
+        String clientIp = IpUtil.getClientIp();
 
         if (requestDto.getStatus() != null) {
             inquiry.setStatus(requestDto.getStatus());

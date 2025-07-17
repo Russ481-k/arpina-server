@@ -13,10 +13,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
-
 import javax.servlet.http.HttpServletRequest;
 import java.time.LocalDate;
 import java.util.List;
+import cms.common.util.IpUtil;
 
 @RestController
 @RequestMapping("/cms/schedule")
@@ -62,7 +62,7 @@ public class ScheduleController {
             @Parameter(description = "스케줄 정보") @RequestBody ScheduleDto scheduleDto,
             HttpServletRequest request) {
         String createdBy = getCurrentUsername();
-        String createdIp = getClientIp(request);
+        String createdIp = IpUtil.getClientIp();
         ScheduleDto created = scheduleService.createSchedule(scheduleDto, createdBy, createdIp);
         return ResponseEntity.ok(ApiResponseSchema.success(created));
     }
@@ -75,7 +75,7 @@ public class ScheduleController {
             @Parameter(description = "스케줄 정보") @RequestBody ScheduleDto scheduleDto,
             HttpServletRequest request) {
         String updatedBy = getCurrentUsername();
-        String updatedIp = getClientIp(request);
+        String updatedIp = IpUtil.getClientIp();
         ScheduleDto updated = scheduleService.updateSchedule(scheduleId, scheduleDto, updatedBy, updatedIp);
         return ResponseEntity.ok(ApiResponseSchema.success(updated));
     }
@@ -92,12 +92,4 @@ public class ScheduleController {
     private String getCurrentUsername() {
         return SecurityContextHolder.getContext().getAuthentication().getName();
     }
-
-    private String getClientIp(HttpServletRequest request) {
-        String clientIp = request.getHeader("X-Forwarded-For");
-        if (clientIp == null || clientIp.isEmpty()) {
-            clientIp = request.getRemoteAddr();
-        }
-        return clientIp;
-    }
-} 
+}

@@ -26,6 +26,7 @@ import cms.common.exception.ResourceNotFoundException;
 import cms.common.exception.ErrorCode;
 import org.springframework.http.HttpStatus;
 import cms.kispg.dto.KispgPaymentResultDto;
+import cms.common.util.IpUtil;
 
 @RestController
 @RequestMapping("/payment")
@@ -48,7 +49,7 @@ public class PaymentController {
             @AuthenticationPrincipal User currentUser,
             HttpServletRequest request) {
 
-        String userIp = getClientIp(request);
+        String userIp = IpUtil.getClientIp();
         KispgInitParamsDto initParams = kispgPaymentService.generateInitParams(enrollId, currentUser, userIp);
 
         return ResponseEntity.ok(ApiResponseSchema.success(initParams, "KISPG 결제 파라미터가 성공적으로 생성되었습니다."));
@@ -67,7 +68,7 @@ public class PaymentController {
             @AuthenticationPrincipal User currentUser,
             HttpServletRequest request) {
 
-        String userIp = getClientIp(request);
+        String userIp = IpUtil.getClientIp();
         KispgInitParamsDto initParams = kispgPaymentService.preparePaymentWithoutEnroll(enrollRequest, currentUser,
                 userIp);
 
@@ -161,7 +162,7 @@ public class PaymentController {
                 approvalRequest.setKispgPaymentResult(kispgResultDto);
 
                 // 실제 KISPG에서 받은 TID로 승인 요청 처리
-                String userIp = getClientIp(request);
+                String userIp = IpUtil.getClientIp();
                 EnrollDto enrollDto = kispgPaymentService.approvePaymentAndCreateEnrollment(approvalRequest,
                         currentUser, userIp);
 
@@ -202,7 +203,7 @@ public class PaymentController {
         logger.info("사용자: {}", currentUser.getUsername());
 
         try {
-            String userIp = getClientIp(request);
+            String userIp = IpUtil.getClientIp();
             EnrollDto enrollDto = kispgPaymentService.approvePaymentAndCreateEnrollment(
                     approvalRequest,
                     currentUser, userIp);
@@ -263,13 +264,5 @@ public class PaymentController {
         public void setSuccess(boolean success) {
             this.success = success;
         }
-    }
-
-    private String getClientIp(HttpServletRequest request) {
-        String xForwardedForHeader = request.getHeader("X-Forwarded-For");
-        if (xForwardedForHeader == null || xForwardedForHeader.isEmpty()) {
-            return request.getRemoteAddr();
-        }
-        return xForwardedForHeader.split(",")[0].trim();
     }
 }

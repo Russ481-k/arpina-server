@@ -21,6 +21,8 @@ import cms.user.dto.CustomUserDetails;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.UUID;
+import java.util.Arrays;
+import cms.common.util.IpUtil;
 
 @Aspect
 @Component
@@ -32,7 +34,8 @@ public class LoggingAspect {
     private static final Logger log = LoggerFactory.getLogger(LoggingAspect.class);
 
     @Pointcut("execution(* cms..*Controller.*(..))")
-    public void controllerPointcut() {}
+    public void controllerPointcut() {
+    }
 
     @AfterReturning(pointcut = "controllerPointcut()", returning = "result")
     public void logAfterReturning(JoinPoint joinPoint, Object result) {
@@ -46,9 +49,10 @@ public class LoggingAspect {
 
     public void logActivity(JoinPoint joinPoint, String action, String errorMessage) {
         try {
-            HttpServletRequest request = ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes()).getRequest();
+            HttpServletRequest request = ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes())
+                    .getRequest();
             Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-            
+
             if (authentication != null && authentication.isAuthenticated()) {
                 String userUuid = null;
                 Object principal = authentication.getPrincipal();
@@ -60,7 +64,7 @@ public class LoggingAspect {
                 } else if (principal instanceof String) {
                     String username = (String) principal;
                     User user = userRepository.findByUsername(username)
-                                    .orElse(null);
+                            .orElse(null);
                     if (user != null) {
                         userUuid = user.getUuid();
                     } else {
@@ -70,14 +74,15 @@ public class LoggingAspect {
                 }
 
                 if (userUuid == null) {
-                    log.warn("Could not determine user UUID for activity logging. Principal type: {}", principal.getClass().getName());
+                    log.warn("Could not determine user UUID for activity logging. Principal type: {}",
+                            principal.getClass().getName());
                     userUuid = authentication.getName();
                 }
 
                 String methodName = joinPoint.getSignature().getName();
                 String className = joinPoint.getTarget().getClass().getSimpleName();
                 String description = String.format("%s.%s", className, methodName);
-                
+
                 if (errorMessage != null) {
                     description += " - Error: " + errorMessage;
                 }
@@ -86,29 +91,52 @@ public class LoggingAspect {
                 String defaultOrgId = "00000000-0000-0000-0000-000000000000";
 
                 userActivityLogService.logActivity(
-                    UUID.randomUUID().toString(),
-                    userUuid,
-                    defaultGroupId,
-                    defaultOrgId,
-                    action,
-                    description,
-                    request.getHeader("User-Agent"),
-                    userUuid,
-                    request.getRemoteAddr()
-                );
+                        UUID.randomUUID().toString(),
+                        userUuid,
+                        defaultGroupId,
+                        defaultOrgId,
+                        action,
+                        description,
+                        request.getHeader("User-Agent"),
+                        userUuid,
+                        request.getRemoteAddr());
             }
         } catch (Exception e) {
             log.error("Failed to log activity: {}", e.getMessage());
         }
     }
 
+    public void logRequest(JoinPoint joinPoint) {
+        ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        if (attributes != null) {
+            HttpServletRequest request = attributes.getRequest();
+            String ipAddress = IpUtil.getClientIp();
+            log.info("Request: {} {} from {}", request.getMethod(), request.getRequestURI(), ipAddress);
+            log.info("Controller: {}.{}", joinPoint.getSignature().getDeclaringTypeName(),
+                    joinPoint.getSignature().getName());
+            log.info("Arguments: {}", Arrays.toString(joinPoint.getArgs()));
+        }
+    }
+
+    public void logResponse(JoinPoint joinPoint, Object result) {
+        ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        if (attributes != null) {
+            HttpServletRequest request = attributes.getRequest();
+            String ipAddress = IpUtil.getClientIp();
+            log.info("Response for: {} {} from {} with result: {}", request.getMethod(), request.getRequestURI(),
+                    ipAddress, result);
+        }
+    }
+
     private String getClientIp() {
-        HttpServletRequest request = ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes()).getRequest();
+        HttpServletRequest request = ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes())
+                .getRequest();
         return request.getRemoteAddr();
     }
 
     private String getClientUserAgent() {
-        HttpServletRequest request = ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes()).getRequest();
+        HttpServletRequest request = ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes())
+                .getRequest();
         return request.getHeader("User-Agent");
     }
 
@@ -119,8 +147,8 @@ public class LoggingAspect {
             String usernameForLog = "SYSTEM";
 
             if (authentication != null && authentication.isAuthenticated()) {
-                 Object principal = authentication.getPrincipal();
-                 usernameForLog = authentication.getName();
+                Object principal = authentication.getPrincipal();
+                usernameForLog = authentication.getName();
 
                 if (principal instanceof CustomUserDetails) {
                     userUuid = ((CustomUserDetails) principal).getUser().getUuid();
@@ -131,36 +159,36 @@ public class LoggingAspect {
                     if (user != null) {
                         userUuid = user.getUuid();
                     } else {
-                         log.warn("User not found with username: {} during general activity logging.", principal);
+                        log.warn("User not found with username: {} during general activity logging.", principal);
                     }
                 }
             }
 
             if (userUuid == null) {
-                log.warn("User UUID not found for logging activity '{}'. Using username '{}' or system default.", activityType, usernameForLog);
+                log.warn("User UUID not found for logging activity '{}'. Using username '{}' or system default.",
+                        activityType, usernameForLog);
             }
 
             String ipAddress = getClientIp();
             String userAgent = getClientUserAgent();
-            
+
             String groupId = "00000000-0000-0000-0000-000000000000";
             String organizationId = "00000000-0000-0000-0000-000000000000";
-            
+
             String effectiveUserIdForLog = (userUuid != null) ? userUuid : usernameForLog;
 
             userActivityLogService.logActivity(
-                UUID.randomUUID().toString(),
-                effectiveUserIdForLog,
-                groupId,
-                organizationId,
-                activityType,
-                description,
-                userAgent,
-                effectiveUserIdForLog,
-                ipAddress
-            );
+                    UUID.randomUUID().toString(),
+                    effectiveUserIdForLog,
+                    groupId,
+                    organizationId,
+                    activityType,
+                    description,
+                    userAgent,
+                    effectiveUserIdForLog,
+                    ipAddress);
         } catch (Exception e) {
             log.error("Failed to log activity: {}", e.getMessage());
         }
     }
-} 
+}

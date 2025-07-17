@@ -16,14 +16,12 @@ import cms.file.entity.CmsFile;
 import cms.file.repository.FileRepository;
 import cms.menu.domain.Menu;
 import cms.menu.repository.MenuRepository;
+import cms.common.util.IpUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.context.request.RequestContextHolder;
-import org.springframework.web.context.request.ServletRequestAttributes;
-import javax.servlet.http.HttpServletRequest;
 import cms.common.exception.ResourceNotFoundException;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -66,7 +64,7 @@ public class ContentBlockServiceImpl implements ContentBlockService {
 
         CmsFile file = findFileById(request.getFileId());
         String currentUsername = getCurrentUsername();
-        String clientIp = getClientIp();
+        String clientIp = IpUtil.getClientIp();
 
         ContentBlock contentBlock = ContentBlock.builder()
                 .menu(menu)
@@ -85,7 +83,7 @@ public class ContentBlockServiceImpl implements ContentBlockService {
     public ContentBlockResponse createContentBlockForMainPage(ContentBlockCreateRequest request) {
         CmsFile file = findFileById(request.getFileId());
         String currentUsername = getCurrentUsername();
-        String clientIp = getClientIp();
+        String clientIp = IpUtil.getClientIp();
 
         ContentBlock contentBlock = ContentBlock.builder()
                 .menu(null) // 메인 페이지 콘텐츠는 메뉴가 없음
@@ -107,7 +105,7 @@ public class ContentBlockServiceImpl implements ContentBlockService {
 
         CmsFile file = findFileById(request.getFileId());
         String currentUsername = getCurrentUsername();
-        String clientIp = getClientIp();
+        String clientIp = IpUtil.getClientIp();
 
         contentBlock.update(request.getType(), request.getContent(), file, currentUsername, clientIp);
         contentBlock.increaseVersion();
@@ -151,7 +149,7 @@ public class ContentBlockServiceImpl implements ContentBlockService {
 
         CmsFile file = findFileById(history.getFileId());
         String currentUsername = getCurrentUsername();
-        String clientIp = getClientIp();
+        String clientIp = IpUtil.getClientIp();
 
         contentBlock.restore(history, file, currentUsername, clientIp);
         contentBlock.increaseVersion();
@@ -167,7 +165,7 @@ public class ContentBlockServiceImpl implements ContentBlockService {
                 .content(contentBlock.getContent())
                 .fileId(contentBlock.getFile() != null ? contentBlock.getFile().getFileId() : null)
                 .createdBy(getCurrentUsername())
-                .createdIp(getClientIp())
+                .createdIp(IpUtil.getClientIp())
                 .build();
         historyRepository.save(history);
 
@@ -207,13 +205,4 @@ public class ContentBlockServiceImpl implements ContentBlockService {
         return principal.toString();
     }
 
-    private String getClientIp() {
-        HttpServletRequest request = ((ServletRequestAttributes) RequestContextHolder.getRequestAttributes())
-                .getRequest();
-        String ip = request.getHeader("X-Forwarded-For");
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = request.getRemoteAddr();
-        }
-        return ip;
-    }
 }

@@ -4,28 +4,23 @@ import cms.common.dto.ApiResponseSchema;
 import cms.groupreservation.dto.GroupReservationRequest;
 import cms.groupreservation.service.GroupReservationService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
-import javax.servlet.http.HttpServletRequest;
 import javax.validation.Valid;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 @RestController
 @RequestMapping("/group-reservations")
 @RequiredArgsConstructor
+@Tag(name = "public_group_reservation", description = "공개 단체 예약 문의 API")
 public class PublicGroupReservationController {
 
     private final GroupReservationService groupReservationService;
 
     @PostMapping
-    public ResponseEntity<ApiResponseSchema<Long>> createInquiry(
-            @Valid @RequestBody GroupReservationRequest request,
-            HttpServletRequest servletRequest) {
-        Long inquiryId = groupReservationService.createInquiry(request, servletRequest);
-        return new ResponseEntity<>(ApiResponseSchema.success(inquiryId), HttpStatus.CREATED);
+    @Operation(summary = "단체 예약 문의 생성", description = "사용자가 단체 예약을 문의합니다.")
+    public ApiResponseSchema<Long> createInquiry(@Valid @RequestBody GroupReservationRequest request) {
+        return ApiResponseSchema.success(groupReservationService.createInquiry(request), "문의가 성공적으로 등록되었습니다.");
     }
 }

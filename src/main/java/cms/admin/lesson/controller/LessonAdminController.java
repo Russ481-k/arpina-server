@@ -20,8 +20,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
-
+import cms.common.util.IpUtil;
 import javax.servlet.http.HttpServletRequest;
+import java.io.IOException;
 import javax.validation.Valid;
 
 @Tag(name = "CMS - Lesson Management", description = "강습 관리 API (관리자용)")
@@ -33,17 +34,6 @@ import javax.validation.Valid;
 public class LessonAdminController {
 
     private final LessonAdminService lessonAdminService;
-
-    private String getClientIp(HttpServletRequest request) {
-        String remoteAddr = "";
-        if (request != null) {
-            remoteAddr = request.getHeader("X-FORWARDED-FOR");
-            if (remoteAddr == null || "".equals(remoteAddr)) {
-                remoteAddr = request.getRemoteAddr();
-            }
-        }
-        return remoteAddr;
-    }
 
     private String getCurrentUsername() {
         return "admin_user";
@@ -74,10 +64,11 @@ public class LessonAdminController {
     @PreAuthorize("hasAnyRole('ADMIN', 'SYSTEM_ADMIN')")
     public ResponseEntity<ApiResponseSchema<AdminLessonResponseDto>> createLessonAdmin(
             @Valid @RequestBody AdminLessonCreateRequestDto createRequestDto,
-            HttpServletRequest request) {
+            HttpServletRequest request) throws IOException {
         String createdBy = getCurrentUsername();
-        String createdIp = getClientIp(request);
-        AdminLessonResponseDto createdLesson = lessonAdminService.createLessonAdmin(createRequestDto, createdBy, createdIp);
+        String createdIp = IpUtil.getClientIp();
+        AdminLessonResponseDto createdLesson = lessonAdminService.createLessonAdmin(createRequestDto, createdBy,
+                createdIp);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponseSchema.success(createdLesson, "강습 생성 성공"));
     }
 
@@ -87,10 +78,11 @@ public class LessonAdminController {
     public ResponseEntity<ApiResponseSchema<AdminLessonResponseDto>> updateLessonAdmin(
             @Parameter(description = "수정할 강습 ID") @PathVariable Long lessonId,
             @Valid @RequestBody AdminLessonUpdateRequestDto updateRequestDto,
-            HttpServletRequest request) {
+            HttpServletRequest request) throws IOException {
         String updatedBy = getCurrentUsername();
-        String updatedIp = getClientIp(request);
-        AdminLessonResponseDto updatedLesson = lessonAdminService.updateLessonAdmin(lessonId, updateRequestDto, updatedBy, updatedIp);
+        String updatedIp = IpUtil.getClientIp();
+        AdminLessonResponseDto updatedLesson = lessonAdminService.updateLessonAdmin(lessonId, updateRequestDto,
+                updatedBy, updatedIp);
         return ResponseEntity.ok(ApiResponseSchema.success(updatedLesson, "강습 정보 수정 성공"));
     }
 
@@ -109,10 +101,11 @@ public class LessonAdminController {
     public ResponseEntity<ApiResponseSchema<AdminLessonResponseDto>> cloneLessonAdmin(
             @Parameter(description = "복제할 강습 ID") @PathVariable Long lessonId,
             @Valid @RequestBody CloneLessonRequestDto cloneRequest,
-            HttpServletRequest request) {
+            HttpServletRequest request) throws IOException {
         String createdBy = getCurrentUsername();
-        String createdIp = getClientIp(request);
-        AdminLessonResponseDto clonedLesson = lessonAdminService.cloneLessonAdmin(lessonId, cloneRequest, createdBy, createdIp);
+        String createdIp = IpUtil.getClientIp();
+        AdminLessonResponseDto clonedLesson = lessonAdminService.cloneLessonAdmin(lessonId, cloneRequest, createdBy,
+                createdIp);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponseSchema.success(clonedLesson, "강습 복제 성공"));
     }
-} 
+}

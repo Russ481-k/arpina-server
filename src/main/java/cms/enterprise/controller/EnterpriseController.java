@@ -23,6 +23,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.validation.Valid;
+import cms.common.util.IpUtil;
 
 @RestController
 @RequestMapping("/cms/enterprises") // URL 수정: API 버전과 경로 수정
@@ -41,8 +42,9 @@ public class EnterpriseController {
             @Parameter(description = "검색할 대표자명 (부분 일치)") @RequestParam(required = false) String representative,
             @Parameter(description = "검색할 업종 (부분 일치)") @RequestParam(required = false) String businessType,
             @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
-        
-        Page<EnterpriseDto> enterprisesPage = enterpriseService.getAllEnterprises(year, name, representative, businessType, pageable);
+
+        Page<EnterpriseDto> enterprisesPage = enterpriseService.getAllEnterprises(year, name, representative,
+                businessType, pageable);
         return ResponseEntity.ok(ApiResponseSchema.success(enterprisesPage, "성공적으로 기업 목록을 조회했습니다."));
     }
 
@@ -55,32 +57,36 @@ public class EnterpriseController {
     }
 
     @Operation(summary = "입주 기업 생성", description = "새로운 입주 기업 정보와 이미지를 등록합니다.")
-    @PostMapping(consumes = {MediaType.MULTIPART_FORM_DATA_VALUE})
+    @PostMapping(consumes = { MediaType.MULTIPART_FORM_DATA_VALUE })
     public ResponseEntity<ApiResponseSchema<EnterpriseDto>> createEnterprise(
             @RequestPart("data") @Valid CreateEnterpriseRequest createRequest,
             @RequestPart(value = "image", required = false) MultipartFile imageFile,
             HttpServletRequest request, Authentication authentication) {
-        
-        String username = (authentication != null && authentication.isAuthenticated()) ? authentication.getName() : "anonymousUser";
-        String clientIp = request.getRemoteAddr();
 
-        EnterpriseDto createdEnterprise = enterpriseService.createEnterprise(createRequest, imageFile, username, clientIp);
+        String username = (authentication != null && authentication.isAuthenticated()) ? authentication.getName()
+                : "anonymousUser";
+        String clientIp = IpUtil.getClientIp();
+
+        EnterpriseDto createdEnterprise = enterpriseService.createEnterprise(createRequest, imageFile, username,
+                clientIp);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponseSchema.success(createdEnterprise, "새로운 기업 정보가 성공적으로 등록되었습니다."));
     }
 
     @Operation(summary = "입주 기업 정보 수정", description = "기존 입주 기업의 정보와 이미지를 수정합니다.")
-    @PutMapping(value = "/{id}", consumes = {MediaType.MULTIPART_FORM_DATA_VALUE})
+    @PutMapping(value = "/{id}", consumes = { MediaType.MULTIPART_FORM_DATA_VALUE })
     public ResponseEntity<ApiResponseSchema<EnterpriseDto>> updateEnterprise(
             @Parameter(description = "수정할 기업의 ID") @PathVariable Long id,
             @RequestPart("data") @Valid UpdateEnterpriseRequest updateRequest,
             @RequestPart(value = "image", required = false) MultipartFile imageFile,
             HttpServletRequest request, Authentication authentication) {
 
-        String username = (authentication != null && authentication.isAuthenticated()) ? authentication.getName() : "anonymousUser";
-        String clientIp = request.getRemoteAddr();
+        String username = (authentication != null && authentication.isAuthenticated()) ? authentication.getName()
+                : "anonymousUser";
+        String clientIp = IpUtil.getClientIp();
 
-        EnterpriseDto updatedEnterprise = enterpriseService.updateEnterprise(id, updateRequest, imageFile, username, clientIp);
+        EnterpriseDto updatedEnterprise = enterpriseService.updateEnterprise(id, updateRequest, imageFile, username,
+                clientIp);
         return ResponseEntity.ok(ApiResponseSchema.success(updatedEnterprise, "기업 정보가 성공적으로 수정되었습니다."));
     }
 
@@ -91,4 +97,4 @@ public class EnterpriseController {
         enterpriseService.deleteEnterprise(id);
         return ResponseEntity.ok(ApiResponseSchema.success(null, "기업 정보가 성공적으로 삭제되었습니다."));
     }
-} 
+}

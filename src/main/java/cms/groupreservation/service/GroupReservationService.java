@@ -6,8 +6,6 @@ import cms.groupreservation.dto.GroupReservationUpdateRequestDto;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
-import javax.servlet.http.HttpServletRequest;
-
 public interface GroupReservationService {
 
         /**
@@ -17,7 +15,7 @@ public interface GroupReservationService {
          * @param servletRequest HTTP 요청
          * @return 생성된 문의 ID
          */
-        Long createInquiry(GroupReservationRequest request, HttpServletRequest servletRequest);
+        Long createInquiry(GroupReservationRequest request);
 
         /**
          * 관리자용 문의 목록 조회
@@ -44,6 +42,5 @@ public interface GroupReservationService {
          * @param servletRequest HTTP 요청
          * @return 업데이트된 문의 정보
          */
-        GroupReservationInquiryDto updateInquiry(Long id, GroupReservationUpdateRequestDto requestDto,
-                        HttpServletRequest servletRequest);
+        GroupReservationInquiryDto updateInquiry(Long id, GroupReservationUpdateRequestDto requestDto);
 }
