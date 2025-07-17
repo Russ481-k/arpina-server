@@ -9,13 +9,13 @@ import cms.user.domain.User;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import cms.content.domain.ContentBlock;
 
 @Entity
-@Table(name = "menu", 
-       uniqueConstraints = {
-           @UniqueConstraint(columnNames = "name"),
-           @UniqueConstraint(columnNames = "url")
-       })
+@Table(name = "menu", uniqueConstraints = {
+        @UniqueConstraint(columnNames = "name"),
+        @UniqueConstraint(columnNames = "url")
+})
 @Getter
 @Setter
 @Builder
@@ -56,6 +56,11 @@ public class Menu {
     @Builder.Default
     private List<Menu> children = new ArrayList<>();
 
+    @OneToMany(mappedBy = "menu", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("sortOrder ASC")
+    @Builder.Default
+    private List<ContentBlock> contentBlocks = new ArrayList<>();
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by", referencedColumnName = "uuid")
     private User createdBy;
@@ -78,17 +83,25 @@ public class Menu {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
-    public void update(String name, MenuType type, String url, Long targetId, 
-                      String displayPosition, Boolean visible, Integer sortOrder, 
-                      Long parentId) {
-        if (name != null) this.name = name;
-        if (type != null) this.type = type;
-        if (url != null) this.url = url;
-        if (targetId != null) this.targetId = targetId;
-        if (displayPosition != null) this.displayPosition = displayPosition;
-        if (visible != null) this.visible = visible;
-        if (sortOrder != null) this.sortOrder = sortOrder;
-        if (parentId != null) this.parentId = parentId;
+    public void update(String name, MenuType type, String url, Long targetId,
+            String displayPosition, Boolean visible, Integer sortOrder,
+            Long parentId) {
+        if (name != null)
+            this.name = name;
+        if (type != null)
+            this.type = type;
+        if (url != null)
+            this.url = url;
+        if (targetId != null)
+            this.targetId = targetId;
+        if (displayPosition != null)
+            this.displayPosition = displayPosition;
+        if (visible != null)
+            this.visible = visible;
+        if (sortOrder != null)
+            this.sortOrder = sortOrder;
+        if (parentId != null)
+            this.parentId = parentId;
     }
 
     public void setVisible(boolean visible) {
@@ -112,4 +125,4 @@ public class Menu {
     public void updateTargetId(Long targetId) {
         this.targetId = targetId;
     }
-} 
+}

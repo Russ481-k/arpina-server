@@ -93,6 +93,10 @@ public enum ErrorCode {
     INVALID_FILE_FORMAT("FL_0003", "지원하지 않는 파일 형식입니다.", HttpStatus.BAD_REQUEST),
     FILE_SIZE_EXCEEDED("FL_0004", "파일 크기가 너무 큽니다.", HttpStatus.PAYLOAD_TOO_LARGE),
 
+    // Content Errors (CT_xxxx)
+    CONTENT_BLOCK_NOT_FOUND("CT_0001", "콘텐츠 블록을 찾을 수 없습니다.", HttpStatus.NOT_FOUND),
+    CONTENT_BLOCK_HISTORY_NOT_FOUND("CT_0002", "콘텐츠 블록 히스토리를 찾을 수 없습니다.", HttpStatus.NOT_FOUND),
+
     // Template Errors (TP_xxxx)
     TEMPLATE_NOT_FOUND("TP_0001", "템플릿을 찾을 수 없습니다.", HttpStatus.NOT_FOUND);
 

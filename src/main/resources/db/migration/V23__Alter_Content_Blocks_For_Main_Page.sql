@@ -1,0 +1,1 @@
+ALTER TABLE content_blocks MODIFY COLUMN menu_id INT(11) NULL;
