@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.http.MediaType;
 
+import javax.validation.Valid;
 import java.util.List;
 
 @RestController
@@ -61,7 +62,7 @@ public class BbsArticleController {
     @Operation(summary = "게시글 생성", description = "새로운 게시글을 생성합니다.")
     @PostMapping(consumes = { MediaType.MULTIPART_FORM_DATA_VALUE })
     public ResponseEntity<ApiResponseSchema<Long>> createArticle(
-            @RequestPart("articleData") BbsArticleDto articleDto,
+            @RequestPart("articleData") @Valid BbsArticleDto articleDto,
             @RequestPart(value = "editorContentJson", required = false) String editorContentJson,
             @RequestPart(value = "mediaFiles", required = false) List<MultipartFile> mediaFiles,
             @RequestPart(value = "mediaLocalIds", required = false) String mediaLocalIds,
@@ -75,7 +76,7 @@ public class BbsArticleController {
     @PutMapping(value = "/{nttId}", consumes = { MediaType.MULTIPART_FORM_DATA_VALUE })
     public ResponseEntity<ApiResponseSchema<Void>> updateArticle(
             @PathVariable Long nttId,
-            @RequestPart("articleData") BbsArticleDto articleDto,
+            @RequestPart("articleData") @Valid BbsArticleDto articleDto,
             @RequestPart(value = "editorContentJson", required = false) String editorContentJson,
             @RequestPart(value = "mediaFiles", required = false) List<MultipartFile> mediaFiles,
             @RequestPart(value = "mediaLocalIds", required = false) String mediaLocalIds,
