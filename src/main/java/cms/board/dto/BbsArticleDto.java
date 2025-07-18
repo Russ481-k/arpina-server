@@ -5,10 +5,12 @@ import lombok.*;
 
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
+import javax.validation.constraints.NotEmpty;
 import javax.validation.constraints.Size;
 import java.time.LocalDateTime;
 import java.util.List;
 import cms.file.dto.AttachmentInfoDto;
+import cms.board.dto.BbsCategoryDto;
 
 @Getter
 @Setter
@@ -108,6 +110,7 @@ public class BbsArticleDto {
     private List<Long> imageIds;
 
     @Schema(description = "카테고리 ID 목록 (입력용)")
+    @NotEmpty(message = "카테고리는 최소 1개 이상 선택해야 합니다.")
     private List<Long> categoryIds;
 
     @Schema(description = "카테고리 정보 목록 (출력용)")

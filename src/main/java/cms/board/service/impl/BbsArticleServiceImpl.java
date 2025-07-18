@@ -87,6 +87,11 @@ public class BbsArticleServiceImpl implements BbsArticleService {
         String[] mediaLocalIdsArray = (mediaLocalIds != null && !mediaLocalIds.isEmpty()) ? mediaLocalIds.split(",")
                 : new String[0];
 
+        // 카테고리 필수 검증
+        if (articleDto.getCategoryIds() == null || articleDto.getCategoryIds().isEmpty()) {
+            throw new IllegalArgumentException("카테고리는 최소 1개 이상 선택해야 합니다.");
+        }
+
         log.debug("[createArticle] Received DTO content (length: {}): {}",
                 articleDto.getContent() != null ? articleDto.getContent().length() : "null",
                 articleDto.getContent() != null && articleDto.getContent().length() > 200
@@ -304,6 +309,11 @@ public class BbsArticleServiceImpl implements BbsArticleService {
             List<MultipartFile> mediaFiles, String mediaLocalIds, List<MultipartFile> attachments) {
         String[] mediaLocalIdsArray = (mediaLocalIds != null && !mediaLocalIds.isEmpty()) ? mediaLocalIds.split(",")
                 : new String[0];
+
+        // 카테고리 필수 검증
+        if (articleDto.getCategoryIds() == null || articleDto.getCategoryIds().isEmpty()) {
+            throw new IllegalArgumentException("카테고리는 최소 1개 이상 선택해야 합니다.");
+        }
 
         log.debug("[updateArticle] nttId: {}, Received DTO content (length: {}): {}", nttId,
                 articleDto.getContent() != null ? articleDto.getContent().length() : "null",
