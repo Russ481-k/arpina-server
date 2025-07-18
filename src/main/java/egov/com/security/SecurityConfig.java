@@ -99,6 +99,7 @@ public class SecurityConfig {
 
 		// GET 요청에 대해서만 허용할 경로 목록
 		List<String> getOnlyPatterns = Arrays.asList(
+				"/api/v1/cms/contents/main",
 				"/api/v1/cms/bbs/article",
 				"/api/v1/cms/bbs/article/**",
 				"/api/v1/cms/bbs/article/board/**",

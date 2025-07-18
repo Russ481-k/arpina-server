@@ -22,6 +22,19 @@ public class ContentBlockController {
 
     private final ContentBlockService contentBlockService;
 
+    @GetMapping("/public/contents/main")
+    public ResponseEntity<ApiResponseSchema<List<ContentBlockResponse>>> getPublicMainPageContentBlocks() {
+        List<ContentBlockResponse> contentBlocks = contentBlockService.getContentBlocksForMainPage();
+        return ResponseEntity.ok(ApiResponseSchema.success(contentBlocks, "메인 페이지 콘텐츠 블록 목록이 성공적으로 조회되었습니다."));
+    }
+
+    @GetMapping("/public/menus/{menuId}/contents")
+    public ResponseEntity<ApiResponseSchema<List<ContentBlockResponse>>> getPublicContentBlocks(
+            @PathVariable Long menuId) {
+        List<ContentBlockResponse> contentBlocks = contentBlockService.getContentBlocksByMenu(menuId);
+        return ResponseEntity.ok(ApiResponseSchema.success(contentBlocks, "콘텐츠 블록 목록이 성공적으로 조회되었습니다."));
+    }
+
     @GetMapping("/contents/main")
     public ResponseEntity<ApiResponseSchema<List<ContentBlockResponse>>> getMainPageContentBlocks() {
         List<ContentBlockResponse> contentBlocks = contentBlockService.getContentBlocksForMainPage();

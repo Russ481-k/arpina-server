@@ -207,23 +207,5 @@ kispg:
   mid: ${KISPG_MID}
   merchantKey: ${KISPG_MERCHANT_KEY}
 
-# 성능 모니터링 설정
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,metrics,info
-      base-path: /actuator
-  endpoint:
-    health:
-      show-details: when_authorized
-      show-components: when_authorized
-    metrics:
-      enabled: true
-  metrics:
-    export:
-      prometheus:
-        enabled: false
-
 cors:
   allowed-origins: ${GLOBALS_ALLOW_ORIGIN}
