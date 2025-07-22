@@ -262,15 +262,14 @@ public class PaymentServiceImpl implements PaymentService {
             // 결제 성공
             payment = buildPayment(enroll, notification, PaymentStatus.PAID);
             // Enroll의 상태도 변경
-            enroll.setPayStatus("PAID");
+            enrollRepository.updatePayStatus(enroll.getEnrollId(), "PAID");
         } else {
             // 결제 실패
             payment = buildPayment(enroll, notification, PaymentStatus.FAILED);
             // Enroll의 상태도 변경 (예: FAILED)
-            enroll.setPayStatus("FAILED");
+            enrollRepository.updatePayStatus(enroll.getEnrollId(), "FAILED");
         }
 
-        enrollRepository.save(enroll);
         return paymentRepository.save(payment);
     }
 

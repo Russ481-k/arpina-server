@@ -7,6 +7,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -238,4 +239,8 @@ public interface EnrollRepository extends JpaRepository<Enroll, Long>, JpaSpecif
        Integer findMaxWaitingNumberByLesson(Lesson lesson);
 
        boolean existsByUserAndLessonInAndPayStatus(User user, List<Lesson> lessons, String payStatus);
+
+       @Modifying
+       @Query("UPDATE Enroll e SET e.payStatus = :payStatus WHERE e.enrollId = :enrollId")
+       void updatePayStatus(@Param("enrollId") Long enrollId, @Param("payStatus") String payStatus);
 }
