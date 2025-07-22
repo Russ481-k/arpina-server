@@ -1166,18 +1166,23 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                         "재수강 대상 강좌를 찾을 수 없습니다 (ID: " + renewalRequestDto.getLessonId() + ")",
                         ErrorCode.LESSON_NOT_FOUND));
 
-        // Check registration window for renewal: 20th-24th of current month for next
-        // month's lesson
-        LocalDate today = LocalDate.now();
-        YearMonth currentMonth = YearMonth.from(today);
+        // Check registration window for renewal: 20th 10:00 AM to 24th of current month
+        // for next month's lesson
+        LocalDateTime now = LocalDateTime.now();
+        YearMonth currentMonth = YearMonth.from(now);
         YearMonth lessonStartMonth = YearMonth.from(lesson.getStartDate());
 
         boolean isLessonForNextMonth = lessonStartMonth.equals(currentMonth.plusMonths(1));
-        boolean isRenewalWindowActive = today.getDayOfMonth() >= 20 && today.getDayOfMonth() <= 24;
 
-        if (!isLessonForNextMonth || !isRenewalWindowActive) {
+        LocalDateTime renewalStartDateTime = currentMonth.atDay(20).atTime(10, 0, 0);
+        LocalDateTime renewalEndDateTime = currentMonth.atDay(24).atTime(23, 59, 59);
+
+        boolean isRenewalWindowActive = isLessonForNextMonth && !now.isBefore(renewalStartDateTime)
+                && !now.isAfter(renewalEndDateTime);
+
+        if (!isRenewalWindowActive) {
             throw new BusinessRuleException(ErrorCode.RENEWAL_PERIOD_INVALID,
-                    "재수강 신청 기간이 아닙니다. (다음 달 강습: 현월 20~24일)");
+                    "재수강 신청 기간이 아닙니다. (다음 달 강습: 현월 20일 10시 ~ 24일 23시 59분)");
         }
 
         long paidEnrollments = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
