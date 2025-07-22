@@ -39,4 +39,6 @@ public interface LessonRepository extends JpaRepository<Lesson, Long>, JpaSpecif
             @Param("locationName") String locationName,
             @Param("nextMonthStart") LocalDate nextMonthStart,
             @Param("nextMonthEnd") LocalDate nextMonthEnd);
+
+    List<Lesson> findByLessonTimeAndStartDateBetween(String lessonTime, LocalDate startDate, LocalDate endDate);
 }

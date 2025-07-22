@@ -234,4 +234,8 @@ public interface EnrollRepository extends JpaRepository<Enroll, Long>, JpaSpecif
                      @Param("locationName") String locationName,
                      @Param("startDate") LocalDate startDate,
                      @Param("endDate") LocalDate endDate);
+
+       Integer findMaxWaitingNumberByLesson(Lesson lesson);
+
+       boolean existsByUserAndLessonInAndPayStatus(User user, List<Lesson> lessons, String payStatus);
 }

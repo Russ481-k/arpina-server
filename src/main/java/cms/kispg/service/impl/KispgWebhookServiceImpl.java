@@ -26,6 +26,7 @@ import cms.payment.service.PaymentService;
 
 import java.time.LocalDateTime;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -335,7 +336,34 @@ public class KispgWebhookServiceImpl implements KispgWebhookService {
             }
         }
 
-        // 5. 최종 금액 계산
+        // 5. 재수강 여부(renewalFlag) 판단 로직 추가
+        boolean isRenewal = false;
+        try {
+            // 현재 강습의 시작일 기준 지난달
+            YearMonth lastMonth = YearMonth.from(lesson.getStartDate()).minusMonths(1);
+            LocalDate lastMonthStart = lastMonth.atDay(1);
+            LocalDate lastMonthEnd = lastMonth.atEndOfMonth();
+
+            // 지난달의 같은 시간대 강습들을 조회
+            List<Lesson> lastMonthLessons = lessonRepository.findByLessonTimeAndStartDateBetween(
+                    lesson.getLessonTime(), lastMonthStart, lastMonthEnd);
+
+            if (!lastMonthLessons.isEmpty()) {
+                // 지난달 강습 목록 중에 사용자가 수강한 내역(PAID)이 있는지 확인
+                isRenewal = enrollRepository.existsByUserAndLessonInAndPayStatus(user, lastMonthLessons, "PAID");
+                if (isRenewal) {
+                    logger.info("[KISPG Webhook] 재수강으로 확인되었습니다. User: {}, LessonTime: {}", user.getUsername(),
+                            lesson.getLessonTime());
+                }
+            }
+        } catch (Exception e) {
+            logger.error("[KISPG Webhook] 재수강 여부 확인 중 오류 발생. User: {}, Lesson: {}. Error: {}", user.getUsername(),
+                    lesson.getLessonId(), e.getMessage());
+            // 오류 발생 시에는 재수강이 아닌 것으로 처리하여 진행
+            isRenewal = false;
+        }
+
+        // 6. 최종 금액 계산
         int finalAmount = lesson.getPrice();
         if (usesLocker && lockerAllocated) {
             finalAmount += defaultLockerFee;
@@ -350,6 +378,7 @@ public class KispgWebhookServiceImpl implements KispgWebhookService {
                 .expireDt(null) // 결제 완료되었으므로 만료시간 불필요
                 .usesLocker(usesLocker)
                 .lockerAllocated(lockerAllocated)
+                .renewalFlag(isRenewal) // 재수강 여부 플래그 설정
                 .membershipType(cms.enroll.domain.MembershipType.GENERAL) // 기본값
                 .finalAmount(finalAmount)
                 .discountAppliedPercentage(0) // 기본값
