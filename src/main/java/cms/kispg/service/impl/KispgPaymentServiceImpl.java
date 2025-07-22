@@ -34,11 +34,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
 import cms.kispg.dto.KispgCancelRequestDto;
 import cms.kispg.dto.KispgCancelResponseDto;
-import java.util.Optional;
 import cms.admin.payment.dto.KispgQueryRequestDto;
 
 import javax.annotation.PostConstruct;
@@ -49,12 +46,11 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
-import java.time.temporal.TemporalAdjusters;
-import java.util.Base64;
 import java.util.Map;
 import java.util.List;
 import java.util.HashMap;
 import org.apache.commons.codec.binary.Hex;
+import java.time.YearMonth;
 
 @Slf4j
 @Service
@@ -490,8 +486,10 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
 
     private Enroll createOrUpdateEnrollment(User user, Lesson lesson, boolean usesLocker, boolean lockerAllocated,
             MembershipType membershipType, int discountPercentage) {
-        // 이 부분은 기존 로직을 재사용하거나 필요에 맞게 수정
-        // 예시:
+
+        // 재수강 여부 판단
+        boolean isRenewal = isRenewal(user, lesson);
+
         LocalDateTime expireDt = lesson.getEndDate().atTime(23, 59, 59);
 
         Enroll newEnroll = Enroll.builder()
@@ -503,11 +501,29 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
                 .usesLocker(usesLocker)
                 .lockerAllocated(lockerAllocated)
                 .membershipType(membershipType)
+                .renewalFlag(isRenewal) // 재수강 여부 설정
                 .discountAppliedPercentage(discountPercentage)
                 .createdBy(user.getUuid())
                 .createdIp("N/A") // IP 주소 필요시 전달받아야 함
                 .build();
         return enrollRepository.save(newEnroll);
+    }
+
+    private boolean isRenewal(User user, Lesson currentLesson) {
+        YearMonth currentLessonMonth = YearMonth.from(currentLesson.getStartDate());
+        YearMonth previousMonth = currentLessonMonth.minusMonths(1);
+        LocalDate previousMonthStart = previousMonth.atDay(1);
+        LocalDate previousMonthEnd = previousMonth.atEndOfMonth();
+
+        List<Enroll> previousMonthEnrollments = enrollRepository.findPaidByUserForPreviousMonthLesson(
+                user.getUuid(),
+                PaymentStatus.PAID.name(),
+                currentLesson.getTitle(),
+                currentLesson.getLessonTime(),
+                previousMonthStart,
+                previousMonthEnd);
+
+        return !previousMonthEnrollments.isEmpty();
     }
 
     private void createAndSavePayment(PaymentApprovalRequestDto approvalRequest, Enroll enroll, boolean lockerUsed,
