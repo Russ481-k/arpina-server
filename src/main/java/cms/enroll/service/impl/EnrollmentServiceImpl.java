@@ -38,11 +38,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Isolation;
-import org.springframework.util.StringUtils;
 
 import javax.persistence.EntityNotFoundException;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset; // Import for ZoneOffset
@@ -50,9 +48,7 @@ import java.time.temporal.ChronoUnit; // Added for calculating daysBetween
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Optional;
 import java.util.stream.Collectors;
-import java.util.ArrayList;
 import java.util.stream.Stream;
 
 import cms.common.exception.BusinessRuleException;
@@ -60,7 +56,6 @@ import cms.common.exception.ErrorCode;
 import cms.common.exception.ResourceNotFoundException;
 import org.springframework.http.HttpStatus; // HttpStatus 추가
 import org.springframework.beans.factory.annotation.Value; // Added for defaultLockerFee
-import java.time.temporal.ChronoUnit; // Added for calculating daysBetween
 import org.springframework.retry.annotation.Backoff;
 import org.springframework.retry.annotation.Retryable;
 import org.springframework.dao.DeadlockLoserDataAccessException;
@@ -157,15 +152,12 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                         LocalDate nextMonthEnd = currentMonth.plusMonths(1).atEndOfMonth();
 
                         logger.debug(
-                                "Searching for next month's lesson with: Title='{}', Instructor='{}', Time='{}', Location='{}'",
-                                currentLesson.getTitle(), currentLesson.getInstructorName(),
-                                currentLesson.getLessonTime(), currentLesson.getLocationName());
+                                "Searching for next month's lesson with: Title='{}', Time='{}'",
+                                currentLesson.getTitle(), currentLesson.getLessonTime());
 
                         return lessonRepository.findNextMonthLesson(
                                 currentLesson.getTitle(),
-                                currentLesson.getInstructorName(),
                                 currentLesson.getLessonTime(),
-                                currentLesson.getLocationName(),
                                 nextMonthStart,
                                 nextMonthEnd).map(Stream::of).orElseGet(Stream::empty);
                     })
@@ -534,9 +526,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 user.getUuid(),
                 PaymentStatus.PAID.name(),
                 currentLesson.getTitle(),
-                currentLesson.getInstructorName(),
                 currentLesson.getLessonTime(),
-                currentLesson.getLocationName(),
                 previousMonthStart,
                 previousMonthEnd);
 

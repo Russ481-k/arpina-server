@@ -29,14 +29,15 @@ public interface LessonRepository extends JpaRepository<Lesson, Long>, JpaSpecif
      * 동시에 여러 사용자가 신청할 때 정원 초과를 방지
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT l FROM Lesson l WHERE l.lessonId = :lessonId")
-    Optional<Lesson> findByIdWithLock(@Param("lessonId") Long lessonId);
+    @Query("SELECT l FROM Lesson l WHERE l.lessonId = :id")
+    Optional<Lesson> findByIdWithLock(@Param("id") Long id);
 
-    @Query("SELECT l FROM Lesson l WHERE l.title = :title AND l.instructorName = :instructorName AND l.lessonTime = :lessonTime AND l.locationName = :locationName AND l.startDate >= :nextMonthStart AND l.startDate <= :nextMonthEnd")
-    Optional<Lesson> findNextMonthLesson(@Param("title") String title,
-            @Param("instructorName") String instructorName,
+    @Query("SELECT l FROM Lesson l WHERE l.title = :title " +
+            "AND l.lessonTime = :lessonTime " +
+            "AND l.startDate >= :nextMonthStart AND l.startDate <= :nextMonthEnd")
+    Optional<Lesson> findNextMonthLesson(
+            @Param("title") String title,
             @Param("lessonTime") String lessonTime,
-            @Param("locationName") String locationName,
             @Param("nextMonthStart") LocalDate nextMonthStart,
             @Param("nextMonthEnd") LocalDate nextMonthEnd);
 

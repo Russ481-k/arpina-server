@@ -223,16 +223,14 @@ public interface EnrollRepository extends JpaRepository<Enroll, Long>, JpaSpecif
        @Query("SELECT e FROM Enroll e " +
                      "JOIN e.lesson l " +
                      "WHERE e.user.uuid = :userUuid AND e.payStatus = :payStatus " +
-                     "AND l.title = :title AND l.instructorName = :instructorName " +
-                     "AND l.lessonTime = :lessonTime AND l.locationName = :locationName " +
+                     "AND l.title = :title " +
+                     "AND l.lessonTime = :lessonTime " +
                      "AND l.startDate >= :startDate AND l.startDate <= :endDate")
        List<Enroll> findPaidByUserForPreviousMonthLesson(
                      @Param("userUuid") String userUuid,
                      @Param("payStatus") String payStatus,
                      @Param("title") String title,
-                     @Param("instructorName") String instructorName,
                      @Param("lessonTime") String lessonTime,
-                     @Param("locationName") String locationName,
                      @Param("startDate") LocalDate startDate,
                      @Param("endDate") LocalDate endDate);
 
