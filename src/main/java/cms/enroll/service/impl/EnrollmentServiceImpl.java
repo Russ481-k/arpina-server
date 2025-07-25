@@ -162,14 +162,31 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                                 nextMonthEnd).map(Stream::of).orElseGet(Stream::empty);
                     })
                     .filter(nextMonthLesson -> {
-                        boolean alreadyEnrolledAndPaid = enrollRepository.findByUserUuid(user.getUuid()).stream()
-                                .anyMatch(e -> "PAID".equals(e.getPayStatus()) &&
-                                        e.getLesson().getLessonId().equals(nextMonthLesson.getLessonId()));
-                        if (alreadyEnrolledAndPaid) {
-                            logger.debug("User {} has already paid for lesson {}, skipping renewal preview.",
+                        boolean alreadyHasActiveEnrollment = enrollRepository.findByUserUuid(user.getUuid()).stream()
+                                .anyMatch(e -> {
+                                    if (!e.getLesson().getLessonId().equals(nextMonthLesson.getLessonId())) {
+                                        return false;
+                                    }
+                                    String payStatus = e.getPayStatus();
+                                    // PAID 상태는 활성으로 간주
+                                    if ("PAID".equals(payStatus)) {
+                                        return true;
+                                    }
+                                    // UNPAID 상태이고 만료되지 않았으면 활성으로 간주
+                                    if ("UNPAID".equals(payStatus) && e.getExpireDt() != null
+                                            && e.getExpireDt().isAfter(LocalDateTime.now())) {
+                                        return true;
+                                    }
+                                    // REFUNDED, EXPIRED, CANCELED 등 다른 모든 상태는 비활성으로 간주
+                                    return false;
+                                });
+
+                        if (alreadyHasActiveEnrollment) {
+                            logger.debug(
+                                    "User {} has already an active enrollment for lesson {}, skipping renewal preview.",
                                     user.getUsername(), nextMonthLesson.getLessonId());
                         }
-                        return !alreadyEnrolledAndPaid;
+                        return !alreadyHasActiveEnrollment;
                     })
                     .map(nextMonthLesson -> createRenewalPreviewDto(nextMonthLesson, true))
                     .collect(Collectors.toList());
