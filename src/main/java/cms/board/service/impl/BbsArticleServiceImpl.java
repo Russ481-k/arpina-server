@@ -527,6 +527,22 @@ public class BbsArticleServiceImpl implements BbsArticleService {
 
     @Override
     @Transactional(readOnly = true)
+    public Page<BbsArticleDto> searchArticlesInCategory(Long bbsId, Long menuId, Long categoryId, String keyword,
+            Pageable pageable,
+            boolean isAdmin) {
+        Page<BbsArticleDomain> articlesPage;
+        if (isAdmin) {
+            articlesPage = bbsArticleRepository.searchAllByKeywordAndMenuIdAndCategoryId(bbsId, menuId, categoryId,
+                    keyword, pageable);
+        } else {
+            articlesPage = bbsArticleRepository.searchPublishedByKeywordAndMenuIdAndCategoryId(bbsId, menuId,
+                    categoryId, keyword, pageable);
+        }
+        return toDtoPageWithArticleNumber(articlesPage, pageable);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public Page<BbsArticleDto> getReplies(Long nttId, Pageable pageable) {
         BbsArticleDomain parentArticle = bbsArticleRepository.findById(nttId)
                 .orElseThrow(() -> new BbsArticleNotFoundException(nttId));

@@ -73,4 +73,14 @@ public interface BbsArticleRepository extends JpaRepository<BbsArticleDomain, Lo
 
         @Query("SELECT a.nttId, a.content FROM BbsArticleDomain a WHERE a.content LIKE '%/api/v1/cms/file/public/view/%' ORDER BY a.createdAt DESC")
         List<Object[]> findSampleArticlesWithImages(Pageable pageable);
+
+        @Query("SELECT a FROM BbsArticleDomain a JOIN a.categories ac WHERE a.bbsMaster.bbsId = :bbsId AND a.menu.id = :menuId AND ac.category.categoryId = :categoryId AND (a.title LIKE %:keyword% OR a.content LIKE %:keyword% OR a.writer LIKE %:keyword% OR FUNCTION('TO_CHAR', a.postedAt, 'YYYY-MM-DD') LIKE %:keyword%) AND a.publishState IN ('Y', 'P') ORDER BY a.noticeState DESC, a.postedAt DESC")
+        Page<BbsArticleDomain> searchPublishedByKeywordAndMenuIdAndCategoryId(@Param("bbsId") Long bbsId,
+                        @Param("menuId") Long menuId, @Param("categoryId") Long categoryId,
+                        @Param("keyword") String keyword, Pageable pageable);
+
+        @Query("SELECT a FROM BbsArticleDomain a JOIN a.categories ac WHERE a.bbsMaster.bbsId = :bbsId AND a.menu.id = :menuId AND ac.category.categoryId = :categoryId AND (a.title LIKE %:keyword% OR a.content LIKE %:keyword% OR a.writer LIKE %:keyword% OR FUNCTION('TO_CHAR', a.postedAt, 'YYYY-MM-DD') LIKE %:keyword%) ORDER BY a.noticeState DESC, a.postedAt DESC")
+        Page<BbsArticleDomain> searchAllByKeywordAndMenuIdAndCategoryId(@Param("bbsId") Long bbsId,
+                        @Param("menuId") Long menuId, @Param("categoryId") Long categoryId,
+                        @Param("keyword") String keyword, Pageable pageable);
 }

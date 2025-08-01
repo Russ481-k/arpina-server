@@ -41,11 +41,23 @@ public class BbsArticleController {
                         .anyMatch(grantedAuthority -> grantedAuthority.getAuthority().equals("ROLE_ADMIN"));
 
         Page<BbsArticleDto> articles;
-        if (keyword != null && !keyword.trim().isEmpty()) {
+
+        // keyword와 categoryId를 모두 고려한 조건부 로직
+        boolean hasKeyword = keyword != null && !keyword.trim().isEmpty();
+        boolean hasCategoryId = categoryId != null;
+
+        if (hasKeyword && hasCategoryId) {
+            // 카테고리 내 검색
+            articles = bbsArticleService.searchArticlesInCategory(bbsId, menuId, categoryId, keyword, pageable,
+                    isAdmin);
+        } else if (hasKeyword) {
+            // 전체 검색
             articles = bbsArticleService.searchArticles(bbsId, menuId, keyword, pageable, isAdmin);
-        } else if (categoryId != null) {
+        } else if (hasCategoryId) {
+            // 카테고리 필터링
             articles = bbsArticleService.getArticles(bbsId, menuId, categoryId, pageable, isAdmin);
         } else {
+            // 전체 조회
             articles = bbsArticleService.getArticles(bbsId, menuId, pageable, isAdmin);
         }
 

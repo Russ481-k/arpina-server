@@ -36,6 +36,9 @@ public interface BbsArticleService {
 
         Page<BbsArticleDto> searchArticles(Long bbsId, Long menuId, String keyword, Pageable pageable, boolean isAdmin);
 
+        Page<BbsArticleDto> searchArticlesInCategory(Long bbsId, Long menuId, Long categoryId, String keyword,
+                        Pageable pageable, boolean isAdmin);
+
         Page<BbsArticleDto> getReplies(Long nttId, Pageable pageable);
 
         void increaseHits(Long nttId);
