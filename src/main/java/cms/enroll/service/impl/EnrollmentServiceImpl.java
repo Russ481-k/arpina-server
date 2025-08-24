@@ -21,7 +21,7 @@ import cms.locker.service.LockerService;
 // DTOs - directly import from specified packages
 import cms.mypage.dto.CheckoutDto;
 // cms.mypage.dto.EnrollDto is used for Mypage responses
-import cms.mypage.dto.EnrollDto;
+import cms.mypage.dto.EnrollDto; 
 import cms.mypage.dto.RenewalRequestDto;
 import cms.mypage.dto.EnrollInitiationResponseDto;
 // cms.swimming.dto.EnrollRequestDto and EnrollResponseDto are used for initial enrollment
@@ -104,11 +104,11 @@ public class EnrollmentServiceImpl implements EnrollmentService {
     // 비율 주석 처리
 
     public EnrollmentServiceImpl(EnrollRepository enrollRepository,
-            PaymentRepository paymentRepository,
-            @Qualifier("swimmingLessonServiceImpl") LessonService lessonService,
-            @Qualifier("lockerServiceImpl") LockerService lockerService,
-            UserRepository userRepository,
-            LessonRepository lessonRepository,
+                                 PaymentRepository paymentRepository,
+                                 @Qualifier("swimmingLessonServiceImpl") LessonService lessonService,
+                                 @Qualifier("lockerServiceImpl") LockerService lockerService,
+                                 UserRepository userRepository,
+                                 LessonRepository lessonRepository,
             LessonCapacityWebSocketHandler webSocketHandler,
             PaymentService paymentService
     /* , KispgService kispgService */) { // 주입
@@ -134,7 +134,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
 
         List<EnrollDto> dtoList = userEnrollments.stream()
                 .map(this::convertToMypageEnrollDto)
-                .collect(Collectors.toList());
+                        .collect(Collectors.toList());
 
         LocalDate today = LocalDate.now();
         YearMonth currentMonth = YearMonth.from(today);
@@ -314,12 +314,12 @@ public class EnrollmentServiceImpl implements EnrollmentService {
     @Transactional(readOnly = true)
     public EnrollDto getEnrollmentDetails(User user, Long enrollId) {
         if (user == null || user.getUuid() == null) { // 방어 코드
-            throw new BusinessRuleException(ErrorCode.AUTHENTICATION_FAILED, HttpStatus.UNAUTHORIZED);
+             throw new BusinessRuleException(ErrorCode.AUTHENTICATION_FAILED, HttpStatus.UNAUTHORIZED);
         }
         Enroll enroll = enrollRepository.findById(enrollId)
                 .orElseThrow(() -> new ResourceNotFoundException("수강 신청 정보를 찾을 수 없습니다 (ID: " + enrollId + ")",
                         ErrorCode.ENROLLMENT_NOT_FOUND));
-
+        
         if (!enroll.getUser().getUuid().equals(user.getUuid())) {
             throw new BusinessRuleException(ErrorCode.ACCESS_DENIED, HttpStatus.FORBIDDEN);
         }
@@ -338,29 +338,29 @@ public class EnrollmentServiceImpl implements EnrollmentService {
     @Transactional(isolation = Isolation.SERIALIZABLE)
     @Retryable(value = {
             DeadlockLoserDataAccessException.class,
-            CannotAcquireLockException.class,
+            CannotAcquireLockException.class, 
             JpaOptimisticLockingFailureException.class
     }, maxAttempts = 3, backoff = @Backoff(delay = 1000, multiplier = 1.5))
     public EnrollResponseDto createInitialEnrollment(User user, EnrollRequestDto initialEnrollRequest,
             String ipAddress) {
-        logger.info("[Enrollment] Starting enrollment process for user: {}, lesson: {}",
-                user.getUuid(), initialEnrollRequest.getLessonId());
-
+        logger.info("[Enrollment] Starting enrollment process for user: {}, lesson: {}", 
+                   user.getUuid(), initialEnrollRequest.getLessonId());
+        
         long startTime = System.currentTimeMillis();
         try {
             return createInitialEnrollmentInternal(user, initialEnrollRequest, ipAddress);
         } catch (DeadlockLoserDataAccessException e) {
-            logger.warn("[Enrollment] Deadlock detected for user: {}, lesson: {}, retrying...",
-                    user.getUuid(), initialEnrollRequest.getLessonId());
+            logger.warn("[Enrollment] Deadlock detected for user: {}, lesson: {}, retrying...", 
+                       user.getUuid(), initialEnrollRequest.getLessonId());
             throw e; // 재시도를 위해 예외 재발생
         } catch (CannotAcquireLockException e) {
-            logger.warn("[Enrollment] Lock acquisition failed for user: {}, lesson: {}, retrying...",
-                    user.getUuid(), initialEnrollRequest.getLessonId());
+            logger.warn("[Enrollment] Lock acquisition failed for user: {}, lesson: {}, retrying...", 
+                       user.getUuid(), initialEnrollRequest.getLessonId());
             throw e; // 재시도를 위해 예외 재발생
         } finally {
             long endTime = System.currentTimeMillis();
-            logger.info("[Enrollment] Enrollment process completed in {} ms for user: {}",
-                    (endTime - startTime), user.getUuid());
+            logger.info("[Enrollment] Enrollment process completed in {} ms for user: {}", 
+                       (endTime - startTime), user.getUuid());
         }
     }
 
@@ -395,19 +395,19 @@ public class EnrollmentServiceImpl implements EnrollmentService {
 
         // *** START Check for previous admin-cancelled enrollment for this lesson ***
         List<String> adminCancelledPayStatuses = Arrays.asList(
-                "REFUNDED",
+            "REFUNDED", 
                 "PARTIAL_REFUNDED",
                 "REFUND_PENDING_ADMIN_CANCEL");
         boolean hasAdminCancelledEnrollment = enrollRepository
                 .existsByUserUuidAndLessonLessonIdAndCancelStatusAndPayStatusIn(
-                        user.getUuid(),
-                        lesson.getLessonId(),
-                        Enroll.CancelStatusType.APPROVED,
+            user.getUuid(), 
+            lesson.getLessonId(), 
+            Enroll.CancelStatusType.APPROVED, 
                         adminCancelledPayStatuses);
 
         if (hasAdminCancelledEnrollment) {
-            throw new BusinessRuleException(ErrorCode.ENROLLMENT_PREVIOUSLY_CANCELLED_BY_ADMIN,
-                    "해당 강습에 대한 이전 신청이 관리자에 의해 취소된 내역이 있어 재신청할 수 없습니다.");
+            throw new BusinessRuleException(ErrorCode.ENROLLMENT_PREVIOUSLY_CANCELLED_BY_ADMIN, 
+                "해당 강습에 대한 이전 신청이 관리자에 의해 취소된 내역이 있어 재신청할 수 없습니다.");
         }
         // *** END Check for previous admin-cancelled enrollment for this lesson ***
 
@@ -447,13 +447,13 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         long currentPaidEnrollments = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
         long currentUnpaidActiveEnrollments = enrollRepository
                 .countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(
-                        lesson.getLessonId(), "APPLIED", "UNPAID", LocalDateTime.now());
+                lesson.getLessonId(), "APPLIED", "UNPAID", LocalDateTime.now());
         long totalCurrentEnrollments = currentPaidEnrollments + currentUnpaidActiveEnrollments;
         long availableSlots = lesson.getCapacity() - totalCurrentEnrollments;
 
         if (availableSlots <= 0) {
-            throw new BusinessRuleException(ErrorCode.PAYMENT_PAGE_SLOT_UNAVAILABLE,
-                    "정원이 마감되었습니다. 현재 신청된 (결제완료 및 결제대기 포함) 인원: " + totalCurrentEnrollments);
+            throw new BusinessRuleException(ErrorCode.PAYMENT_PAGE_SLOT_UNAVAILABLE, 
+                "정원이 마감되었습니다. 현재 신청된 (결제완료 및 결제대기 포함) 인원: " + totalCurrentEnrollments);
         }
 
         // *** 기존 신청 체크 (중복 방지) ***
@@ -484,7 +484,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         int lessonPrice = lesson.getPrice();
         int discountPercentage = membershipTypeEnum.getDiscountPercentage();
         int priceAfterMembershipDiscount = lessonPrice - (lessonPrice * discountPercentage / 100);
-
+        
         int finalAmount = priceAfterMembershipDiscount;
 
         boolean isRenewal = isRenewal(user, lesson);
@@ -495,7 +495,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 .status("APPLIED")
                 .payStatus("UNPAID")
                 .expireDt(LocalDateTime.now().plusMinutes(5))
-                .usesLocker(initialEnrollRequest.getUsesLocker())
+                .usesLocker(initialEnrollRequest.getUsesLocker()) 
                 .lockerAllocated(false) // Locker is not allocated until payment
                 .membershipType(membershipTypeEnum)
                 .renewalFlag(isRenewal)
@@ -506,9 +506,9 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 .build();
 
         Enroll savedEnroll = enrollRepository.save(enroll);
-        logger.info("Enrollment record created with ID: {} for user: {}, lesson: {}, membership: {}, finalAmount: {}",
-                savedEnroll.getEnrollId(), user.getUuid(), lesson.getLessonId(), membershipTypeEnum, finalAmount);
-
+        logger.info("Enrollment record created with ID: {} for user: {}, lesson: {}, membership: {}, finalAmount: {}", 
+            savedEnroll.getEnrollId(), user.getUuid(), lesson.getLessonId(), membershipTypeEnum, finalAmount);
+        
         // WebSocket으로 용량 업데이트 전송 (이전 로직 복원 및 사용)
         long finalPaidCount = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
         long finalUnpaidActiveCount = enrollRepository.countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(
@@ -517,16 +517,16 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         if (webSocketHandler != null) {
             try {
                 webSocketHandler.broadcastLessonCapacityUpdate(
-                        lesson.getLessonId(),
-                        lesson.getCapacity(), // Total capacity
-                        (int) finalPaidCount,
+                    lesson.getLessonId(),
+                    lesson.getCapacity(), // Total capacity
+                    (int) finalPaidCount,
                         (int) finalUnpaidActiveCount);
                 logger.info(
                         "Sent capacity update via WebSocket for lessonId: {}, total: {}, paid: {}, unpaidActive: {}",
-                        lesson.getLessonId(), lesson.getCapacity(), finalPaidCount, finalUnpaidActiveCount);
+                    lesson.getLessonId(), lesson.getCapacity(), finalPaidCount, finalUnpaidActiveCount);
             } catch (Exception e) {
-                logger.warn("[WebSocket] Failed to broadcast capacity update for lesson {}: {}",
-                        lesson.getLessonId(), e.getMessage(), e); // Include exception for better diagnostics
+                logger.warn("[WebSocket] Failed to broadcast capacity update for lesson {}: {}", 
+                           lesson.getLessonId(), e.getMessage(), e); // Include exception for better diagnostics
             }
         }
 
@@ -554,12 +554,12 @@ public class EnrollmentServiceImpl implements EnrollmentService {
     @Transactional // Ensure transactional behavior for updates
     public CheckoutDto processCheckout(User user, Long enrollId, cms.mypage.dto.CheckoutRequestDto checkoutRequest) {
         if (user == null || user.getUuid() == null) {
-            throw new BusinessRuleException(ErrorCode.AUTHENTICATION_FAILED, HttpStatus.UNAUTHORIZED);
+             throw new BusinessRuleException(ErrorCode.AUTHENTICATION_FAILED, HttpStatus.UNAUTHORIZED);
         }
         Enroll enroll = enrollRepository.findById(enrollId)
                 .orElseThrow(() -> new ResourceNotFoundException("수강 신청 정보를 찾을 수 없습니다 (ID: " + enrollId + ")",
                         ErrorCode.ENROLLMENT_NOT_FOUND));
-
+        
         if (!enroll.getUser().getUuid().equals(user.getUuid())) {
             throw new BusinessRuleException(ErrorCode.ACCESS_DENIED, HttpStatus.FORBIDDEN);
         }
@@ -574,7 +574,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
             throw new BusinessRuleException("결제 가능 시간이 만료되었습니다 (ID: " + enrollId + ")",
                     ErrorCode.ENROLLMENT_PAYMENT_EXPIRED);
         }
-
+        
         Lesson lesson = enroll.getLesson();
         if (lesson == null) {
             throw new ResourceNotFoundException("연결된 강좌 정보를 찾을 수 없습니다 (수강신청 ID: " + enrollId + ")",
@@ -625,12 +625,12 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         Enroll enroll = enrollRepository.findById(enrollId)
                 .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found with ID: " + enrollId,
                         ErrorCode.ENROLLMENT_NOT_FOUND));
-
+        
         if (!enroll.getUser().getUuid().equals(user.getUuid())) {
             throw new BusinessRuleException(ErrorCode.ACCESS_DENIED,
                     "You do not have permission to cancel this enrollment.");
         }
-
+        
         // Check if already cancelled to prevent multiple attempts on a record that
         // might get processed differently.
         if (enroll.getCancelStatus() != null && enroll.getCancelStatus() != Enroll.CancelStatusType.NONE) {
@@ -643,7 +643,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
             throw new ResourceNotFoundException("Lesson not found for enrollment ID: " + enrollId,
                     ErrorCode.LESSON_NOT_FOUND);
         }
-
+        
         if ("UNPAID".equalsIgnoreCase(enroll.getPayStatus())) {
             // Check for associated payments for this UNPAID enrollment. This should ideally
             // be zero.
@@ -658,7 +658,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 enroll.setCancelRequestedAt(LocalDateTime.now());
                 enroll.setCancelReason(reason);
                 enroll.setStatus("CANCELED");
-                enroll.setPayStatus("CANCELED_UNPAID");
+                enroll.setPayStatus("CANCELED_UNPAID"); 
                 enroll.setCancelStatus(CancelStatusType.APPROVED);
                 enroll.setCancelApprovedAt(LocalDateTime.now());
                 enroll.setRefundAmount(0);
@@ -678,7 +678,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 return; // Exit after deletion
             }
 
-        } else if ("PAID".equalsIgnoreCase(enroll.getPayStatus())) {
+        } else if ("PAID".equalsIgnoreCase(enroll.getPayStatus())) { 
             // Existing logic for PAID enrollments
             LocalDateTime now = LocalDateTime.now();
             enroll.setCancelRequestedAt(now);
@@ -690,23 +690,23 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 logger.info(
                         "PAID enrollment cancellation request before lesson start (enrollId: {}). Requesting refund.",
                         enrollId);
-                enroll.setStatus("CANCELED");
-                enroll.setPayStatus("REFUND_REQUESTED");
-                enroll.setCancelStatus(CancelStatusType.REQ);
-            } else {
+                enroll.setStatus("CANCELED"); 
+                enroll.setPayStatus("REFUND_REQUESTED"); 
+                enroll.setCancelStatus(CancelStatusType.REQ); 
+                        } else {
                 logger.info(
                         "PAID enrollment cancellation request on/after lesson start (enrollId: {}). Admin review required.",
                         enrollId);
-                enroll.setStatus("CANCELED_REQ");
-                enroll.setPayStatus("REFUND_REQUESTED");
+                enroll.setStatus("CANCELED_REQ"); 
+                enroll.setPayStatus("REFUND_REQUESTED"); 
                 enroll.setCancelStatus(CancelStatusType.REQ);
             }
         } else {
             logger.warn(
                     "Cancellation requested for enrollment (enrollId: {}) with unhandled payStatus: {}. No action taken.",
                     enrollId, enroll.getPayStatus());
-            throw new BusinessRuleException(ErrorCode.ENROLLMENT_CANCELLATION_NOT_ALLOWED,
-                    "Cancellation is not allowed for the current payment status: " + enroll.getPayStatus());
+            throw new BusinessRuleException(ErrorCode.ENROLLMENT_CANCELLATION_NOT_ALLOWED, 
+                "Cancellation is not allowed for the current payment status: " + enroll.getPayStatus());
         }
         enrollRepository.save(enroll); // Save changes if not deleted
     }
@@ -781,7 +781,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         }
 
         boolean isFullRefund = finalRefundAmount.compareTo(totalPaidAmount) == 0;
-
+        
         return CalculatedRefundDetailsDto.builder()
                 .systemCalculatedUsedDays(systemCalculatedUsedDays)
                 .manualUsedDays(manualUsedDaysOverride)
@@ -815,7 +815,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 && "REFUND_PENDING_ADMIN_CANCEL".equals(enroll.getPayStatus());
 
         if (!isUserRequested && !isAdminCancelled) {
-            throw new BusinessRuleException(ErrorCode.ENROLLMENT_CANCELLATION_NOT_ALLOWED,
+             throw new BusinessRuleException(ErrorCode.ENROLLMENT_CANCELLATION_NOT_ALLOWED,
                     "환불 승인이 가능한 상태가 아닙니다. 현재 취소상태: " + enroll.getCancelStatus() + ", 결제상태: " + enroll.getPayStatus());
         }
 
@@ -853,7 +853,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
             finalRefundAmountForPg = refundDetails.getFinalRefundAmount().intValue();
             isPartial = finalRefundAmountForPg < totalPaidAmount;
 
-            enroll.setDaysUsedForRefund(refundDetails.getEffectiveUsedDays());
+        enroll.setDaysUsedForRefund(refundDetails.getEffectiveUsedDays());
         }
 
         enroll.setRefundAmount(finalRefundAmountForPg);
@@ -870,7 +870,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
             paymentService.requestCancelPayment(payment.getId(), finalRefundAmountForPg, cancelReason, isPartial);
 
         } else { // 환불 금액이 0원인 경우
-            enroll.setPayStatus("REFUNDED");
+            enroll.setPayStatus("REFUNDED"); 
             if (payment != null) {
                 payment.setStatus(PaymentStatus.CANCELED); // 0원 환불 시에도 payment 상태를 CANCELED로 업데이트
                 paymentRepository.save(payment);
@@ -967,11 +967,11 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         Enroll enroll = enrollRepository.findById(enrollId)
                 .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found with ID: " + enrollId,
                         ErrorCode.ENROLLMENT_NOT_FOUND));
-
+        
         // 만약 enroll.getDaysUsedForRefund()가 있다면 그 값을 manualUsedDaysPreview로 전달
         // 없다면 null을 전달하여 calculateRefundInternal 내부에서 시스템 자동 계산일 사용토록 함
-        Integer previouslySetManualDays = enroll.getDaysUsedForRefund();
-
+        Integer previouslySetManualDays = enroll.getDaysUsedForRefund(); 
+                                                                        
         CalculatedRefundDetailsDto details = getRefundPreview(enrollId, previouslySetManualDays);
         return details.getFinalRefundAmount();
     }
@@ -986,7 +986,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         if (enroll.getCancelStatus() != Enroll.CancelStatusType.REQ &&
                 enroll.getCancelStatus() != Enroll.CancelStatusType.DENIED &&
                 enroll.getCancelStatus() != Enroll.CancelStatusType.ADMIN_CANCELED) {
-            throw new BusinessRuleException(ErrorCode.ENROLLMENT_CANCELLATION_NOT_ALLOWED,
+            throw new BusinessRuleException(ErrorCode.ENROLLMENT_CANCELLATION_NOT_ALLOWED, 
                     "취소 요청 거부가 불가능한 상태입니다. 현재 상태: " + enroll.getCancelStatus());
         }
 
@@ -997,10 +997,10 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 enroll.isLockerAllocated() == enroll.isUsesLocker()) {
             logger.info("이미 거부 처리 및 상태 복원이 완료된 건입니다. enrollId: {}", enrollId);
             // 코멘트만 업데이트
-            enroll.setCancelReason(comment);
+        enroll.setCancelReason(comment);
             enroll.setUpdatedBy("ADMIN");
-            enroll.setUpdatedAt(LocalDateTime.now());
-            enrollRepository.save(enroll);
+        enroll.setUpdatedAt(LocalDateTime.now());
+        enrollRepository.save(enroll);
             return;
         }
 
@@ -1125,9 +1125,9 @@ public class EnrollmentServiceImpl implements EnrollmentService {
             if (lessonStartMonth.equals(currentMonth.plusMonths(1))) {
                 LocalDate renewalStart = LocalDate.of(today.getYear(), today.getMonth(), 20);
                 LocalDate renewalEnd = LocalDate.of(today.getYear(), today.getMonth(), 24);
-
+                
                 boolean isRenewalOpen = !today.isBefore(renewalStart) && !today.isAfter(renewalEnd);
-
+                
                 renewalWindowDto = EnrollDto.RenewalWindow.builder()
                         .isOpen(isRenewalOpen)
                         .open(renewalStart.atStartOfDay().atOffset(ZoneOffset.UTC))
@@ -1137,8 +1137,8 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         }
 
         boolean canAttemptPayment = "UNPAID".equals(enroll.getPayStatus()) &&
-                (enroll.getExpireDt() == null || LocalDateTime.now().isBefore(enroll.getExpireDt()));
-
+                                    (enroll.getExpireDt() == null || LocalDateTime.now().isBefore(enroll.getExpireDt()));
+        
         String paymentPageUrl = null;
         // TODO: If direct payment URLs are needed, logic to generate/fetch them should
         // go here.
@@ -1165,9 +1165,9 @@ public class EnrollmentServiceImpl implements EnrollmentService {
     @Transactional(isolation = Isolation.SERIALIZABLE)
     public EnrollInitiationResponseDto processRenewal(User user, RenewalRequestDto renewalRequestDto) {
         if (user == null || user.getUuid() == null) {
-            throw new BusinessRuleException(ErrorCode.AUTHENTICATION_FAILED, HttpStatus.UNAUTHORIZED);
+             throw new BusinessRuleException(ErrorCode.AUTHENTICATION_FAILED, HttpStatus.UNAUTHORIZED);
         }
-
+        
         Lesson lesson = lessonRepository.findByIdWithLock(renewalRequestDto.getLessonId())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "재수강 대상 강좌를 찾을 수 없습니다 (ID: " + renewalRequestDto.getLessonId() + ")",
@@ -1188,7 +1188,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
                 && !now.isAfter(renewalEndDateTime);
 
         if (!isRenewalWindowActive) {
-            throw new BusinessRuleException(ErrorCode.RENEWAL_PERIOD_INVALID,
+            throw new BusinessRuleException(ErrorCode.RENEWAL_PERIOD_INVALID, 
                     "재수강 신청 기간이 아닙니다. (다음 달 강습: 현월 20일 10시 ~ 24일 23시 59분)");
         }
 
@@ -1198,7 +1198,7 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         long availableSlotsForRenewal = lesson.getCapacity() - paidEnrollments - unpaidExpiringEnrollments;
 
         if (availableSlotsForRenewal <= 0) {
-            throw new BusinessRuleException(ErrorCode.PAYMENT_PAGE_SLOT_UNAVAILABLE,
+            throw new BusinessRuleException(ErrorCode.PAYMENT_PAGE_SLOT_UNAVAILABLE, 
                     "재수강 정원이 마감되었습니다. 현재 정원: " + lesson.getCapacity() + ", 결제완료: " + paidEnrollments + ", 결제대기(만료전): "
                             + unpaidExpiringEnrollments);
         }
@@ -1297,4 +1297,4 @@ public class EnrollmentServiceImpl implements EnrollmentService {
 
         return new CheckEnrollmentEligibilityDto(true, "수강 신청이 가능합니다.");
     }
-}
+} 

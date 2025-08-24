@@ -86,6 +86,9 @@ public class Payment {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
+    @Column(name = "export_status", columnDefinition = "TINYINT DEFAULT 0")
+    private Integer exportStatus = 0;
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();

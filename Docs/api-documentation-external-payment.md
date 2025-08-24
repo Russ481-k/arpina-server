@@ -23,8 +23,6 @@
   - 귀사에서 API를 호출할 서버의 공인 IP 주소를 사전에 저희에게 전달해야 합니다.
   - 등록되지 않은 IP 주소에서의 API 호출은 자동으로 차단됩니다.
 
----
-
 ## 3. 요청 명세
 
 ### 가. 기본 정보
@@ -37,6 +35,7 @@
 | Key         | Type   | 필수   | 설명                  |
 | :---------- | :----- | :----- | :-------------------- |
 | `X-API-KEY` | String | **예** | 발급받은 고유 API 키. |
+| `Accept`    | String | 권장   | `application/json`    |
 
 ### 다. 쿼리 파라미터 (Query Parameters)
 
@@ -72,6 +71,7 @@ https://help.handylab.co.kr/api/v1/external/payment-data?startDate=2023-10-01T00
       "paidAmount": 75000,
       "paidAt": "2023-10-27T10:00:00",
       "payMethod": "CARD",
+      "exportStatus": 1,
       "enrollmentInfo": {
         "enrollId": 54321,
         "status": "PAID",
@@ -82,7 +82,8 @@ https://help.handylab.co.kr/api/v1/external/payment-data?startDate=2023-10-01T00
         "uuid": "a1b2c3d4-e5f6-7890-g7h8-i9j0k1l2m3n4",
         "name": "홍길동",
         "email": "gildong.hong@example.com",
-        "phone": "010-1234-5678"
+        "phone": "010-1234-5678",
+        "gender": "0"
       }
     },
     {
@@ -103,7 +104,8 @@ https://help.handylab.co.kr/api/v1/external/payment-data?startDate=2023-10-01T00
         "uuid": "b2c3d4e5-f6g7-8901-h8i9-j0k1l2m3n4o5",
         "name": "김영희",
         "email": "younghee.kim@example.com",
-        "phone": "010-9876-5432"
+        "phone": "010-9876-5432",
+        "gender": "1"
       }
     }
   ]
@@ -112,35 +114,39 @@ https://help.handylab.co.kr/api/v1/external/payment-data?startDate=2023-10-01T00
 
 ### 나. 응답 필드 상세 설명
 
-| 경로                    | 필드명            | 타입     | 설명                                     |
-| :---------------------- | :---------------- | :------- | :--------------------------------------- |
-| `data`                  | -                 | Array    | 결제 데이터 객체의 배열.                 |
-| `data[]`                | -                 | Object   | 단일 결제 정보를 담는 객체.              |
-| `data[].paymentId`      | `paymentId`       | Long     | 결제 고유 ID.                            |
-| `data[].moid`           | `moid`            | String   | 주문 번호.                               |
-| `data[].tid`            | `tid`             | String   | PG사 거래 ID.                            |
-| `data[].status`         | `status`          | String   | 결제 상태 (예: `PAID`, `CANCELED`).      |
-| `data[].paidAmount`     | `paidAmount`      | Integer  | 결제된 총 금액 (원).                     |
-| `data[].paidAt`         | `paidAt`          | Datetime | 결제 완료 일시 (ISO 8601 형식).          |
-| `data[].payMethod`      | `payMethod`       | String   | 결제 수단 (예: `CARD`, `VBANK`).         |
-| `data[].enrollmentInfo` | -                 | Object   | 해당 결제와 연관된 신청 정보.            |
-| `...enrollId`           | `enrollId`        | Long     | 신청 고유 ID.                            |
-| `...status`             | `status`          | String   | 신청의 결제 상태 (예: `PAID`, `UNPAID`). |
-| `...lessonTitle`        | `lessonTitle`     | String   | 신청한 강습의 이름.                      |
-| `...applicationDate`    | `applicationDate` | Datetime | 신청 일시 (ISO 8601 형식).               |
-| `data[].userInfo`       | -                 | Object   | 해당 결제를 진행한 사용자 정보.          |
-| `...uuid`               | `uuid`            | String   | 사용자 고유 UUID.                        |
-| `...name`               | `name`            | String   | 사용자 이름.                             |
-| `...email`              | `email`           | String   | 사용자 이메일 주소.                      |
-| `...phone`              | `phone`           | String   | 사용자 연락처.                           |
+| 경로                    | 필드명            | 타입     | 설명                                                                   |
+| :---------------------- | :---------------- | :------- | :--------------------------------------------------------------------- |
+| `data`                  | -                 | Array    | 결제 데이터 객체의 배열.                                               |
+| `data[]`                | -                 | Object   | 단일 결제 정보를 담는 객체.                                            |
+| `data[].paymentId`      | `paymentId`       | Long     | 결제 고유 ID.                                                          |
+| `data[].moid`           | `moid`            | String   | 주문 번호.                                                             |
+| `data[].tid`            | `tid`             | String   | PG사 거래 ID.                                                          |
+| `data[].status`         | `status`          | String   | 결제 상태 (예: `PAID`, `CANCELED`).                                    |
+| `data[].paidAmount`     | `paidAmount`      | Integer  | 결제된 총 금액 (원).                                                   |
+| `data[].paidAt`         | `paidAt`          | Datetime | 결제 완료 일시 (ISO 8601 형식).                                        |
+| `data[].payMethod`      | `payMethod`       | String   | 결제 수단 (예: `CARD`, `VBANK`).                                       |
+| `data[].exportStatus`   | `exportStatus`    | Integer  | 데이터 조회 상태 (0: 미조회, 1: 조회됨).                               |
+| `data[].enrollmentInfo` | -                 | Object   | 해당 결제와 연관된 신청 정보.                                          |
+| `...enrollId`           | `enrollId`        | Long     | 신청 고유 ID.                                                          |
+| `...status`             | `status`          | String   | 신청의 결제 상태 (예: `PAID`, `UNPAID`).                               |
+| `...lessonTitle`        | `lessonTitle`     | String   | 신청한 강습의 이름.                                                    |
+| `...applicationDate`    | `applicationDate` | Datetime | 신청 일시 (ISO 8601 형식).                                             |
+| `data[].userInfo`       | -                 | Object   | 해당 결제를 진행한 사용자 정보.                                        |
+| `...uuid`               | `uuid`            | String   | 사용자 고유 UUID.                                                      |
+| `...name`               | `name`            | String   | 사용자 이름.                                                           |
+| `...email`              | `email`           | String   | 사용자 이메일 주소.                                                    |
+| `...phone`              | `phone`           | String   | 사용자 연락처.                                                         |
+| `...gender`             | `gender`          | String   | 사용자 성별. 현재 값은 NICE 기준(`0`: 여성, `1`: 남성)으로 제공됩니다. |
 
 ### 다. 실패 응답
 
-| Status Code        | 원인                              | 응답 본문 예시                                                                                         |
-| :----------------- | :-------------------------------- | :----------------------------------------------------------------------------------------------------- |
-| `400 Bad Request`  | 필수 파라미터 누락 또는 형식 오류 | `{"timestamp": "...", "status": 400, "error": "Bad Request", "message": "Required...", "path": "..."}` |
-| `401 Unauthorized` | API 키가 없거나 유효하지 않음     | `Unauthorized: Invalid API Key`                                                                        |
-| `403 Forbidden`    | 허용되지 않은 IP 주소에서 접근    | `Forbidden: IP not allowed`                                                                            |
+| Status Code                 | 원인                                       | 응답 본문 예시                                                                                         |
+| :-------------------------- | :----------------------------------------- | :----------------------------------------------------------------------------------------------------- |
+| `400 Bad Request`           | 필수 파라미터 누락 또는 형식 오류          | `{"timestamp": "...", "status": 400, "error": "Bad Request", "message": "Required...", "path": "..."}` |
+| `401 Unauthorized`          | API 키가 없거나 유효하지 않음              | `Unauthorized: Invalid API Key`                                                                        |
+| `403 Forbidden`             | 허용되지 않은 IP 주소에서 접근             | `Forbidden: IP not allowed`                                                                            |
+| `404 Not Found`             | 경로 불일치(프록시가 프리픽스를 변경/제거) | 올바른 엔드포인트: `/api/v1/external/payment-data`                                                     |
+| `500 Internal Server Error` | 서버 내부 오류                             | `{ "timestamp": "...", "status": 500, "error": "Internal Server Error", "errorCode": "CM_0001", ... }` |
 
 ---
 
@@ -200,6 +206,37 @@ public class ApiClient {
     }
 }
 ```
+
+---
+
+## 6. 동작/비즈니스 규칙
+
+- **데이터 범위**: `startDate` ≤ `paidAt` ≤ `endDate`인 결제 데이터가 반환됩니다.
+- **exportStatus 동작**: 각 결제 레코드의 `exportStatus`는 최초 조회 시 0→1로 갱신되며, 이후 재조회 시 1로 유지됩니다.
+- **응답 정렬**: 응답 순서는 보장되지 않습니다. 필요한 경우 클라이언트에서 `paidAt`으로 정렬하세요.
+
+## 7. 테스트/트러블슈팅 가이드
+
+- 401(Unauthorized): `X-API-KEY` 누락/오타/만료 여부를 확인하세요.
+- 403(Forbidden): 호출 출발지 공인 IP가 화이트리스트(`EXTERNAL_API_WHITELIST_IPS`)에 등록되어야 합니다.
+- 404(Not Found):
+  - 엔드포인트 오타 여부 확인: `/api/v1/external/payment-data` 사용
+  - 프록시가 `/api/v1` 프리픽스를 제거/변경하지 않는지 확인(Nginx 설정 참고)
+- 500(Internal Server Error): 일시적 장애 또는 예외. 동일 파라미터로 재시도 후 계속 발생 시 응답 본문과 함께 문의 바랍니다.
+
+### Postman 사용 시 주의
+
+- 하단 상태바에서 반드시 **Desktop Agent**로 전환해 호출하세요. Cloud Agent는 출발지 IP가 달라 화이트리스트에 걸릴 수 있습니다.
+- Settings → Proxy에서 **Use System Proxy / Global Proxy**를 비활성화하세요.
+- Postman Console(⌘/Ctrl+Alt+C)을 열어 Raw Request에 다음이 정확히 찍히는지 확인하세요:
+  - 헤더: `X-API-KEY: <발급키>`
+  - URL: `https://help.handylab.co.kr/api/v1/external/payment-data?startDate=...&endDate=...`
+
+## 8. 보안 권고
+
+- API 키는 외부에 노출하지 마세요(형상관리, 클라이언트 코드 등).
+- 주기적인 키 로테이션을 권장합니다.
+- 필요한 최소 IP만 화이트리스트에 등록하세요.
 
 ### 나. JavaScript (Node.js + axios)
 

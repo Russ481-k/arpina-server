@@ -92,7 +92,8 @@ public class SecurityConfig {
 				"/api/v1/swimming/lessons/**",
 				"/api/v1/nice/checkplus/**",
 				"/api/v1/group-reservations",
-				"/api/v1/external/**");
+				"/api/v1/external/**",
+				"/external/**");
 		for (String pattern : permitAllAntPatterns) {
 			matchers.add(new AntPathRequestMatcher(pattern));
 		}

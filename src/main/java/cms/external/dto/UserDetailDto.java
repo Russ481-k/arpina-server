@@ -11,6 +11,7 @@ public class UserDetailDto {
     private String name;
     private String email;
     private String phone;
+    private String gender;
 
     public static UserDetailDto from(User user) {
         if (user == null) {
@@ -21,6 +22,7 @@ public class UserDetailDto {
                 .name(user.getName())
                 .email(user.getEmail())
                 .phone(user.getPhone())
+                .gender(user.getGender())
                 .build();
     }
 }

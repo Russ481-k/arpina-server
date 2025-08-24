@@ -1,5 +1,6 @@
 package cms.external.controller;
 
+import cms.config.NoApiPrefix;
 import cms.external.dto.PaymentDataResponse;
 import cms.external.service.ExternalApiService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -17,7 +18,8 @@ import java.time.LocalDateTime;
 
 @Tag(name = "External API", description = "외부 업체 연동 API")
 @RestController
-@RequestMapping("/external")
+@NoApiPrefix
+@RequestMapping({"/external", "/api/v1/external"})  
 @RequiredArgsConstructor
 public class ExternalApiController {
 

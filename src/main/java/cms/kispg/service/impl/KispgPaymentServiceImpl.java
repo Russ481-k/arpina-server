@@ -59,7 +59,7 @@ import java.time.YearMonth;
 public class KispgPaymentServiceImpl implements KispgPaymentService {
 
     private static final DateTimeFormatter KISPG_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
-
+    
     private final EnrollRepository enrollRepository;
     private final LessonRepository lessonRepository;
     private final LockerService lockerService;
@@ -145,12 +145,12 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
         long paidCount = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
         long unpaidActiveCount = enrollRepository.countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(
                 lesson.getLessonId(), "APPLIED", "UNPAID", LocalDateTime.now());
-
+        
         long availableSlots = lesson.getCapacity() - paidCount - unpaidActiveCount;
         if (availableSlots <= 0) {
             log.warn(
                     "Payment slot unavailable for enrollId: {} (lesson: {}, capacity: {}, paid: {}, unpaidActive: {})",
-                    enrollId, lesson.getLessonId(), lesson.getCapacity(), paidCount, unpaidActiveCount);
+                enrollId, lesson.getLessonId(), lesson.getCapacity(), paidCount, unpaidActiveCount);
             throw new BusinessRuleException(ErrorCode.PAYMENT_PAGE_SLOT_UNAVAILABLE,
                     "현재 해당 강습의 결제 페이지 접근 슬롯이 가득 찼습니다.");
         }
@@ -227,7 +227,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
         long paidCount = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
         long unpaidActiveCount = enrollRepository.countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(
                 lesson.getLessonId(), "APPLIED", "UNPAID", LocalDateTime.now());
-
+        
         long availableSlots = lesson.getCapacity() - paidCount - unpaidActiveCount;
         if (availableSlots <= 0) {
             throw new BusinessRuleException(ErrorCode.LESSON_CAPACITY_EXCEEDED, "정원이 초과되었습니다.");
@@ -390,7 +390,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
                         ErrorCode.PAYMENT_INFO_NOT_FOUND));
 
         if (payment.getStatus() != PaymentStatus.PAID) {
-            throw new BusinessRuleException(ErrorCode.INVALID_PAYMENT_STATUS_FOR_OPERATION,
+            throw new BusinessRuleException(ErrorCode.INVALID_PAYMENT_STATUS_FOR_OPERATION, 
                     "결제가 완료되지 않았습니다. 현재 상태: " + payment.getStatus().getDescription());
         }
 
@@ -494,18 +494,18 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
 
         Enroll newEnroll = Enroll.builder()
                 .user(user)
-                .lesson(lesson)
-                .status("APPLIED")
-                .payStatus("PAID")
+                    .lesson(lesson)
+                    .status("APPLIED")
+                    .payStatus("PAID")
                 .expireDt(expireDt)
-                .usesLocker(usesLocker)
-                .lockerAllocated(lockerAllocated)
+                    .usesLocker(usesLocker)
+                    .lockerAllocated(lockerAllocated)
                 .membershipType(membershipType)
                 .renewalFlag(isRenewal) // 재수강 여부 설정
                 .discountAppliedPercentage(discountPercentage)
                 .createdBy(user.getUuid())
                 .createdIp("N/A") // IP 주소 필요시 전달받아야 함
-                .build();
+                    .build();
         return enrollRepository.save(newEnroll);
     }
 
@@ -574,9 +574,9 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
         log.info("  - HashData (Raw): {}{}{}{}", kispgMid, ediDate, amt, merchantKey);
         log.info("  - encData (Hashed): {} (길이: {})", encData, encData.length());
 
-        RestTemplate restTemplate = new RestTemplate();
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
+            RestTemplate restTemplate = new RestTemplate();
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
 
         Map<String, String> body = new HashMap<>();
         body.put("mid", kispgMid);
@@ -594,8 +594,8 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
         log.info("  - Method: POST");
         log.info("  - Content-Type: application/json");
         log.info("  - Body: {}", body);
-
-        long startTime = System.currentTimeMillis();
+            
+            long startTime = System.currentTimeMillis();
         try {
             ResponseEntity<String> response = restTemplate.postForEntity(url, requestEntity, String.class);
             long endTime = System.currentTimeMillis();
@@ -659,7 +659,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
         if (enroll == null)
             return null;
         Lesson lesson = enroll.getLesson();
-
+        
         EnrollDto.LessonDetails lessonDetails = EnrollDto.LessonDetails.builder()
                 .lessonId(lesson.getLessonId())
                 .title(lesson.getTitle())
@@ -864,4 +864,4 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
                     "PG사 조회 처리 중 오류 발생: " + e.getMessage());
         }
     }
-}
+} 

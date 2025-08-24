@@ -33,7 +33,7 @@ public class LoggingAspect {
     private final UserRepository userRepository;
     private static final Logger log = LoggerFactory.getLogger(LoggingAspect.class);
 
-    @Pointcut("execution(* cms..*Controller.*(..))")
+    @Pointcut("execution(* cms..*Controller.*(..)) && !execution(* cms.external.controller.ExternalApiController.*(..))")
     public void controllerPointcut() {
     }
 
@@ -49,8 +49,7 @@ public class LoggingAspect {
 
     public void logActivity(JoinPoint joinPoint, String action, String errorMessage) {
         try {
-            HttpServletRequest request = ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes())
-                    .getRequest();
+            HttpServletRequest request = ((ServletRequestAttributes) RequestContextHolder.getRequestAttributes()).getRequest();
             Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
             if (authentication != null && authentication.isAuthenticated()) {

@@ -24,7 +24,8 @@ public class WebConfig implements WebMvcConfigurer {
     public void configurePathMatch(@NonNull PathMatchConfigurer configurer) {
         configurer
                 .addPathPrefix("/api/v1",
-                        c -> c.isAnnotationPresent(org.springframework.web.bind.annotation.RestController.class));
+                        c -> c.isAnnotationPresent(org.springframework.web.bind.annotation.RestController.class)
+                                && !c.isAnnotationPresent(cms.config.NoApiPrefix.class));
     }
 
     @Override
@@ -50,6 +51,6 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(@NonNull InterceptorRegistry registry) {
         registry.addInterceptor(apiKeyAuthInterceptor)
-                .addPathPatterns("/api/v1/external/**");
+                .addPathPatterns("/api/v1/external/**", "/external/**");
     }
 }

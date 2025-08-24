@@ -3,10 +3,12 @@ package cms.external.dto;
 import cms.payment.domain.Payment;
 import lombok.Builder;
 import lombok.Getter;
+import lombok.Setter;
 
 import java.time.LocalDateTime;
 
 @Getter
+@Setter
 @Builder
 public class PaymentDetailDto {
     private Long paymentId;
@@ -16,6 +18,7 @@ public class PaymentDetailDto {
     private Integer paidAmount;
     private LocalDateTime paidAt;
     private String payMethod;
+    private Integer exportStatus;
     private EnrollmentDetailDto enrollmentInfo;
     private UserDetailDto userInfo;
 
@@ -42,6 +45,7 @@ public class PaymentDetailDto {
                 .paidAmount(payment.getPaidAmt())
                 .paidAt(payment.getPaidAt())
                 .payMethod(payment.getPayMethod())
+                .exportStatus(payment.getExportStatus())
                 .enrollmentInfo(enrollmentDetailDto)
                 .userInfo(userDetailDto)
                 .build();
