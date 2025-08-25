@@ -39,10 +39,14 @@ public class LessonServiceImpl implements LessonService {
             return null;
 
         Integer remainingSpots = null;
+        Integer currentPaidCount = null;
+        Integer currentPendingCount = null;
         if (lesson.getCapacity() != null) {
             long paidEnrollments = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
             long unpaidActiveEnrollments = enrollRepository.countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(
                     lesson.getLessonId(), "APPLIED", "UNPAID", LocalDateTime.now());
+            currentPaidCount = (int) paidEnrollments;
+            currentPendingCount = (int) unpaidActiveEnrollments;
             remainingSpots = lesson.getCapacity() - (int) paidEnrollments - (int) unpaidActiveEnrollments;
             if (remainingSpots < 0)
                 remainingSpots = 0;
@@ -71,7 +75,7 @@ public class LessonServiceImpl implements LessonService {
             }
         }
 
-        return LessonDto.fromEntity(lesson, remainingSpots, days, timePrefix, timeSlot);
+        return LessonDto.fromEntity(lesson, remainingSpots, days, timePrefix, timeSlot, currentPaidCount, currentPendingCount);
     }
 
     @Override

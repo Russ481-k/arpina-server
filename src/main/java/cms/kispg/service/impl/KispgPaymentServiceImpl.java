@@ -204,7 +204,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public KispgInitParamsDto preparePaymentWithoutEnroll(EnrollRequestDto enrollRequest, User currentUser,
             String userIp) {
         log.info(
@@ -212,7 +212,7 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
                 currentUser.getUsername(), enrollRequest.getLessonId(), enrollRequest.getUsesLocker(),
                 enrollRequest.getMembershipType());
 
-        Lesson lesson = lessonRepository.findById(enrollRequest.getLessonId())
+        Lesson lesson = lessonRepository.findByIdWithLock(enrollRequest.getLessonId())
                 .orElseThrow(() -> new ResourceNotFoundException("강습을 찾을 수 없습니다: " + enrollRequest.getLessonId(),
                         ErrorCode.LESSON_NOT_FOUND));
 
@@ -263,6 +263,42 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
                 log.warn("Invalid membership type '{}' received in enrollRequest. No discount applied. Error: {}",
                         enrollRequest.getMembershipType(), e.getMessage());
             }
+        }
+
+        // === 신규: 결제 진입 홀드(UNPAID/APPLIED) 생성 ===
+        try {
+            MembershipType membershipForHold = null;
+            if (enrollRequest.getMembershipType() != null && !enrollRequest.getMembershipType().isEmpty()) {
+                try {
+                    membershipForHold = MembershipType.fromValue(enrollRequest.getMembershipType());
+                } catch (IllegalArgumentException ie) {
+                    // 무시: 할인 미적용 상태로 홀드 생성
+                }
+            }
+
+            boolean isRenewal = isRenewal(currentUser, lesson);
+
+            Enroll hold = Enroll.builder()
+                    .user(currentUser)
+                    .lesson(lesson)
+                    .status("APPLIED")
+                    .payStatus("UNPAID")
+                    .expireDt(LocalDateTime.now().plusMinutes(5))
+                    .usesLocker(enrollRequest.getUsesLocker())
+                    .lockerAllocated(false)
+                    .membershipType(membershipForHold)
+                    .renewalFlag(isRenewal)
+                    .discountAppliedPercentage(membershipForHold != null ? membershipForHold.getDiscountPercentage() : 0)
+                    .createdBy(currentUser.getUuid())
+                    .createdIp(userIp)
+                    .build();
+            hold = enrollRepository.save(hold);
+            log.info("[Hold] Created UNPAID/APPLIED enrollment hold. enrollId={}, lessonId={}, user={}",
+                    hold.getEnrollId(), lesson.getLessonId(), currentUser.getUsername());
+        } catch (Exception e) {
+            log.error("Failed to create enrollment hold for payment preparation. lessonId={}, user={}",
+                    lesson.getLessonId(), currentUser.getUsername(), e);
+            throw e;
         }
 
         if (enrollRequest.getUsesLocker()) {
@@ -322,6 +358,10 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
                 .userIp(userIp)
                 .mbsUsrId(mbsUsrId)
                 .mbsReserved1(mbsReserved1)
+                // 홀드 정보는 UNPAID/APPLIED 레코드 자체가 홀드 역할을 하므로, enrollId를 holdId로 사용하지 않고
+                // 임시로 tempMoid를 holdId 대용으로 제공 (프론트 on-close 해제 시 사용 가능)
+                .holdId(tempMoid)
+                .holdExpireAt(LocalDateTime.now().plusMinutes(5).atOffset(ZoneOffset.UTC).toString())
                 .build();
     }
 
@@ -460,8 +500,35 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
         }
 
         // 5. Enroll 객체 생성 또는 업데이트
-        Enroll savedEnroll = createOrUpdateEnrollment(currentUser, lesson, usesLocker, lockerAllocated,
-                selectedMembership, discountPercentage);
+        Enroll savedEnroll;
+        try {
+            // 기존 홀드(UNPAID/APPLIED)가 있으면 이를 승격하여 사용
+            LocalDateTime now = LocalDateTime.now();
+            java.util.Optional<Enroll> existingHoldOpt = enrollRepository
+                    .findByUserUuidAndLessonLessonIdAndPayStatusAndExpireDtAfter(
+                            currentUser.getUuid(), lesson.getLessonId(), "UNPAID", now);
+            if (existingHoldOpt.isPresent()) {
+                Enroll hold = existingHoldOpt.get();
+                hold.setPayStatus("PAID");
+                hold.setStatus("APPLIED");
+                hold.setExpireDt(lesson.getEndDate().atTime(23, 59, 59));
+                hold.setUsesLocker(usesLocker);
+                hold.setLockerAllocated(lockerAllocated);
+                hold.setMembershipType(selectedMembership);
+                hold.setDiscountAppliedPercentage(discountPercentage);
+                savedEnroll = enrollRepository.save(hold);
+                log.info("[Hold->PAID] Upgraded existing hold to PAID. enrollId={}, lessonId={}, user={}",
+                        savedEnroll.getEnrollId(), lesson.getLessonId(), currentUser.getUsername());
+            } else {
+                // 홀드가 없으면 신규 생성 (후방호환)
+                savedEnroll = createOrUpdateEnrollment(currentUser, lesson, usesLocker, lockerAllocated,
+                        selectedMembership, discountPercentage);
+            }
+        } catch (Exception e) {
+            log.error("Failed to finalize enrollment on approval. lessonId={}, user={}",
+                    lesson.getLessonId(), currentUser.getUsername(), e);
+            throw e;
+        }
 
         // 6. Payment 객체 생성
         createAndSavePayment(approvalRequest, savedEnroll, usesLocker && lockerAllocated, currentUser, userIp);
@@ -469,6 +536,30 @@ public class KispgPaymentServiceImpl implements KispgPaymentService {
         log.info("Successfully created/updated enrollment and payment record for MOID: {}", approvalRequest.getMoid());
 
         return convertToMypageEnrollDto(savedEnroll);
+    }
+
+    @Override
+    @Transactional
+    public boolean releasePendingHold(String holdId, User currentUser) {
+        try {
+            // 현재 구조에서는 tempMoid에 lessonId와 userUuid가 들어있음: temp_{lessonId}_{userUuidCut}_{ts}
+            Long lessonId = parseLessonIdFromTempMoid(holdId);
+            LocalDateTime now = LocalDateTime.now();
+            // 사용자-강습 기준의 활성 홀드(UNPAID/APPLIED, expire>now)를 제거
+            lessonRepository.findById(lessonId).orElseThrow(() ->
+                    new ResourceNotFoundException("강습을 찾을 수 없습니다: " + lessonId, ErrorCode.LESSON_NOT_FOUND));
+            return enrollRepository.findByUserUuidAndLessonLessonIdAndPayStatusAndExpireDtAfter(
+                    currentUser.getUuid(), lessonId, "UNPAID", now)
+                    .map(e -> {
+                        enrollRepository.delete(e);
+                        log.info("[Hold Release] Deleted pending hold enrollId={}, lessonId={}, user={}",
+                                e.getEnrollId(), lessonId, currentUser.getUsername());
+                        return true;
+                    }).orElse(false);
+        } catch (Exception e) {
+            log.warn("Failed to release pending hold. holdId={}, user={}", holdId, currentUser.getUsername(), e);
+            return false;
+        }
     }
 
     private Long parseLessonIdFromTempMoid(String tempMoid) {

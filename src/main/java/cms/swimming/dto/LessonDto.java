@@ -47,6 +47,9 @@ public class LessonDto {
     private String timePrefix; // e.g., "오전"
     private String timeSlot; // e.g., "09:00 ~ 09:50"
     private Integer remaining; // Calculated remaining spots
+    private Integer availablePaymentSlots; // remaining과 동일 의미로 노출
+    private Integer currentPaidCount;
+    private Integer currentPendingCount;
 
     // toEntity() method might not be relevant if this DTO is purely for responses.
     // If it were for requests, it would need to include all new settable fields.
@@ -68,7 +71,7 @@ public class LessonDto {
     // For now, let's assume the service layer will populate all fields, including
     // calculated/parsed ones.
     public static LessonDto fromEntity(Lesson lesson, Integer remainingSpots, String days, String timePrefix,
-            String timeSlot) {
+            String timeSlot, Integer currentPaidCount, Integer currentPendingCount) {
         return LessonDto.builder()
                 .lessonId(lesson.getLessonId())
                 .title(lesson.getTitle())
@@ -86,6 +89,9 @@ public class LessonDto {
                 .timePrefix(timePrefix) // Parsed by service
                 .timeSlot(timeSlot) // Parsed by service
                 .remaining(remainingSpots) // Calculated by service
+                .availablePaymentSlots(remainingSpots)
+                .currentPaidCount(currentPaidCount)
+                .currentPendingCount(currentPendingCount)
                 .build();
     }
 }

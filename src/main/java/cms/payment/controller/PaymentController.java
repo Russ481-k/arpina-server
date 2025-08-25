@@ -229,6 +229,20 @@ public class PaymentController {
         }
     }
 
+    @PostMapping("/release-pending")
+    @Operation(summary = "결제 대기 해제", description = "결제 창 닫힘/실패 시 결제 대기 홀드를 즉시 해제합니다.")
+    public ResponseEntity<ApiResponseSchema<Boolean>> releasePending(@RequestBody ReleasePendingRequest request,
+            @AuthenticationPrincipal User currentUser) {
+        boolean result = kispgPaymentService.releasePendingHold(request.getHoldId(), currentUser);
+        return ResponseEntity.ok(ApiResponseSchema.success(result, result ? "해제되었습니다." : "이미 해제되었거나 존재하지 않습니다."));
+    }
+
+    public static class ReleasePendingRequest {
+        private String holdId;
+        public String getHoldId() { return holdId; }
+        public void setHoldId(String holdId) { this.holdId = holdId; }
+    }
+
     // DTO for verifyAndGetEnrollment request body
     public static class VerifyPaymentRequest {
         private String moid;

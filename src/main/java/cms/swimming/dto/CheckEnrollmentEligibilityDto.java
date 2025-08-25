@@ -15,4 +15,7 @@ public class CheckEnrollmentEligibilityDto {
 
     @Schema(description = "상태 메시지", example = "수강 신청이 가능합니다.")
     private String message;
+
+    @Schema(description = "결제 진입 가능 슬롯 수 (capacity - PAID - UNPAID[expire>now])", example = "3")
+    private Integer availablePaymentSlots;
 }

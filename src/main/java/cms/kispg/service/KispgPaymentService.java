@@ -38,6 +38,11 @@ public interface KispgPaymentService {
     EnrollDto approvePaymentAndCreateEnrollment(PaymentApprovalRequestDto approvalRequest, User currentUser,
             String userIp);
 
+    /**
+     * 결제 창 닫힘/실패 등으로 인한 보류 해제 요청
+     */
+    boolean releasePendingHold(String holdId, User currentUser);
+
     KispgCancelResponseDto cancelPayment(String tid, String moid, String payMethod, int cancelAmount, String reason,
             boolean isPartial);
 

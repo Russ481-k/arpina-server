@@ -24,4 +24,8 @@ public class KispgInitParamsDto {
     private String userIp;      // 사용자 IP 주소 (선택 사항)
     private String mbsUsrId;    // 가맹점 고객 ID (선택 사항)
     private String mbsReserved1; // 가맹점 예약필드1 (예: enrollId)
+
+    // 결제 진입 홀드 정보(선택)
+    private String holdId;
+    private String holdExpireAt; // ISO8601 string
 } 

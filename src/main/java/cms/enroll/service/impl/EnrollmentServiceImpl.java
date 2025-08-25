@@ -1292,9 +1292,17 @@ public class EnrollmentServiceImpl implements EnrollmentService {
         boolean hasPaidEnrollment = enrollRepository.existsPaidEnrollmentInMonth(user.getUuid(), lesson.getStartDate());
 
         if (hasPaidEnrollment) {
-            return new CheckEnrollmentEligibilityDto(false, "이미 해당 월에 결제 완료한 강습이 있습니다.");
+            return new CheckEnrollmentEligibilityDto(false, "이미 해당 월에 결제 완료한 강습이 있습니다.", null);
         }
 
-        return new CheckEnrollmentEligibilityDto(true, "수강 신청이 가능합니다.");
+        long paidEnrollments = enrollRepository.countByLessonLessonIdAndPayStatus(lesson.getLessonId(), "PAID");
+        long unpaidActiveEnrollments = enrollRepository
+                .countByLessonLessonIdAndStatusAndPayStatusAndExpireDtAfter(
+                        lesson.getLessonId(), "APPLIED", "UNPAID", LocalDateTime.now());
+        int availableSlots = lesson.getCapacity() != null
+                ? Math.max(0, lesson.getCapacity() - (int) paidEnrollments - (int) unpaidActiveEnrollments)
+                : 0;
+
+        return new CheckEnrollmentEligibilityDto(true, "수강 신청이 가능합니다.", availableSlots);
     }
 } 
